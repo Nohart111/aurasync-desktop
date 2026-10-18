@@ -3,10 +3,10 @@
   "version": "1.0.0",
   "type": "module",
   "description": "AuraSync Realtime Socket.io Server",
-  "main": "src/server.ts",
+  "main": "dist/server.js",
   "scripts": {
-    "build": "echo 'Build skipped: running directly with tsx'",
-    "start": "npx tsx src/server.ts"
+    "build": "tsc",
+    "start": "node dist/server.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
@@ -16,7 +16,6 @@
   "devDependencies": {
     "@types/cors": "^2.8.17",
     "@types/node": "^20.14.0",
-    "tsx": "^4.11.0",
     "typescript": "^5.4.5"
   }
 }
