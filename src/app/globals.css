@@ -18,7 +18,17 @@ body {
   user-select: none;
   -webkit-font-smoothing: antialiased;
 }
+/* Ẩn hoàn toàn thanh cuộn trên toàn bộ ứng dụng nhưng vẫn lăn chuột mượt */
+* {
+  scrollbar-width: none !important; /* Firefox */
+  -ms-overflow-style: none !important; /* IE/Edge */
+}
 
+*::-webkit-scrollbar {
+  display: none !important; /* Chrome, Safari, Edge, Opera */
+  width: 0 !important;
+  height: 0 !important;
+}
 .glass-panel {
   background-color: rgba(18, 18, 28, 0.55);
   backdrop-filter: blur(24px);
