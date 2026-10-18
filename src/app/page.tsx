@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent, type PointerEvent as ReactPointerEvent } from "react";
 import {
   AudioLines,
   FileAudio2,
@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { AmbientBackground } from "@/components/layout/AmbientBackground";
+import { CursorSpotlight } from "@/components/layout/CursorSpotlight";
 import { MagneticSeekbar } from "@/components/player/MagneticSeekbar";
 import { QueueDrawer } from "@/components/layout/QueueDrawer";
 import { usePlayerStore } from "@/store/usePlayerStore";
@@ -81,6 +82,19 @@ const SOURCE_TABS: { id: SearchSource; label: string }[] = [
   { id: "audius", label: "Nhạc Full (Audius)" },
   { id: "apple", label: "Khám phá V-Pop/US-UK (Apple Music)" },
 ];
+
+function updateSpotlightTarget(event: ReactPointerEvent<HTMLElement>) {
+  if (event.pointerType !== "mouse") return;
+  const bounds = event.currentTarget.getBoundingClientRect();
+  event.currentTarget.style.setProperty(
+    "--spotlight-x",
+    `${event.clientX - bounds.left}px`
+  );
+  event.currentTarget.style.setProperty(
+    "--spotlight-y",
+    `${event.clientY - bounds.top}px`
+  );
+}
 
 export default function DesktopHome() {
   const [isQueueOpen, setIsQueueOpen] = useState(false);
@@ -362,12 +376,13 @@ export default function DesktopHome() {
 
   return (
     <main className="relative flex h-screen w-screen flex-col justify-between overflow-hidden p-6">
+      <CursorSpotlight />
       <AmbientBackground
         primaryColor={currentTrack?.dominantColors[0] || "#8A2BE2"}
         secondaryColor={currentTrack?.dominantColors[1] || "#00F0FF"}
       />
 
-      <header className="glass-panel flex items-center justify-between rounded-2xl px-6 py-4">
+      <header onPointerMove={updateSpotlightTarget} className="cursor-spotlight-target glass-panel relative z-10 flex items-center justify-between rounded-2xl px-6 py-4">
         <div className="flex min-w-0 items-center gap-4">
           <div className="hidden items-center gap-2.5 border-r border-white/10 pr-4 sm:flex">
             <div className="flex items-center gap-1.5">
@@ -494,7 +509,7 @@ export default function DesktopHome() {
         </div>
       </header>
 
-      <section className="flex-1 overflow-y-auto my-6 pr-2">
+      <section className="relative z-10 my-6 flex-1 overflow-y-auto pr-2">
         <h2 className="font-display text-xl font-bold text-white mb-4">
           {searchSource === "library" ? "Khám phá Lossless Room" : "Khám phá nhạc trực tuyến"}
         </h2>
@@ -549,12 +564,13 @@ export default function DesktopHome() {
             <div
               key={t.id}
               onClick={() => startTrackFromGesture(t)}
+              onPointerMove={updateSpotlightTarget}
               onKeyDown={(event) => {
                 if (event.key === "Enter") startTrackFromGesture(t);
               }}
               role="button"
               tabIndex={0}
-              className="glass-panel group flex cursor-pointer items-center gap-4 rounded-2xl p-4 transition duration-300 hover:border-neon-cyan/40 hover:bg-white/10"
+              className="cursor-spotlight-target glass-panel group relative flex cursor-pointer items-center gap-4 rounded-2xl p-4 transition duration-300 hover:border-neon-cyan/40 hover:bg-white/10"
             >
               <img src={t.coverUrl} alt={t.title} className="h-16 w-16 rounded-xl object-cover shadow-md" />
               <div className="flex-1 truncate">
@@ -578,7 +594,7 @@ export default function DesktopHome() {
         )}
       </section>
 
-      <footer className="glass-acrylic flex flex-col gap-2 rounded-2xl px-6 py-3.5 shadow-glass-dock">
+      <footer onPointerMove={updateSpotlightTarget} className="cursor-spotlight-target glass-acrylic relative z-10 flex flex-col gap-2 rounded-2xl px-6 py-3.5 shadow-glass-dock">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3 min-w-[200px]">
             {currentTrack ? (
