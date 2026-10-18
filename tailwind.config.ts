@@ -1,8 +1,8 @@
-// tailwind.config.ts
+﻿// tailwind.config.ts
 import type { Config } from "tailwindcss";
 
 const config: Config = {
-  darkMode: ["class"],
+  darkMode: "class",
   content: [
     "./src/pages/**/*.{js,ts,jsx,tsx,mdx}",
     "./src/components/**/*.{js,ts,jsx,tsx,mdx}",
@@ -17,15 +17,15 @@ const config: Config = {
       },
       colors: {
         obsidian: {
-          950: "#050508", // Nền chính sâu thẳm chuẩn OLED/macOS Dark
-          900: "#0A0A10", // Nền khung cửa sổ phụ
-          800: "#12121C", // Nền card khi chưa hover
+          950: "#050508", // Ná»n chÃ­nh sÃ¢u tháº³m chuáº©n OLED/macOS Dark
+          900: "#0A0A10", // Ná»n khung cá»­a sá»• phá»¥
+          800: "#12121C", // Ná»n card khi chÆ°a hover
         },
         neon: {
-          cyan: "#00F0FF",    // Điểm nhấn tần số cao & trạng thái đồng bộ
-          violet: "#8A2BE2",  // Mảng màu ambient trung tâm
-          emerald: "#10B981", // Tín hiệu phòng nghe trực tuyến (Spotify vibe)
-          rose: "#FF2A85",    // Điểm nhấn nhịp bass & nút yêu thích
+          cyan: "#00F0FF",    // Äiá»ƒm nháº¥n táº§n sá»‘ cao & tráº¡ng thÃ¡i Ä‘á»“ng bá»™
+          violet: "#8A2BE2",  // Máº£ng mÃ u ambient trung tÃ¢m
+          emerald: "#10B981", // TÃ­n hiá»‡u phÃ²ng nghe trá»±c tuyáº¿n (Spotify vibe)
+          rose: "#FF2A85",    // Äiá»ƒm nháº¥n nhá»‹p bass & nÃºt yÃªu thÃ­ch
         },
         glass: {
           surface: "rgba(18, 18, 28, 0.55)",
@@ -37,7 +37,7 @@ const config: Config = {
       backdropBlur: {
         xs: "4px",
         glass: "24px",
-        acrylic: "48px", // Độ mờ kính sâu chuẩn macOS Sonoma/Sequoia
+        acrylic: "48px", // Äá»™ má» kÃ­nh sÃ¢u chuáº©n macOS Sonoma/Sequoia
       },
       boxShadow: {
         "glass-panel":

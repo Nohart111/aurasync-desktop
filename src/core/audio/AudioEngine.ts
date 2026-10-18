@@ -1,4 +1,4 @@
-// src/core/audio/AudioEngine.ts
+﻿// src/core/audio/AudioEngine.ts
 export class AudioEngine {
   private static instance: AudioEngine | null = null;
   private audioCtx: AudioContext | null = null;
@@ -7,11 +7,11 @@ export class AudioEngine {
   private sourceNode: MediaElementAudioSourceNode | null = null;
   private gainNode: GainNode | null = null;
   private analyserNode: AnalyserNode | null = null;
-  private frequencyData: Uint8Array = new Uint8Array(64);
+  private frequencyData: Uint8Array<ArrayBuffer> = new Uint8Array(64);
 
   private constructor() {
     this.primaryAudio = new Audio();
-    this.primaryAudio.crossOrigin = "anonymous"; // Bắt buộc để Web Audio API đọc stream từ Cloudflare R2
+    this.primaryAudio.crossOrigin = "anonymous"; // Báº¯t buá»™c Ä‘á»ƒ Web Audio API Ä‘á»c stream tá»« Cloudflare R2
     this.primaryAudio.preload = "auto";
 
     this.preloadAudio = new Audio();
@@ -26,7 +26,7 @@ export class AudioEngine {
     return AudioEngine.instance;
   }
 
-  // Khởi tạo Audio Graph sau tương tác đầu tiên của người dùng (User Gesture Policy)
+  // Khá»Ÿi táº¡o Audio Graph sau tÆ°Æ¡ng tÃ¡c Ä‘áº§u tiÃªn cá»§a ngÆ°á»i dÃ¹ng (User Gesture Policy)
   private ensureAudioContext(): void {
     if (!this.audioCtx) {
       const AudioContextClass =
@@ -44,7 +44,7 @@ export class AudioEngine {
       this.analyserNode.smoothingTimeConstant = 0.82;
       this.frequencyData = new Uint8Array(this.analyserNode.frequencyBinCount);
 
-      // Kết nối đồ thị âm thanh: Source -> Gain -> Analyser -> Loa (Destination)
+      // Káº¿t ná»‘i Ä‘á»“ thá»‹ Ã¢m thanh: Source -> Gain -> Analyser -> Loa (Destination)
       this.sourceNode.connect(this.gainNode);
       this.gainNode.connect(this.analyserNode);
       this.analyserNode.connect(this.audioCtx.destination);
@@ -64,7 +64,7 @@ export class AudioEngine {
     await this.primaryAudio.play();
   }
 
-  // Nạp trước header & chunk đầu của bài kế tiếp (O(1) từ peekNext của DoublyLinkedQueue)
+  // Náº¡p trÆ°á»›c header & chunk Ä‘áº§u cá»§a bÃ i káº¿ tiáº¿p (O(1) tá»« peekNext cá»§a DoublyLinkedQueue)
   public preloadNextTrack(nextUrl: string | null): void {
     if (!nextUrl || this.preloadAudio.src === nextUrl) return;
     this.preloadAudio.src = nextUrl;
@@ -110,7 +110,7 @@ export class AudioEngine {
 
   public getFrequencySnapshot(): Uint8Array {
     if (this.analyserNode) {
-      this.analyserNode.getByteFrequencyData(this.frequencyData);
+      this.analyserNode.getByteFrequencyData(this.frequencyData as any);
     }
     return this.frequencyData;
   }
@@ -120,3 +120,4 @@ export class AudioEngine {
     return () => this.primaryAudio.removeEventListener("ended", callback);
   }
 }
+

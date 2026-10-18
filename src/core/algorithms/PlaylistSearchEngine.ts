@@ -1,4 +1,4 @@
-// src/core/algorithms/PlaylistSearchEngine.ts
+﻿// src/core/algorithms/PlaylistSearchEngine.ts
 import { Track } from "./DoublyLinkedQueue";
 
 class TrieNode {
@@ -8,8 +8,8 @@ class TrieNode {
 
 /**
  * PlaylistSearchEngine:
- * 1. Prefix Trie lưu chỉ mục từ khóa -> Tra cứu prefix trong O(L) (độc lập với số lượng bài hát N).
- * 2. Sorted Index + Binary Search -> Lọc bài hát theo khoảng BPM hoặc Duration trong O(log N).
+ * 1. Prefix Trie lÆ°u chá»‰ má»¥c tá»« khÃ³a -> Tra cá»©u prefix trong O(L) (Ä‘á»™c láº­p vá»›i sá»‘ lÆ°á»£ng bÃ i hÃ¡t N).
+ * 2. Sorted Index + Binary Search -> Lá»c bÃ i hÃ¡t theo khoáº£ng BPM hoáº·c Duration trong O(log N).
  */
 export class PlaylistSearchEngine {
   private root: TrieNode = new TrieNode();
@@ -28,7 +28,7 @@ export class PlaylistSearchEngine {
       }
     }
 
-    // Sắp xếp một lần khi nạp thư viện O(N log N) để phục vụ truy vấn khoảng O(log N)
+    // Sáº¯p xáº¿p má»™t láº§n khi náº¡p thÆ° viá»‡n O(N log N) Ä‘á»ƒ phá»¥c vá»¥ truy váº¥n khoáº£ng O(log N)
     this.sortedByBpm = [...tracks].sort((a, b) => a.bpm - b.bpm);
   }
 
@@ -36,7 +36,7 @@ export class PlaylistSearchEngine {
     return text
       .toLowerCase()
       .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "") // Bỏ dấu tiếng Việt để tìm kiếm nhanh cả có dấu & không dấu
+      .replace(/[\u0300-\u036f]/g, "") // Bá» dáº¥u tiáº¿ng Viá»‡t Ä‘á»ƒ tÃ¬m kiáº¿m nhanh cáº£ cÃ³ dáº¥u & khÃ´ng dáº¥u
       .split(/[^a-z0-9]+/)
       .filter(Boolean);
   }
@@ -52,7 +52,7 @@ export class PlaylistSearchEngine {
     }
   }
 
-  // Tra cứu theo tiền tố từ khóa: O(L) với L là độ dài chuỗi truy vấn (O(1) theo N)
+  // Tra cá»©u theo tiá»n tá»‘ tá»« khÃ³a: O(L) vá»›i L lÃ  Ä‘á»™ dÃ i chuá»—i truy váº¥n (O(1) theo N)
   public searchByPrefix(query: string): Track[] {
     const tokens = this.tokenize(query);
     if (tokens.length === 0) return Array.from(this.trackById.values());
@@ -69,8 +69,8 @@ export class PlaylistSearchEngine {
       if (matchedIds === null) {
         matchedIds = new Set(currentTokenIds);
       } else {
-        matchedIds = new Set(
-          [...matchedIds].filter((id) => currentTokenIds.has(id))
+        matchedIds = new Set<string>(
+          [...matchedIds].filter((id: string) => currentTokenIds.has(id))
         );
       }
     }
@@ -81,7 +81,7 @@ export class PlaylistSearchEngine {
       .filter(Boolean);
   }
 
-  // Lọc bài hát theo dải nhịp độ (BPM) bằng Binary Search: O(log N) tìm biên
+  // Lá»c bÃ i hÃ¡t theo dáº£i nhá»‹p Ä‘á»™ (BPM) báº±ng Binary Search: O(log N) tÃ¬m biÃªn
   public filterByBpmRange(minBpm: number, maxBpm: number): Track[] {
     const startIdx = this.lowerBoundBpm(minBpm);
     const endIdx = this.upperBoundBpm(maxBpm);
@@ -121,3 +121,4 @@ export class PlaylistSearchEngine {
     return ans;
   }
 }
+
