@@ -598,8 +598,13 @@ export default function DesktopHome() {
           </div>
 
           <div className="flex items-center gap-4">
-            <button onClick={advancePrev} className="text-zinc-400 hover:text-white transition">
-              <SkipBack className="h-5 w-5" />
+            <button
+              onClick={advancePrev}
+              aria-label="Bài trước"
+              title="Bài trước"
+              className="rounded-full p-2 text-zinc-300 transition-all hover:bg-white/10 hover:text-white active:scale-90"
+            >
+              <SkipBack className="h-5 w-5 fill-current stroke-[2.25]" />
             </button>
             <button
               onClick={() => {
@@ -611,18 +616,23 @@ export default function DesktopHome() {
               }}
               title={isPlaying ? "Tạm dừng" : "Phát"}
               aria-label={isPlaying ? "Tạm dừng" : "Phát"}
-              className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-obsidian-950 transition hover:scale-105 active:scale-95"
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-black shadow-[0_0_20px_rgba(255,255,255,0.4)] transition-transform duration-150 hover:scale-105 hover:bg-zinc-200 active:scale-95"
             >
               {isBuffering ? (
-                <LoaderCircle className="h-5 w-5 animate-spin" />
+                <LoaderCircle className="h-5 w-5 animate-spin text-black stroke-[1.75]" />
               ) : isPlaying ? (
-                <Pause className="h-5 w-5 fill-current" />
+                <Pause className="h-5 w-5 fill-current text-black" />
               ) : (
-                <Play className="h-5 w-5 fill-current ml-0.5" />
+                <Play className="ml-0.5 h-5 w-5 fill-black text-black" />
               )}
             </button>
-            <button onClick={advanceNext} className="text-zinc-400 hover:text-white transition">
-              <SkipForward className="h-5 w-5" />
+            <button
+              onClick={advanceNext}
+              aria-label="Bài tiếp theo"
+              title="Bài tiếp theo"
+              className="rounded-full p-2 text-zinc-300 transition-all hover:bg-white/10 hover:text-white active:scale-90"
+            >
+              <SkipForward className="h-5 w-5 fill-current stroke-[2.25]" />
             </button>
           </div>
 
