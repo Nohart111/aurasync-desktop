@@ -1,0 +1,54 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  body {
+    @apply bg-obsidian-950 text-zinc-100 antialiased selection:bg-neon-violet/30 selection:text-neon-cyan overflow-hidden select-none;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+}
+
+@layer utilities {
+  /* Lớp kính mờ tiêu chuẩn cho Sidebar và Card */
+  .glass-panel {
+    @apply bg-glass-surface backdrop-blur-glass border border-glass-border shadow-glass-panel;
+  }
+
+  /* Lớp kính Acrylic cao cấp cho Floating Player Bar và Queue Drawer */
+  .glass-acrylic {
+    @apply bg-glass-elevated backdrop-blur-acrylic border border-glass-highlight shadow-glass-dock;
+  }
+
+  /* Cố định độ rộng chữ số giúp bộ đếm giây (01:24 -> 01:25) không bị giật ngang */
+  .tabular-time {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Ép trình duyệt kích hoạt GPU Hardware Acceleration cho các khối 60fps */
+  .gpu-accelerated {
+    transform: translateZ(0);
+    backface-visibility: hidden;
+    will-change: transform, opacity;
+  }
+}
+
+/* Tùy biến thanh cuộn siêu mảnh chuẩn macOS */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
