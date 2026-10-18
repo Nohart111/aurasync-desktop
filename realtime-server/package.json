@@ -1,10 +1,11 @@
 {
   "name": "realtime-server",
   "version": "1.0.0",
+  "type": "module",
   "description": "AuraSync Realtime Socket.io Server",
   "main": "src/server.ts",
   "scripts": {
-    "build": "tsc",
+    "build": "echo 'Build skipped: running directly with tsx'",
     "start": "npx tsx src/server.ts"
   },
   "dependencies": {
