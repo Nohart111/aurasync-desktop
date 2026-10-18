@@ -8,26 +8,27 @@ import { QueueDrawer } from "@/components/layout/QueueDrawer";
 import { usePlayerStore } from "@/store/usePlayerStore";
 import { useAudioPlayer } from "@/hooks/useAudioPlayer";
 
+// Danh sách nhạc stream trực tiếp từ Google Cloud Storage (100% CORS & Range streaming)
 const DEMO_TRACKS = [
   {
     id: "track-1",
-    title: "Midnight City Lights",
-    artist: "Aura Ensemble",
+    title: "Neverending Story (Lossless Mix)",
+    artist: "Kangaroo MusiQue",
     album: "Neon Horizons",
     duration: 215,
-    bpm: 124,
-    streamUrl: "https://cdn.freesound.org/previews/612/612627_5674468-lq.mp3",
+    bpm: 128,
+    streamUrl: "https://commondatastorage.googleapis.com/codeskulptor-demos/DDR_assets/Kangaroo_MusiQue_-_The_Neverending_Story.mp3",
     coverUrl: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=400&q=80",
     dominantColors: ["#8A2BE2", "#00F0FF"] as [string, string],
   },
   {
     id: "track-2",
-    title: "Ethereal Glass Waves",
-    artist: "Cyber Pulse",
+    title: "Sevish Pulse (Microtonal Ambient)",
+    artist: "Sevish",
     album: "Obsidian Dreams",
     duration: 184,
     bpm: 110,
-    streamUrl: "https://cdn.freesound.org/previews/612/612628_5674468-lq.mp3",
+    streamUrl: "https://commondatastorage.googleapis.com/codeskulptor-demos/DDR_assets/Sevish_-__nbsp_.mp3",
     coverUrl: "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=400&q=80",
     dominantColors: ["#FF2A85", "#8A2BE2"] as [string, string],
   },
@@ -84,7 +85,13 @@ export default function DesktopHome() {
                 <p className="font-display font-semibold text-white group-hover:text-neon-cyan transition">{t.title}</p>
                 <p className="text-xs text-zinc-400">{t.artist} • {t.album}</p>
               </div>
-              <button className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-neon-cyan text-obsidian-950 shadow-neon-cyan transition group-hover:scale-105">
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleStartDemo(t);
+                }}
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-neon-cyan text-obsidian-950 shadow-neon-cyan transition hover:scale-110 active:scale-95"
+              >
                 <Play className="h-4 w-4 fill-current ml-0.5" />
               </button>
             </div>
@@ -113,8 +120,14 @@ export default function DesktopHome() {
               <SkipBack className="h-5 w-5" />
             </button>
             <button
-              onClick={() => setPlaying(!isPlaying)}
-              className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-obsidian-950 transition hover:scale-105"
+              onClick={() => {
+                if (!currentTrack && DEMO_TRACKS.length > 0) {
+                  handleStartDemo(DEMO_TRACKS[0]);
+                } else {
+                  setPlaying(!isPlaying);
+                }
+              }}
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-obsidian-950 transition hover:scale-105 active:scale-95"
             >
               {isPlaying ? <Pause className="h-5 w-5 fill-current" /> : <Play className="h-5 w-5 fill-current ml-0.5" />}
             </button>
