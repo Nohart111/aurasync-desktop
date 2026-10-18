@@ -1,14 +1,5 @@
 @import "tailwindcss";
-
-@theme {
-  --color-obsidian-950: #050508;
-  --color-obsidian-900: #0A0A10;
-  --color-obsidian-800: #12121C;
-  --color-neon-cyan: #00F0FF;
-  --color-neon-violet: #8A2BE2;
-  --color-neon-emerald: #10B981;
-  --color-neon-rose: #FF2A85;
-}
+@config "../../tailwind.config.ts";
 
 :root {
   --background: #050508;
