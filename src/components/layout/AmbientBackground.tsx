@@ -13,7 +13,7 @@ export function AmbientBackground({
   secondaryColor = "#00F0FF",
 }: AmbientBackgroundProps) {
   return (
-    <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden bg-obsidian-950">
+    <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden bg-[#050508]">
       {/* Khối cầu Neon chủ đạo dịch chuyển theo bài hát */}
       <motion.div
         animate={{ backgroundColor: primaryColor }}

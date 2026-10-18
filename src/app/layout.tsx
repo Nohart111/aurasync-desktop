@@ -28,7 +28,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="vi" className={`${inter.variable} ${jakarta.variable} dark`}>
-      <body className="font-sans h-screen w-screen overflow-hidden bg-obsidian-950">
+      <body className="font-sans h-screen w-screen overflow-hidden bg-[#050508]">
         {children}
       </body>
     </html>
