@@ -1,8 +1,9 @@
 ﻿"use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import {
   AudioLines,
+  FileAudio2,
   ListMusic,
   LoaderCircle,
   Pause,
@@ -12,18 +13,22 @@ import {
   SkipBack,
   SkipForward,
   Sparkles,
+  Upload,
   Volume2,
   VolumeX,
+  X,
 } from "lucide-react";
+import { motion } from "framer-motion";
 import { AmbientBackground } from "@/components/layout/AmbientBackground";
 import { MagneticSeekbar } from "@/components/player/MagneticSeekbar";
 import { QueueDrawer } from "@/components/layout/QueueDrawer";
 import { usePlayerStore } from "@/store/usePlayerStore";
 import { useAudioPlayer } from "@/hooks/useAudioPlayer";
 import { PlaylistSearchEngine } from "@/core/algorithms/PlaylistSearchEngine";
+import type { Track } from "@/core/algorithms/DoublyLinkedQueue";
 
 // Danh sách nhạc stream trực tiếp từ Google Cloud Storage (100% CORS & Range streaming)
-const DEMO_TRACKS = [
+const DEMO_TRACKS: Track[] = [
   {
     id: "track-1",
     title: "Neverending Story (Lossless Mix)",
@@ -51,9 +56,50 @@ const DEMO_TRACKS = [
 const playlistSearch = new PlaylistSearchEngine();
 playlistSearch.indexTracks(DEMO_TRACKS);
 
+type SearchSource = "library" | "audius" | "apple";
+
+interface AudiusSearchTrack {
+  id: string | number;
+  title: string;
+  duration?: number;
+  user?: { name?: string };
+  artwork?: { "150x150"?: string } | null;
+}
+
+interface AppleSearchTrack {
+  trackId: number;
+  trackName: string;
+  artistName: string;
+  collectionName?: string;
+  trackTimeMillis?: number;
+  previewUrl?: string;
+  artworkUrl100?: string;
+}
+
+const FALLBACK_COVER =
+  "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&q=80";
+const SOURCE_TABS: { id: SearchSource; label: string }[] = [
+  { id: "library", label: "Thư viện Mặc định" },
+  { id: "audius", label: "Nhạc Full (Audius)" },
+  { id: "apple", label: "Khám phá V-Pop/US-UK (Apple Music)" },
+];
+
 export default function DesktopHome() {
   const [isQueueOpen, setIsQueueOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchSource, setSearchSource] = useState<SearchSource>("library");
+  const [libraryTracks, setLibraryTracks] = useState<Track[]>(DEMO_TRACKS);
+  const [onlineTracks, setOnlineTracks] = useState<Track[]>([]);
+  const [searchStatus, setSearchStatus] = useState<{
+    key: string;
+    loading: boolean;
+    error: string;
+  }>({ key: "", loading: false, error: "" });
+  const [isAddPanelOpen, setIsAddPanelOpen] = useState(false);
+  const [directUrl, setDirectUrl] = useState("");
+  const [addError, setAddError] = useState("");
+  const [addedMessage, setAddedMessage] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const previousVolumeRef = useRef(0.85);
   const {
     currentTrack,
@@ -72,7 +118,114 @@ export default function DesktopHome() {
     startTrackFromGesture,
     togglePlaybackFromGesture,
   } = useAudioPlayer();
-  const filteredTracks = playlistSearch.searchByPrefix(searchQuery);
+  const visibleTracks =
+    searchSource === "library"
+      ? playlistSearch.searchByPrefix(searchQuery)
+      : searchQuery.trim()
+        ? onlineTracks
+        : [];
+  const activeSearchKey = `${searchSource}:${searchQuery.trim()}`;
+  const isSearchLoading =
+    searchSource !== "library" &&
+    Boolean(searchQuery.trim()) &&
+    searchStatus.key === activeSearchKey &&
+    searchStatus.loading;
+  const searchError =
+    searchStatus.key === activeSearchKey ? searchStatus.error : "";
+
+  useEffect(() => {
+    if (searchSource === "library") return;
+
+    const query = searchQuery.trim();
+    if (!query) return;
+
+    const controller = new AbortController();
+    const searchKey = `${searchSource}:${query}`;
+    const timeoutId = window.setTimeout(async () => {
+      setSearchStatus({ key: searchKey, loading: true, error: "" });
+
+      try {
+        if (searchSource === "audius") {
+          const response = await fetch(
+            `https://discoveryprovider.audius.co/v1/tracks/search?query=${encodeURIComponent(query)}&app_name=AuraSyncDesktop`,
+            { signal: controller.signal }
+          );
+          if (!response.ok) throw new Error("Audius search request failed.");
+
+          const payload = (await response.json()) as {
+            data?: AudiusSearchTrack[];
+          };
+          const tracks = (payload.data ?? []).map((track): Track => ({
+            id: `audius-${track.id}`,
+            title: track.title || "Untitled track",
+            artist: track.user?.name || "Audius artist",
+            album: "Audius",
+            duration: Math.max(0, track.duration ?? 0),
+            bpm: 0,
+            streamUrl: `https://discoveryprovider.audius.co/v1/tracks/${encodeURIComponent(String(track.id))}/stream?app_name=AuraSyncDesktop`,
+            coverUrl: track.artwork?.["150x150"] || FALLBACK_COVER,
+            dominantColors: ["#8A2BE2", "#00F0FF"],
+          }));
+          setOnlineTracks(tracks);
+        } else {
+          const response = await fetch(
+            `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&media=music&entity=song&limit=12`,
+            { signal: controller.signal }
+          );
+          if (!response.ok) throw new Error("Apple Music search request failed.");
+
+          const payload = (await response.json()) as {
+            results?: AppleSearchTrack[];
+          };
+          const tracks = (payload.results ?? [])
+            .filter((track) => Boolean(track.previewUrl))
+            .map((track): Track => ({
+              id: `itunes-${track.trackId}`,
+              title: track.trackName,
+              artist: track.artistName,
+              album: track.collectionName || "Apple Music preview",
+              duration: Math.floor((track.trackTimeMillis ?? 0) / 1000),
+              bpm: 0,
+              streamUrl: track.previewUrl!,
+              coverUrl:
+                track.artworkUrl100?.replace("100x100bb", "600x600bb") ||
+                FALLBACK_COVER,
+              dominantColors: ["#FF2A85", "#00F0FF"],
+            }));
+          setOnlineTracks(tracks);
+        }
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          setOnlineTracks([]);
+          setSearchStatus({
+            key: searchKey,
+            loading: false,
+            error:
+              error instanceof Error
+                ? `${error.message} Check the connection and try again.`
+                : "Không thể tìm kiếm nhạc trực tuyến.",
+          });
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setSearchStatus((current) =>
+            current.key === searchKey
+              ? { ...current, loading: false }
+              : current
+          );
+        }
+      }
+    }, 350);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [searchQuery, searchSource]);
+
+  useEffect(() => {
+    playlistSearch.indexTracks(libraryTracks);
+  }, [libraryTracks]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -133,6 +286,82 @@ export default function DesktopHome() {
     }
   };
 
+  const handleLocalFiles = (event: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []);
+    if (files.length === 0) return;
+
+    const tracks = files.map((file): Track => {
+      const title = file.name.replace(/\.[^.]+$/, "") || file.name;
+      return {
+        id: `local-${crypto.randomUUID()}`,
+        title,
+        artist: "Tệp trên thiết bị",
+        album: "Thư viện cục bộ",
+        duration: 0,
+        bpm: 0,
+        streamUrl: URL.createObjectURL(file),
+        coverUrl: FALLBACK_COVER,
+        dominantColors: ["#00F0FF", "#10B981"],
+      };
+    });
+
+    setLibraryTracks((currentTracks) => {
+      const nextTracks = [...currentTracks, ...tracks];
+      playlistSearch.indexTracks(nextTracks);
+      return nextTracks;
+    });
+    tracks.forEach((track) => usePlayerStore.getState().enqueueTrack(track));
+    setAddedMessage(`${tracks.length} tệp đã được thêm vào hàng đợi.`);
+    setAddError("");
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const handleDirectUrlSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setAddError("");
+    setAddedMessage("");
+
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(directUrl.trim());
+      if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+        throw new Error("Unsupported URL protocol.");
+      }
+    } catch {
+      setAddError("Vui lòng nhập một URL âm thanh hợp lệ bắt đầu bằng http:// hoặc https://.");
+      return;
+    }
+
+    const encodedFilename = parsedUrl.pathname.split("/").pop() || "";
+    let filename = encodedFilename;
+    try {
+      filename = decodeURIComponent(encodedFilename);
+    } catch {
+      filename = encodedFilename;
+    }
+    const title = filename.replace(/\.(mp3|flac|m4a|wav|aac|ogg)$/i, "") || parsedUrl.hostname;
+    const track: Track = {
+      id: `url-${crypto.randomUUID()}`,
+      title,
+      artist: parsedUrl.hostname,
+      album: "Liên kết trực tiếp",
+      duration: 0,
+      bpm: 0,
+      streamUrl: parsedUrl.toString(),
+      coverUrl: FALLBACK_COVER,
+      dominantColors: ["#00F0FF", "#FF2A85"],
+    };
+
+    setLibraryTracks((currentTracks) => {
+      const nextTracks = [...currentTracks, track];
+      playlistSearch.indexTracks(nextTracks);
+      return nextTracks;
+    });
+    startTrackFromGesture(track);
+    setDirectUrl("");
+    setAddedMessage("Đã thêm liên kết và bắt đầu phát.");
+  };
+
   return (
     <main className="relative flex h-screen w-screen flex-col justify-between overflow-hidden p-6">
       <AmbientBackground
@@ -152,7 +381,7 @@ export default function DesktopHome() {
             AuraSync Desktop
           </h1>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="relative flex items-center gap-3">
           <label className="relative hidden w-64 items-center md:flex">
             <Search className="pointer-events-none absolute left-3 h-4 w-4 text-zinc-500" />
             <input
@@ -164,15 +393,86 @@ export default function DesktopHome() {
               className="h-10 w-full rounded-lg border border-white/10 bg-black/20 pl-9 pr-3 text-sm text-white outline-none transition focus:border-neon-cyan/60 focus:ring-2 focus:ring-neon-cyan/20"
             />
           </label>
+          <button
+            type="button"
+            onClick={() => {
+              setIsAddPanelOpen((isOpen) => !isOpen);
+              setAddError("");
+              setAddedMessage("");
+            }}
+            className="flex h-10 items-center gap-2 rounded-lg border border-neon-cyan/30 bg-neon-cyan/10 px-3 text-sm font-medium text-neon-cyan transition hover:bg-neon-cyan/20"
+          >
+            <Upload className="h-4 w-4" />
+            <span className="hidden sm:inline">Thêm Nhạc Của Bạn</span>
+            <span className="sm:hidden">Thêm nhạc</span>
+          </button>
           <span className="flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-400 border border-emerald-500/20">
             <Radio className="h-3 w-3 animate-pulse" />
             Lossless Engine Live
           </span>
+          {isAddPanelOpen && (
+            <div className="glass-acrylic absolute right-0 top-full z-50 mt-3 w-[min(24rem,calc(100vw-2rem))] rounded-xl p-4 shadow-glass-dock">
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="font-display text-sm font-semibold text-white">Thêm nhạc</h2>
+                <button
+                  type="button"
+                  onClick={() => setIsAddPanelOpen(false)}
+                  aria-label="Đóng bảng thêm nhạc"
+                  className="rounded-md p-1 text-zinc-400 transition hover:bg-white/10 hover:text-white"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="audio/*,.mp3,.flac,.m4a,.wav"
+                multiple
+                onChange={handleLocalFiles}
+                className="sr-only"
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/5 text-sm text-zinc-100 transition hover:border-neon-cyan/50 hover:text-neon-cyan"
+              >
+                <FileAudio2 className="h-4 w-4" />
+                Chọn tệp âm thanh
+              </button>
+              <form onSubmit={handleDirectUrlSubmit} className="mt-4 space-y-2">
+                <label htmlFor="direct-audio-url" className="text-xs font-medium text-zinc-400">
+                  Hoặc dán liên kết MP3 / FLAC
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    id="direct-audio-url"
+                    type="url"
+                    value={directUrl}
+                    onChange={(event) => setDirectUrl(event.target.value)}
+                    placeholder="https://cdn.example.com/track.mp3"
+                    required
+                    className="h-10 min-w-0 flex-1 rounded-lg border border-white/10 bg-black/20 px-3 text-xs text-white outline-none focus:border-neon-cyan/60"
+                  />
+                  <button
+                    type="submit"
+                    className="flex h-10 shrink-0 items-center gap-1.5 rounded-lg bg-neon-cyan px-3 text-xs font-semibold text-obsidian-950 transition hover:brightness-110"
+                  >
+                    <Play className="h-3.5 w-3.5 fill-current" />
+                    Phát
+                  </button>
+                </div>
+              </form>
+              {addError && <p role="alert" className="mt-3 text-xs text-rose-400">{addError}</p>}
+              {addedMessage && <p role="status" className="mt-3 text-xs text-emerald-400">{addedMessage}</p>}
+            </div>
+          )}
         </div>
       </header>
 
       <section className="flex-1 overflow-y-auto my-6 pr-2">
-        <h2 className="font-display text-xl font-bold text-white mb-4">Khám phá Lossless Room</h2>
+        <h2 className="font-display text-xl font-bold text-white mb-4">
+          {searchSource === "library" ? "Khám phá Lossless Room" : "Khám phá nhạc trực tuyến"}
+        </h2>
         <label className="relative mb-4 flex md:hidden">
           <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-zinc-500" />
           <input
@@ -184,8 +484,43 @@ export default function DesktopHome() {
             className="h-10 w-full rounded-lg border border-white/10 bg-black/20 pl-9 pr-3 text-sm text-white outline-none focus:border-neon-cyan/60 focus:ring-2 focus:ring-neon-cyan/20"
           />
         </label>
+        <div role="tablist" aria-label="Nguồn tìm kiếm nhạc" className="mb-4 flex max-w-full gap-2 overflow-x-auto pb-1">
+          {SOURCE_TABS.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={searchSource === tab.id}
+              onClick={() => setSearchSource(tab.id)}
+              className={`relative isolate shrink-0 overflow-hidden rounded-lg border px-3 py-2 text-xs font-medium transition ${
+                searchSource === tab.id
+                  ? "border-neon-cyan/50 text-neon-cyan"
+                  : "border-white/10 bg-white/[0.03] text-zinc-400 hover:text-white"
+              }`}
+            >
+              {searchSource === tab.id && (
+                <motion.span
+                  layoutId="active-music-source"
+                  className="absolute inset-0 -z-10 rounded-lg bg-neon-cyan/10"
+                  transition={{ type: "spring", stiffness: 380, damping: 34 }}
+                />
+              )}
+              {tab.label}
+            </button>
+          ))}
+        </div>
+        {searchSource !== "library" && !searchQuery.trim() && (
+          <p className="mb-4 text-xs text-zinc-500">Nhập từ khóa để tìm nhạc trên {searchSource === "audius" ? "Audius" : "Apple Music"}.</p>
+        )}
+        {isSearchLoading && (
+          <p role="status" className="mb-4 flex items-center gap-2 text-xs text-zinc-400">
+            <LoaderCircle className="h-3.5 w-3.5 animate-spin text-neon-cyan" />
+            Đang tìm kiếm...
+          </p>
+        )}
+        {searchError && <p role="alert" className="mb-4 text-xs text-rose-400">{searchError}</p>}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredTracks.map((t) => (
+          {visibleTracks.map((t) => (
             <div
               key={t.id}
               onClick={() => startTrackFromGesture(t)}
@@ -213,7 +548,7 @@ export default function DesktopHome() {
             </div>
           ))}
         </div>
-        {filteredTracks.length === 0 && (
+        {visibleTracks.length === 0 && !isSearchLoading && !searchError && (searchSource === "library" || Boolean(searchQuery.trim())) && (
           <p className="py-8 text-center text-sm text-zinc-500">Không tìm thấy bài hát phù hợp.</p>
         )}
       </section>
