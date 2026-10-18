@@ -1,5 +1,4 @@
 @import "tailwindcss";
-@config "../../tailwind.config.ts";
 
 :root {
   --background: #050508;
@@ -38,19 +37,4 @@ body {
   transform: translateZ(0);
   backface-visibility: hidden;
   will-change: transform, opacity;
-}
-
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
-  border-radius: 9999px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.25);
 }
