@@ -1,6 +1,6 @@
 // src/app/layout.tsx
 import type { Metadata } from "next";
-import { Inter, Plus_Jakarta_Sans } from "next/font/google";
+import { Inter, Plus_Jakarta_Sans, Roboto_Mono } from "next/font/google";
 import "./globals.css";
 
 const inter = Inter({
@@ -16,9 +16,18 @@ const jakarta = Plus_Jakarta_Sans({
   display: "swap",
 });
 
+const robotoMono = Roboto_Mono({
+  subsets: ["latin", "vietnamese"],
+  variable: "--font-roboto-mono",
+  display: "swap",
+});
+
 export const metadata: Metadata = {
-  title: "AuraSync — Social Lossless Listening Desktop",
-  description: "PC-first synchronized social music workspace",
+  title: "AuraSound — Hi-Fi Lossless Social Audio Workspace",
+  description: "A Hi-Fi lossless social audio workspace for music listeners.",
+  icons: {
+    icon: "/favicon.ico",
+  },
 };
 
 export default function RootLayout({
@@ -27,7 +36,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="vi" className={`${inter.variable} ${jakarta.variable} dark`}>
+    <html lang="vi" className={`${inter.variable} ${jakarta.variable} ${robotoMono.variable} dark`}>
       <body className="font-sans h-screen w-screen overflow-hidden bg-[#050508]">
         {children}
       </body>

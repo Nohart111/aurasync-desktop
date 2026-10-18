@@ -13,7 +13,7 @@ const config: Config = {
       fontFamily: {
         sans: ["var(--font-inter)", "system-ui", "sans-serif"],
         display: ["var(--font-jakarta)", "system-ui", "sans-serif"],
-        mono: ["ui-monospace", "SFMono-Regular", "monospace"],
+        mono: ["var(--font-roboto-mono)", "ui-monospace", "monospace"],
       },
       colors: {
         obsidian: {

@@ -8,11 +8,9 @@ import {
   LoaderCircle,
   Pause,
   Play,
-  Radio,
   Search,
   SkipBack,
   SkipForward,
-  Sparkles,
   Upload,
   Volume2,
   VolumeX,
@@ -370,16 +368,47 @@ export default function DesktopHome() {
       />
 
       <header className="glass-panel flex items-center justify-between rounded-2xl px-6 py-4">
-        <div className="flex items-center gap-3">
-          <div className="flex gap-2">
-            <span className="h-3 w-3 rounded-full bg-rose-500/80" />
-            <span className="h-3 w-3 rounded-full bg-amber-500/80" />
-            <span className="h-3 w-3 rounded-full bg-emerald-500/80" />
+        <div className="flex min-w-0 items-center gap-4">
+          <div className="hidden items-center gap-2.5 border-r border-white/10 pr-4 sm:flex">
+            <div className="flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full border border-emerald-200/40 bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]" />
+              <span className="font-mono text-[9px] tracking-wider text-zinc-500 uppercase select-none">PWR</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="h-2 w-2 animate-pulse rounded-full border border-cyan-100/40 bg-neon-cyan shadow-[0_0_8px_rgba(0,240,255,0.6)]" />
+              <span className="font-mono text-[9px] tracking-wider text-zinc-500 uppercase select-none">SYNC</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full border border-amber-100/40 bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.6)]" />
+              <span className="font-mono text-[9px] tracking-wider text-zinc-500 uppercase select-none">DAC</span>
+            </div>
           </div>
-          <h1 className="font-display text-lg font-bold tracking-tight text-white flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-neon-cyan" />
-            AuraSync Desktop
-          </h1>
+          <div className="flex min-w-0 items-center gap-3">
+            <h1 className="flex min-w-0 items-baseline whitespace-nowrap">
+              <span className="font-mono font-black text-sm tracking-widest text-white">AURASOUND</span>
+              <span className="ml-1.5 font-mono text-[11px] tracking-wider text-neon-cyan/70">{"// SYS.01"}</span>
+            </h1>
+            <div className="hidden h-8 items-end gap-[3px] sm:flex" aria-label="Audio signal activity">
+              {[8, 11, 14, 10, 12].map((height, index) => (
+                <motion.span
+                  key={index}
+                  className="w-[3px] origin-bottom rounded-full bg-neon-cyan shadow-[0_0_5px_rgba(0,240,255,0.55)]"
+                  style={{ height }}
+                  animate={{ scaleY: [0.45, 1, 0.62, 0.9, 0.45] }}
+                  transition={{
+                    duration: 0.9 + index * 0.12,
+                    repeat: Infinity,
+                    ease: "easeInOut",
+                    delay: index * 0.11,
+                  }}
+                />
+              ))}
+            </div>
+            <div className="hidden items-center gap-1.5 rounded border border-white/10 bg-white/[0.03] px-2 py-0.5 font-mono text-[10px] tracking-wider text-zinc-400 lg:flex">
+              <span>24-BIT / 96kHz</span>
+              <span className="font-bold text-neon-cyan">LOSSLESS</span>
+            </div>
+          </div>
         </div>
         <div className="relative flex items-center gap-3">
           <label className="relative hidden w-64 items-center md:flex">
@@ -406,10 +435,6 @@ export default function DesktopHome() {
             <span className="hidden sm:inline">Thêm Nhạc Của Bạn</span>
             <span className="sm:hidden">Thêm nhạc</span>
           </button>
-          <span className="flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-400 border border-emerald-500/20">
-            <Radio className="h-3 w-3 animate-pulse" />
-            Lossless Engine Live
-          </span>
           {isAddPanelOpen && (
             <div className="glass-acrylic absolute right-0 top-full z-50 mt-3 w-[min(24rem,calc(100vw-2rem))] rounded-xl p-4 shadow-glass-dock">
               <div className="mb-4 flex items-center justify-between">
