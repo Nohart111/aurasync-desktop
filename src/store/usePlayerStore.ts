@@ -9,10 +9,15 @@ interface PlayerState {
   nextTrackPreview: Track | null;
   queueItems: Track[];
   isPlaying: boolean;
+  isBuffering: boolean;
   volume: number;
+  duration: number;
   setPlaying: (playing: boolean) => void;
+  setBuffering: (buffering: boolean) => void;
+  setDuration: (duration: number) => void;
   setVolume: (vol: number) => void;
   enqueueTrack: (track: Track) => void;
+  playTrackNow: (track: Track) => void;
   playNextInQueue: (track: Track) => void;
   removeTrackFromQueue: (trackId: string) => void;
   jumpToTrack: (trackId: string) => void;
@@ -25,9 +30,13 @@ export const usePlayerStore = create<PlayerState>((set) => ({
   nextTrackPreview: null,
   queueItems: [],
   isPlaying: false,
+  isBuffering: false,
   volume: 0.85,
+  duration: 0,
 
   setPlaying: (isPlaying) => set({ isPlaying }),
+  setBuffering: (isBuffering) => set({ isBuffering }),
+  setDuration: (duration) => set({ duration }),
   setVolume: (volume) => set({ volume }),
 
   enqueueTrack: (track) => {
@@ -36,6 +45,18 @@ export const usePlayerStore = create<PlayerState>((set) => ({
       currentTrack: internalQueue.getCurrent(),
       nextTrackPreview: internalQueue.peekNext(),
       queueItems: internalQueue.toArray(),
+    });
+  },
+
+  playTrackNow: (track) => {
+    internalQueue.enqueue(track);
+    const currentTrack = internalQueue.jumpTo(track.id);
+    set({
+      currentTrack,
+      nextTrackPreview: internalQueue.peekNext(),
+      queueItems: internalQueue.toArray(),
+      isPlaying: true,
+      duration: currentTrack?.duration ?? 0,
     });
   },
 
@@ -62,6 +83,7 @@ export const usePlayerStore = create<PlayerState>((set) => ({
       currentTrack: track,
       nextTrackPreview: internalQueue.peekNext(),
       isPlaying: Boolean(track),
+      duration: track?.duration ?? 0,
     });
   },
 
@@ -71,6 +93,7 @@ export const usePlayerStore = create<PlayerState>((set) => ({
       currentTrack: next,
       nextTrackPreview: internalQueue.peekNext(),
       isPlaying: Boolean(next),
+      duration: next?.duration ?? 0,
     });
     return next;
   },
@@ -81,6 +104,7 @@ export const usePlayerStore = create<PlayerState>((set) => ({
       currentTrack: prev,
       nextTrackPreview: internalQueue.peekNext(),
       isPlaying: Boolean(prev),
+      duration: prev?.duration ?? 0,
     });
     return prev;
   },

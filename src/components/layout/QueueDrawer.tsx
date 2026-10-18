@@ -8,11 +8,11 @@ import { usePlayerStore } from "@/store/usePlayerStore";
 interface QueueDrawerProps {
   isOpen: boolean;
   onClose: () => void;
+  onPlayTrack: (track: import("@/core/algorithms/DoublyLinkedQueue").Track) => void;
 }
 
-export function QueueDrawer({ isOpen, onClose }: QueueDrawerProps) {
-  const { queueItems, currentTrack, jumpToTrack, removeTrackFromQueue } =
-    usePlayerStore();
+export function QueueDrawer({ isOpen, onClose, onPlayTrack }: QueueDrawerProps) {
+  const { queueItems, currentTrack, removeTrackFromQueue } = usePlayerStore();
 
   return (
     <AnimatePresence>
@@ -27,7 +27,7 @@ export function QueueDrawer({ isOpen, onClose }: QueueDrawerProps) {
             damping: 34,
             mass: 0.8,
           }}
-          className="glass-acrylic gpu-accelerated fixed right-4 top-4 bottom-28 z-40 flex w-96 flex-col rounded-2xl p-5"
+          className="glass-acrylic gpu-accelerated fixed right-4 top-4 bottom-28 z-40 flex w-96 max-w-[calc(100vw-2rem)] flex-col rounded-2xl p-5"
         >
           <div className="flex items-center justify-between border-b border-glass-border pb-4">
             <div className="flex items-center gap-2.5">
@@ -51,7 +51,15 @@ export function QueueDrawer({ isOpen, onClose }: QueueDrawerProps) {
                 <motion.div
                   layout="position"
                   key={track.id}
-                  onClick={() => jumpToTrack(track.id)}
+                  onClick={() => onPlayTrack(track)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      onPlayTrack(track);
+                    }
+                  }}
+                  role="button"
+                  tabIndex={0}
                   className={`group flex cursor-pointer items-center justify-between rounded-xl p-2.5 transition ${
                     isPlaying
                       ? "bg-neon-violet/20 border border-neon-violet/40 shadow-neon-violet"

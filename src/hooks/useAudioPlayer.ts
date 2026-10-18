@@ -3,6 +3,7 @@
 import { useEffect, useRef, useCallback } from "react";
 import { useMotionValue } from "framer-motion";
 import { AudioEngine } from "@/core/audio/AudioEngine";
+import type { Track } from "@/core/algorithms/DoublyLinkedQueue";
 import { usePlayerStore } from "@/store/usePlayerStore";
 
 export function useAudioPlayer() {
@@ -11,67 +12,189 @@ export function useAudioPlayer() {
     isPlaying,
     volume,
     setPlaying,
+    setBuffering,
+    setDuration,
     advanceNext,
+    playTrackNow: selectTrackNow,
   } = usePlayerStore();
 
   const progressMV = useMotionValue(0);
   const currentTimeMV = useMotionValue(0);
   const rafIdRef = useRef<number | null>(null);
-  const lastTrackIdRef = useRef<string | null>(null);
+  const lastStreamUrlRef = useRef<string | null>(null);
+  const playbackRequestRef = useRef(0);
+  const skipNextPlaybackEffectRef = useRef(false);
 
   const syncFrame = useCallback(() => {
-    const engine = AudioEngine.getInstance();
-    const current = engine.getCurrentTime();
-    const total = engine.getDuration();
+    const updateFrame = () => {
+      const engine = AudioEngine.getInstance();
+      const current = engine.getCurrentTime();
+      const total = engine.getDuration();
 
-    currentTimeMV.set(current);
-    progressMV.set(total > 0 ? current / total : 0);
+      currentTimeMV.set(current);
+      progressMV.set(total > 0 ? current / total : 0);
 
-    rafIdRef.current = requestAnimationFrame(syncFrame);
+      rafIdRef.current = requestAnimationFrame(updateFrame);
+    };
+
+    updateFrame();
   }, [currentTimeMV, progressMV]);
 
   useEffect(() => {
     const engine = AudioEngine.getInstance();
-    return engine.onEnded(() => {
+    const unsubscribeEnded = engine.onEnded(advanceNext);
+    const unsubscribeMetadata = engine.onLoadedMetadata(setDuration);
+    const unsubscribeBuffering = engine.onBufferingChange(setBuffering);
+    const unsubscribeError = engine.onError(() => {
+      ++playbackRequestRef.current;
+      skipNextPlaybackEffectRef.current = false;
+      setBuffering(false);
+      setPlaying(false);
       advanceNext();
     });
-  }, [advanceNext]);
 
-  // Quản lý Play / Pause tập trung, tránh xung đột async
+    return () => {
+      unsubscribeEnded();
+      unsubscribeMetadata();
+      unsubscribeBuffering();
+      unsubscribeError();
+    };
+  }, [advanceNext, setBuffering, setDuration, setPlaying]);
+
   useEffect(() => {
-    if (!currentTrack) return;
     const engine = AudioEngine.getInstance();
 
-    if (lastTrackIdRef.current !== currentTrack.id) {
-      lastTrackIdRef.current = currentTrack.id;
+    if (!currentTrack) {
+      ++playbackRequestRef.current;
+      lastStreamUrlRef.current = null;
+      engine.pause();
+      setBuffering(false);
+      return;
+    }
+
+    if (
+      skipNextPlaybackEffectRef.current &&
+      lastStreamUrlRef.current === currentTrack.streamUrl
+    ) {
+      skipNextPlaybackEffectRef.current = false;
+      return;
+    }
+
+    const requestId = ++playbackRequestRef.current;
+
+    if (lastStreamUrlRef.current !== currentTrack.streamUrl) {
+      lastStreamUrlRef.current = currentTrack.streamUrl;
+      setDuration(currentTrack.duration);
+      setBuffering(true);
       engine
         .loadAndPlay(currentTrack.streamUrl)
-        .then(() => setPlaying(true))
+        .then(() => {
+          if (playbackRequestRef.current === requestId) {
+            setPlaying(true);
+            setBuffering(false);
+          }
+        })
         .catch((err) => {
-          console.error("Playback error:", err);
-          setPlaying(false);
+          if (playbackRequestRef.current === requestId) {
+            console.error("Playback error:", err);
+            setBuffering(false);
+            setPlaying(false);
+          }
         });
     } else {
       if (isPlaying) {
         engine.play().catch((err) => {
-          console.error("Resume error:", err);
-          setPlaying(false);
+          if (playbackRequestRef.current === requestId) {
+            console.error("Resume error:", err);
+            setBuffering(false);
+            setPlaying(false);
+          }
         });
       } else {
         engine.pause();
+        setBuffering(false);
       }
     }
-  }, [currentTrack, isPlaying, setPlaying]);
+  }, [currentTrack, isPlaying, setBuffering, setDuration, setPlaying]);
+
+  const startTrackFromGesture = useCallback(
+    (track: Track) => {
+      const engine = AudioEngine.getInstance();
+      const playerState = usePlayerStore.getState();
+      if (
+        playerState.currentTrack?.id === track.id &&
+        playerState.isPlaying
+      ) {
+        return;
+      }
+      const requestId = ++playbackRequestRef.current;
+      lastStreamUrlRef.current = track.streamUrl;
+      skipNextPlaybackEffectRef.current = true;
+      setDuration(track.duration);
+      setBuffering(true);
+
+      const playPromise = engine.loadAndPlay(track.streamUrl);
+      selectTrackNow(track);
+      playPromise
+        .then(() => {
+          if (playbackRequestRef.current === requestId) {
+            setPlaying(true);
+            setBuffering(false);
+          }
+        })
+        .catch((err) => {
+          if (playbackRequestRef.current === requestId) {
+            console.error("Playback error:", err);
+            setBuffering(false);
+            setPlaying(false);
+          }
+        });
+    },
+    [selectTrackNow, setBuffering, setDuration, setPlaying]
+  );
+
+  const togglePlaybackFromGesture = useCallback(() => {
+    const playerState = usePlayerStore.getState();
+    const engine = AudioEngine.getInstance();
+    const requestId = ++playbackRequestRef.current;
+
+    if (playerState.isPlaying) {
+      skipNextPlaybackEffectRef.current = false;
+      engine.pause();
+      setBuffering(false);
+      setPlaying(false);
+      return;
+    }
+
+    if (!playerState.currentTrack) return;
+
+    skipNextPlaybackEffectRef.current = true;
+    setBuffering(true);
+    setPlaying(true);
+    engine
+      .play()
+      .then(() => {
+        if (playbackRequestRef.current === requestId) setBuffering(false);
+      })
+      .catch((err) => {
+        if (playbackRequestRef.current === requestId) {
+          console.error("Resume error:", err);
+          setBuffering(false);
+          setPlaying(false);
+        }
+      });
+  }, [setBuffering, setPlaying]);
 
   // Vòng lặp cập nhật tiến trình 60fps
   useEffect(() => {
     if (isPlaying) {
       rafIdRef.current = requestAnimationFrame(syncFrame);
-    } else {
-      if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
     }
     return () => {
-      if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
+      if (rafIdRef.current !== null) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
+      }
     };
   }, [isPlaying, syncFrame]);
 
@@ -87,5 +210,7 @@ export function useAudioPlayer() {
     progressMV,
     currentTimeMV,
     seekTo,
+    startTrackFromGesture,
+    togglePlaybackFromGesture,
   };
 }
