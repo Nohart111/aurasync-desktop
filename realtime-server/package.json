@@ -1,24 +1,21 @@
 {
   "name": "realtime-server",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-"scripts": {
-  "build": "tsc",
-  "start": "npx tsx src/server.ts"
-}
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
+  "description": "AuraSync Realtime Socket.io Server",
+  "main": "src/server.ts",
+  "scripts": {
+    "build": "tsc",
+    "start": "npx tsx src/server.ts"
+  },
   "dependencies": {
-    "cors": "^2.8.6",
-    "dotenv": "^18.0.8",
-    "socket.io": "^4.8.4"
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "socket.io": "^4.7.5"
   },
   "devDependencies": {
-    "@types/node": "^26.6.5",
-    "tsx": "^4.23.15",
-    "typescript": "^7.0.2"
+    "@types/cors": "^2.8.17",
+    "@types/node": "^20.14.0",
+    "tsx": "^4.11.0",
+    "typescript": "^5.4.5"
   }
 }
