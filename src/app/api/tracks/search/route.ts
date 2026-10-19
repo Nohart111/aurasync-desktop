@@ -1,81 +1,85 @@
-import { NextResponse } from "next/server";
-import { PlaylistSearchEngine } from "@/core/algorithms/PlaylistSearchEngine";
-import type { Track } from "@/core/algorithms/DoublyLinkedQueue";
-import { getR2Catalog } from "@/lib/r2-client";
+﻿import { NextResponse } from "next/server";
+import fs from "fs";
+import path from "path";
 
-interface ItunesSearchResult {
-  trackId: number;
-  trackName: string;
-  artistName: string;
-  collectionName?: string;
-  trackTimeMillis?: number;
-  artworkUrl100?: string;
-  previewUrl?: string;
-}
+export async function GET() {
+  const token = process.env.GITHUB_TOKEN;
+  const owner = process.env.GITHUB_OWNER || "Nohart111";
+  const repo = process.env.GITHUB_REPO || "aurasound-music-data";
+  const tag = process.env.GITHUB_RELEASE_TAG || "tracks-v1";
 
-async function getExternalSuggestions(query: string): Promise<Array<Track & {
-  isCachedOnR2: false;
-  externalStreamUrl?: string;
-}>> {
+  const trackMap = new Map();
+  let debugInfo: any = {};
+
+  // Đọc danh mục cục bộ
   try {
-    const endpoint = new URL("https://itunes.apple.com/search");
-    endpoint.searchParams.set("term", query);
-    endpoint.searchParams.set("media", "music");
-    endpoint.searchParams.set("entity", "song");
-    endpoint.searchParams.set("limit", "10");
-
-    const response = await fetch(endpoint, {
-      cache: "no-store",
-      signal: AbortSignal.timeout(7000),
-    });
-    if (!response.ok) return [];
-    const payload = (await response.json()) as { results?: ItunesSearchResult[] };
-
-    return (payload.results ?? []).map((song) => ({
-      id: `itunes-${song.trackId}`,
-      title: song.trackName,
-      artist: song.artistName,
-      album: song.collectionName || "iTunes preview",
-      duration: Math.round((song.trackTimeMillis || 0) / 1000),
-      bpm: 0,
-      streamUrl: song.previewUrl || "",
-      externalStreamUrl: song.previewUrl || undefined,
-      coverUrl: song.artworkUrl100?.replace("100x100bb", "600x600bb") || "",
-      dominantColors: ["#FF2A85", "#00F0FF"],
-      isCachedOnR2: false as const,
-    }));
-  } catch {
-    return [];
-  }
-}
-
-export async function GET(request: Request) {
-  const query = new URL(request.url).searchParams.get("q")?.trim() || "";
-  if (query.length > 180) {
-    return NextResponse.json({ tracks: [], error: "Search query is too long." }, { status: 400 });
+    const catalogPath = path.join(process.cwd(), "data", "catalog.json");
+    if (fs.existsSync(catalogPath)) {
+      const raw = fs.readFileSync(catalogPath, "utf-8");
+      const localList = JSON.parse(raw);
+      if (Array.isArray(localList)) {
+        localList.forEach((t) => trackMap.set(t.id, t));
+      }
+    }
+  } catch (err) {
+    debugInfo.localError = (err as Error).message;
   }
 
+  // Đồng bộ từ GitHub Releases
   try {
-    const catalog = await getR2Catalog();
-    const searchEngine = new PlaylistSearchEngine();
-    searchEngine.indexTracks(catalog);
-    const cachedTracks = searchEngine.searchByPrefix(query).map((track) => ({
-      ...track,
-      isCachedOnR2: true as const,
-    }));
-
-    if (cachedTracks.length >= 5 || query.length === 0) {
-      return NextResponse.json({ tracks: cachedTracks });
+    const headers: Record<string, string> = {
+      Accept: "application/vnd.github+json",
+      "User-Agent": "AuraSound-App",
+    };
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
     }
 
-    const suggestions = await getExternalSuggestions(query);
-    const cachedIds = new Set(cachedTracks.map((track) => track.id));
-    const uniqueSuggestions = suggestions.filter((track) => !cachedIds.has(track.id));
-    return NextResponse.json({ tracks: [...cachedTracks, ...uniqueSuggestions] });
-  } catch (error) {
-    return NextResponse.json(
-      { tracks: [], error: error instanceof Error ? error.message : "Track search failed." },
-      { status: 500 }
+    const res = await fetch(
+      `https://api.github.com/repos/${owner}/${repo}/releases/tags/${tag}`,
+      { headers, cache: "no-store" }
     );
+
+    debugInfo.githubStatus = res.status;
+
+    if (res.ok) {
+      const releaseData = await res.json();
+      const assets = releaseData.assets || [];
+      debugInfo.assetsFound = assets.length;
+
+      assets.forEach((asset: any) => {
+        const id = String(asset.id);
+        const rawName = asset.name.replace(/^\d+_/, "").replace(/\.[^/.]+$/, "");
+        const cleanTitle = decodeURIComponent(rawName).replace(/_/g, " ");
+
+        if (!trackMap.has(id)) {
+          trackMap.set(id, {
+            id: id,
+            title: cleanTitle || asset.name,
+            artist: "Lossless Audio",
+            album: "GitHub CDN",
+            duration: 180,
+            bpm: 120,
+            streamUrl: asset.browser_download_url,
+            coverUrl: "",
+            dominantColors: ["#8A2BE2", "#00F0FF"],
+          });
+        }
+      });
+    } else {
+      debugInfo.githubError = await res.text();
+    }
+  } catch (err) {
+    debugInfo.fetchError = (err as Error).message;
   }
+
+  const tracks = Array.from(trackMap.values());
+
+  return new NextResponse(JSON.stringify({ tracks, debug: debugInfo }), {
+    status: 200,
+    headers: {
+      "Content-Type": "application/json",
+      "Cache-Control": "no-store, no-cache, must-revalidate",
+    },
+  });
 }

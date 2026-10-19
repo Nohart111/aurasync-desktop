@@ -21,10 +21,12 @@ export function SidebarNav() {
     if (!file) return;
 
     setIsUploading(true);
+    const trackTitle = file.name.replace(/\.[^/.]+$/, "");
+
     try {
       const formData = new FormData();
       formData.append("file", file);
-      formData.append("title", file.name.replace(/\.[^/.]+$/, ""));
+      formData.append("title", trackTitle);
       formData.append("artist", "Nghệ sĩ chưa rõ");
       formData.append("duration", "180");
 
@@ -33,10 +35,16 @@ export function SidebarNav() {
         body: formData,
       });
 
-      if (!res.ok) throw new Error("Tải bài hát lên thất bại");
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        throw new Error(data?.error || `Lỗi máy chủ (HTTP ${res.status})`);
+      }
+
+      alert(`🎉 Đã tải bài hát "${trackTitle}" lên CDN GitHub thành công!`);
       window.location.reload();
     } catch (err) {
-      alert("Lỗi tải lên: " + (err as Error).message);
+      alert("⚠️ " + (err as Error).message);
     } finally {
       setIsUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
