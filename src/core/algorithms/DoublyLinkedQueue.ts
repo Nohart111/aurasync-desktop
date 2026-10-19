@@ -9,6 +9,7 @@ export interface Track {
   streamUrl: string; // URL từ Cloudflare R2 hỗ trợ HTTP Range
   coverUrl: string;
   dominantColors: [string, string];
+  youtubeVideoId?: string;
 }
 
 export class QueueNode {

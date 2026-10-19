@@ -55,7 +55,7 @@ const DEMO_TRACKS: Track[] = [
 const playlistSearch = new PlaylistSearchEngine();
 playlistSearch.indexTracks(DEMO_TRACKS);
 
-type SearchSource = "library" | "audius" | "apple";
+type SearchSource = "library" | "audius" | "apple" | "youtube";
 
 interface AudiusSearchTrack {
   id: string | number;
@@ -75,12 +75,82 @@ interface AppleSearchTrack {
   artworkUrl100?: string;
 }
 
+interface PipedSearchResult {
+  type?: string;
+  url?: string;
+  videoId?: string;
+  title?: string;
+  uploaderName?: string;
+  duration?: number;
+  thumbnail?: string;
+}
+
+const YOUTUBE_NOISE_PATTERN =
+  /\b(?:cover|karaoke|beat|reaction|slowed|reverb|1\s*hour|1h)\b|nhạc\s*chế/i;
+
+function getPipedVideoId(result: PipedSearchResult): string | null {
+  if (result.videoId) return result.videoId;
+  if (!result.url) return null;
+
+  try {
+    return new URL(result.url, "https://www.youtube.com").searchParams.get("v");
+  } catch {
+    return null;
+  }
+}
+
+async function searchPiped(query: string, signal?: AbortSignal) {
+  const params = new URLSearchParams({
+    type: "search",
+    q: query,
+    filter: "music_songs",
+  });
+  const response = await fetch(`/api/piped?${params}`, { signal });
+  if (!response.ok) throw new Error("Piped search is temporarily unavailable.");
+    const payload = (await response.json()) as
+      | PipedSearchResult[]
+      | { items?: PipedSearchResult[] };
+    return Array.isArray(payload) ? { items: payload } : payload;
+}
+
+function chooseOfficialResult(
+  results: PipedSearchResult[],
+  track: Track
+): PipedSearchResult | null {
+  const normalizedTitle = track.title.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  const titleTerms = normalizedTitle.split(/\s+/).filter((term) => term.length > 2);
+  const artistTerms = track.artist.toLocaleLowerCase().split(/[^\p{L}\p{N}]+/u).filter((term) => term.length > 2);
+  const candidates = results.filter((result) => {
+    const duration = result.duration ?? 0;
+    return (
+      result.type === "stream" &&
+      getPipedVideoId(result) !== null &&
+      duration >= 120 &&
+      duration <= 420 &&
+      !YOUTUBE_NOISE_PATTERN.test(result.title ?? "")
+    );
+  });
+
+  candidates.sort((left, right) => score(right) - score(left));
+  return candidates[0] ?? null;
+
+  function score(result: PipedSearchResult) {
+    const title = (result.title ?? "").toLocaleLowerCase();
+    const uploader = (result.uploaderName ?? "").toLocaleLowerCase();
+    const titleMatches = titleTerms.filter((term) => title.includes(term)).length;
+    const artistMatches = artistTerms.filter((term) => title.includes(term) || uploader.includes(term)).length;
+    const officialChannel = /\b(topic|official)\b/i.test(uploader);
+    return titleMatches * 5 + artistMatches * 3 + (officialChannel ? 50 : 0);
+  }
+}
+
 const FALLBACK_COVER =
   "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&q=80";
 const SOURCE_TABS: { id: SearchSource; label: string }[] = [
   { id: "library", label: "Thư viện Mặc định" },
   { id: "audius", label: "Nhạc Full (Audius)" },
   { id: "apple", label: "Khám phá V-Pop/US-UK (Apple Music)" },
+  { id: "youtube", label: "YouTube Music" },
 ];
 
 function updateSpotlightTarget(event: ReactPointerEvent<HTMLElement>) {
@@ -107,11 +177,14 @@ export default function DesktopHome() {
     loading: boolean;
     error: string;
   }>({ key: "", loading: false, error: "" });
+  const [playbackError, setPlaybackError] = useState("");
+  const [officialTrackUrl, setOfficialTrackUrl] = useState("");
   const [isAddPanelOpen, setIsAddPanelOpen] = useState(false);
   const [directUrl, setDirectUrl] = useState("");
   const [addError, setAddError] = useState("");
   const [addedMessage, setAddedMessage] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const streamResolutionRequestRef = useRef(0);
   const previousVolumeRef = useRef(0.85);
   const {
     currentTrack,
@@ -179,9 +252,38 @@ export default function DesktopHome() {
             dominantColors: ["#8A2BE2", "#00F0FF"],
           }));
           setOnlineTracks(tracks);
+        } else if (searchSource === "youtube") {
+          const payload = await searchPiped(query, controller.signal);
+          const tracks = (payload.items ?? [])
+            .filter((result) => {
+              const duration = result.duration ?? 0;
+              return (
+                result.type === "stream" &&
+                duration >= 120 &&
+                duration <= 420 &&
+                !YOUTUBE_NOISE_PATTERN.test(result.title ?? "") &&
+                Boolean(getPipedVideoId(result))
+              );
+            })
+            .map((result): Track => {
+              const videoId = getPipedVideoId(result)!;
+              return {
+                id: `youtube-${videoId}`,
+                youtubeVideoId: videoId,
+                title: result.title || "YouTube track",
+                artist: result.uploaderName || "YouTube artist",
+                album: "YouTube Music",
+                duration: result.duration ?? 0,
+                bpm: 0,
+                streamUrl: "",
+                coverUrl: result.thumbnail || FALLBACK_COVER,
+                dominantColors: ["#FF2A85", "#00F0FF"],
+              };
+            });
+          setOnlineTracks(tracks);
         } else {
           const response = await fetch(
-            `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&media=music&entity=song&limit=12`,
+            `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&entity=song&limit=15`,
             { signal: controller.signal }
           );
           if (!response.ok) throw new Error("Apple Music search request failed.");
@@ -189,16 +291,14 @@ export default function DesktopHome() {
           const payload = (await response.json()) as {
             results?: AppleSearchTrack[];
           };
-          const tracks = (payload.results ?? [])
-            .filter((track) => Boolean(track.previewUrl))
-            .map((track): Track => ({
+          const tracks = (payload.results ?? []).map((track): Track => ({
               id: `itunes-${track.trackId}`,
               title: track.trackName,
               artist: track.artistName,
               album: track.collectionName || "Apple Music preview",
               duration: Math.floor((track.trackTimeMillis ?? 0) / 1000),
               bpm: 0,
-              streamUrl: track.previewUrl!,
+              streamUrl: track.previewUrl || "",
               coverUrl:
                 track.artworkUrl100?.replace("100x100bb", "600x600bb") ||
                 FALLBACK_COVER,
@@ -295,6 +395,49 @@ export default function DesktopHome() {
       setVolume(0);
     } else {
       setVolume(previousVolumeRef.current || 0.85);
+    }
+  };
+
+  const handleTrackPlay = async (track: Track) => {
+    const requestId = ++streamResolutionRequestRef.current;
+    setPlaybackError("");
+    setOfficialTrackUrl("");
+
+    if (track.youtubeVideoId) {
+      window.open(
+        `https://www.youtube.com/watch?v=${encodeURIComponent(track.youtubeVideoId)}`,
+        "_blank",
+        "noopener,noreferrer"
+      );
+      return;
+    }
+
+    if (!track.id.startsWith("itunes-")) {
+      startTrackFromGesture(track);
+      return;
+    }
+
+    if (track.streamUrl) startTrackFromGesture(track);
+    else {
+      setPlaybackError("Bài này không có preview iTunes. Có thể mở bản chính thức trên YouTube nếu tìm thấy.");
+    }
+
+    try {
+      const query = `${track.artist} ${track.title} Official Audio`;
+      const payload = await searchPiped(query);
+      const result = chooseOfficialResult(payload.items ?? [], track);
+      const videoId = result ? getPipedVideoId(result) : null;
+      if (!result || !videoId) throw new Error("No clean official audio result was found.");
+      if (requestId !== streamResolutionRequestRef.current) return;
+      setOfficialTrackUrl(`https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`);
+    } catch (error) {
+      if (requestId === streamResolutionRequestRef.current) {
+        setPlaybackError(track.streamUrl
+          ? "Không tìm được video Official Audio phù hợp; preview iTunes vẫn đang phát."
+          : error instanceof Error
+            ? error.message
+            : "Không thể tìm video Official Audio trên Piped.");
+      }
     }
   };
 
@@ -550,7 +693,7 @@ export default function DesktopHome() {
           ))}
         </div>
         {searchSource !== "library" && !searchQuery.trim() && (
-          <p className="mb-4 text-xs text-zinc-500">Nhập từ khóa để tìm nhạc trên {searchSource === "audius" ? "Audius" : "Apple Music"}.</p>
+          <p className="mb-4 text-xs text-zinc-500">Nhập từ khóa để tìm nhạc trên {searchSource === "audius" ? "Audius" : searchSource === "apple" ? "Apple Music" : "YouTube Music"}.</p>
         )}
         {isSearchLoading && (
           <p role="status" className="mb-4 flex items-center gap-2 text-xs text-zinc-400">
@@ -559,14 +702,25 @@ export default function DesktopHome() {
           </p>
         )}
         {searchError && <p role="alert" className="mb-4 text-xs text-rose-400">{searchError}</p>}
+        {playbackError && <p role="alert" className="mb-4 text-xs text-amber-300">{playbackError}</p>}
+        {officialTrackUrl && (
+          <a
+            href={officialTrackUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="mb-4 inline-flex items-center rounded-lg border border-neon-cyan/30 bg-neon-cyan/10 px-3 py-2 text-xs font-medium text-neon-cyan transition hover:bg-neon-cyan/20"
+          >
+            Mở Official Audio trên YouTube
+          </a>
+        )}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {visibleTracks.map((t) => (
             <div
               key={t.id}
-              onClick={() => startTrackFromGesture(t)}
+              onClick={() => handleTrackPlay(t)}
               onPointerMove={updateSpotlightTarget}
               onKeyDown={(event) => {
-                if (event.key === "Enter") startTrackFromGesture(t);
+                if (event.key === "Enter") handleTrackPlay(t);
               }}
               role="button"
               tabIndex={0}
@@ -580,7 +734,7 @@ export default function DesktopHome() {
               <button 
                 onClick={(e) => {
                   e.stopPropagation();
-                  startTrackFromGesture(t);
+                  handleTrackPlay(t);
                 }}
                 className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-neon-cyan text-obsidian-950 shadow-neon-cyan transition hover:scale-110 active:scale-95"
               >
@@ -693,7 +847,7 @@ export default function DesktopHome() {
       <QueueDrawer
         isOpen={isQueueOpen}
         onClose={() => setIsQueueOpen(false)}
-        onPlayTrack={startTrackFromGesture}
+        onPlayTrack={handleTrackPlay}
       />
     </main>
   );
