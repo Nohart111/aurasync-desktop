@@ -2,11 +2,20 @@
 "use client";
 
 import React, { useRef, useState } from "react";
-import { Music, PlusCircle, Loader2 } from "lucide-react";
+import {
+  Compass,
+  Library,
+  Users,
+  PlusCircle,
+  Loader2,
+  Disc3,
+  Sparkles,
+} from "lucide-react";
 
 export function SidebarNav() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [activeTab, setActiveTab] = useState("library");
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -18,7 +27,7 @@ export function SidebarNav() {
       formData.append("file", file);
       formData.append("title", file.name.replace(/\.[^/.]+$/, ""));
       formData.append("artist", "Nghệ sĩ chưa rõ");
-      formData.append("duration", "180"); // fallback giây
+      formData.append("duration", "180");
 
       const res = await fetch("/api/tracks/upload", {
         method: "POST",
@@ -36,39 +45,111 @@ export function SidebarNav() {
   };
 
   return (
-    <aside className="glass-panel flex w-64 flex-col border-r border-glass-border p-5">
-      <div className="flex items-center gap-2.5 pb-6">
-        <Music className="h-6 w-6 text-neon-cyan" />
-        <span className="font-display text-lg font-bold tracking-tight text-white">
-          AuraSound
-        </span>
+    <aside className="glass-panel flex h-full w-64 flex-col justify-between border-r border-glass-border p-5 select-none shrink-0 z-20">
+      <div className="space-y-6">
+        {/* 3 nút điều khiển cửa sổ macOS (Đỏ - Vàng - Xanh) */}
+        <div className="flex items-center gap-2">
+          <div className="h-3 w-3 rounded-full bg-[#FF5F56] shadow-sm hover:opacity-80 cursor-pointer" />
+          <div className="h-3 w-3 rounded-full bg-[#FFBD2E] shadow-sm hover:opacity-80 cursor-pointer" />
+          <div className="h-3 w-3 rounded-full bg-[#27C93F] shadow-sm hover:opacity-80 cursor-pointer" />
+        </div>
+
+        {/* Logo AuraSound & Huy hiệu Lossless */}
+        <div className="flex items-center gap-2.5 pt-1">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-tr from-neon-violet to-neon-cyan shadow-neon-cyan">
+            <Disc3 className="h-5 w-5 text-black animate-spin" style={{ animationDuration: "8s" }} />
+          </div>
+          <div>
+            <div className="flex items-center gap-1.5">
+              <span className="font-display text-base font-bold tracking-tight text-white">
+                AuraSound
+              </span>
+              <span className="rounded bg-neon-cyan/20 px-1.5 py-0.5 text-[9px] font-bold text-neon-cyan">
+                LOSSLESS
+              </span>
+            </div>
+            <p className="text-[11px] text-zinc-400">Desktop Audio Engine</p>
+          </div>
+        </div>
+
+        {/* Menu chuyển trang */}
+        <nav className="space-y-1">
+          <button
+            onClick={() => setActiveTab("discover")}
+            className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition ${
+              activeTab === "discover"
+                ? "bg-white/10 text-white shadow-sm"
+                : "text-zinc-400 hover:bg-white/5 hover:text-zinc-200"
+            }`}
+          >
+            <Compass className="h-4 w-4 text-neon-cyan" />
+            <span>Khám phá</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("library")}
+            className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition ${
+              activeTab === "library"
+                ? "bg-white/10 text-white shadow-sm"
+                : "text-zinc-400 hover:bg-white/5 hover:text-zinc-200"
+            }`}
+          >
+            <Library className="h-4 w-4 text-neon-violet" />
+            <span>Thư viện cá nhân</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("rooms")}
+            className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition ${
+              activeTab === "rooms"
+                ? "bg-white/10 text-white shadow-sm"
+                : "text-zinc-400 hover:bg-white/5 hover:text-zinc-200"
+            }`}
+          >
+            <Users className="h-4 w-4 text-emerald-400" />
+            <span>Phòng nghe chung</span>
+            <span className="ml-auto rounded-full bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-400">
+              Live
+            </span>
+          </button>
+        </nav>
       </div>
 
-      <input
-        type="file"
-        ref={fileInputRef}
-        onChange={handleFileChange}
-        accept="audio/*"
-        className="hidden"
-      />
+      {/* Nút Upload nhạc lên GitHub Releases CDN */}
+      <div className="space-y-3 pt-6 border-t border-glass-border">
+        <input
+          type="file"
+          ref={fileInputRef}
+          onChange={handleFileChange}
+          accept="audio/*"
+          className="hidden"
+        />
 
-      <button
-        onClick={() => fileInputRef.current?.click()}
-        disabled={isUploading}
-        className="flex items-center justify-center gap-2 rounded-xl bg-neon-violet/30 border border-neon-violet/50 px-4 py-2.5 text-sm font-semibold text-white shadow-neon-violet transition hover:bg-neon-violet/50 disabled:opacity-50"
-      >
-        {isUploading ? (
-          <>
-            <Loader2 className="h-4 w-4 animate-spin text-neon-cyan" />
-            <span>Đang đẩy lên GitHub...</span>
-          </>
-        ) : (
-          <>
-            <PlusCircle className="h-4 w-4 text-neon-cyan" />
-            <span>Thêm bài hát mới</span>
-          </>
-        )}
-      </button>
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          disabled={isUploading}
+          className="group relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-xl bg-gradient-to-r from-neon-violet/40 to-neon-cyan/40 border border-white/20 px-4 py-3 text-sm font-semibold text-white shadow-neon-violet transition hover:scale-[1.02] active:scale-95 disabled:opacity-50"
+        >
+          {isUploading ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin text-neon-cyan" />
+              <span className="text-xs">Đang đẩy lên GitHub...</span>
+            </>
+          ) : (
+            <>
+              <PlusCircle className="h-4 w-4 text-neon-cyan transition group-hover:rotate-90" />
+              <span>Thêm bài hát mới</span>
+            </>
+          )}
+        </button>
+
+        <div className="flex items-center justify-center gap-1.5 text-[11px] text-zinc-500">
+          <Sparkles className="h-3 w-3 text-neon-cyan" />
+          <span>Lưu trữ vĩnh viễn trên GitHub CDN</span>
+        </div>
+      </div>
     </aside>
   );
 }
+
+export default SidebarNav;

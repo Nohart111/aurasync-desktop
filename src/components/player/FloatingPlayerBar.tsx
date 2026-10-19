@@ -16,9 +16,7 @@ import {
   Music,
 } from "lucide-react";
 
-// ==========================================
-// 1. COMPONENT THANH TUA NHẠC (MAGNETIC SEEKBAR)
-// ==========================================
+// 1. THANH TUA NHẠC MAGNETIC SEEKBAR
 export function MagneticSeekbar({
   progressMV,
   duration,
@@ -74,9 +72,7 @@ export function MagneticSeekbar({
   );
 }
 
-// ==========================================
-// 2. COMPONENT SÓNG NHẠC (SPECTRUM VISUALIZER)
-// ==========================================
+// 2. SÓNG NHẠC SPECTRUM VISUALIZER
 export function SpectrumVisualizer() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const isPlaying = usePlayerStore((state) => state.isPlaying);
@@ -133,9 +129,7 @@ export function SpectrumVisualizer() {
   );
 }
 
-// ==========================================
-// 3. COMPONENT CHÍNH (FLOATING PLAYER BAR)
-// ==========================================
+// 3. THANH PLAYER CHÍNH (LUÔN HIỂN THỊ TRẠNG THÁI SẴN SÀNG)
 export function FloatingPlayerBar({ onToggleQueue }: { onToggleQueue?: () => void }) {
   const {
     currentTrack,
@@ -150,8 +144,6 @@ export function FloatingPlayerBar({ onToggleQueue }: { onToggleQueue?: () => voi
 
   const { progressMV, seekTo } = useAudioPlayer();
 
-  if (!currentTrack) return null;
-
   const handleSeek = (targetSeconds: number) => {
     if (isNaN(targetSeconds)) return;
     seekTo(targetSeconds);
@@ -161,36 +153,42 @@ export function FloatingPlayerBar({ onToggleQueue }: { onToggleQueue?: () => voi
     <footer className="glass-acrylic gpu-accelerated fixed bottom-4 inset-x-6 z-50 flex h-20 items-center justify-between rounded-2xl px-6">
       {/* Thông tin bài hát bên trái */}
       <div className="flex w-1/4 items-center gap-3.5 overflow-hidden">
-        {currentTrack.coverUrl ? (
+        {currentTrack?.coverUrl ? (
           <img
             src={currentTrack.coverUrl}
             alt={currentTrack.title}
             className="h-12 w-12 shrink-0 rounded-xl object-cover shadow-md"
           />
         ) : (
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-neon-violet/30 border border-neon-violet/40 text-neon-cyan shadow-md">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-neon-violet/20 border border-neon-violet/30 text-neon-cyan shadow-md">
             <Music className="h-6 w-6" />
           </div>
         )}
         <div className="truncate">
-          <p className="truncate text-sm font-semibold text-white">{currentTrack.title}</p>
-          <p className="truncate text-xs text-zinc-400">{currentTrack.artist || "Nghệ sĩ chưa rõ"}</p>
+          <p className="truncate text-sm font-semibold text-white">
+            {currentTrack ? currentTrack.title : "AuraSound Desktop"}
+          </p>
+          <p className="truncate text-xs text-zinc-400">
+            {currentTrack ? (currentTrack.artist || "Nghệ sĩ chưa rõ") : "Sẵn sàng phát nhạc Lossless"}
+          </p>
         </div>
       </div>
 
-      {/* Cụm nút điều khiển & Seekbar ở giữa */}
+      {/* Cụm điều khiển Play / Pause & Seekbar ở giữa */}
       <div className="flex w-2/4 flex-col items-center gap-1.5">
         <div className="flex items-center gap-5">
           <button
             onClick={advancePrev}
-            className="text-zinc-400 transition hover:text-white"
+            disabled={!currentTrack}
+            className="text-zinc-400 transition hover:text-white disabled:opacity-40"
             title="Bài trước đó"
           >
             <SkipBack className="h-5 w-5" />
           </button>
           <button
-            onClick={() => setPlaying(!isPlaying)}
-            className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-black shadow-neon-cyan transition hover:scale-105 active:scale-95"
+            onClick={() => currentTrack && setPlaying(!isPlaying)}
+            disabled={!currentTrack}
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-black shadow-neon-cyan transition hover:scale-105 active:scale-95 disabled:opacity-50"
             title={isPlaying ? "Tạm dừng" : "Phát"}
           >
             {isPlaying ? (
@@ -201,7 +199,8 @@ export function FloatingPlayerBar({ onToggleQueue }: { onToggleQueue?: () => voi
           </button>
           <button
             onClick={advanceNext}
-            className="text-zinc-400 transition hover:text-white"
+            disabled={!currentTrack}
+            className="text-zinc-400 transition hover:text-white disabled:opacity-40"
             title="Bài tiếp theo"
           >
             <SkipForward className="h-5 w-5" />
@@ -211,13 +210,13 @@ export function FloatingPlayerBar({ onToggleQueue }: { onToggleQueue?: () => voi
         <div className="w-full max-w-md">
           <MagneticSeekbar
             progressMV={progressMV}
-            duration={currentTrack.duration || 180}
+            duration={currentTrack?.duration || 180}
             onSeek={handleSeek}
           />
         </div>
       </div>
 
-      {/* Sóng nhạc Canvas, Âm lượng & Hàng đợi bên phải */}
+      {/* Sóng nhạc Canvas, Âm lượng & Nút Hàng đợi bên phải */}
       <div className="flex w-1/4 items-center justify-end gap-4">
         <SpectrumVisualizer />
 
@@ -252,5 +251,4 @@ export function FloatingPlayerBar({ onToggleQueue }: { onToggleQueue?: () => voi
   );
 }
 
-// Hỗ trợ cả 2 dạng import (Named import & Default import)
 export default FloatingPlayerBar;
