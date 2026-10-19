@@ -1,6 +1,7 @@
-﻿"use client";
+﻿
+"use client";
 
-import { useEffect, useRef, useCallback } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useMotionValue } from "framer-motion";
 import { AudioEngine } from "@/core/audio/AudioEngine";
 import type { Track } from "@/core/algorithms/DoublyLinkedQueue";
@@ -9,66 +10,71 @@ import { usePlayerStore } from "@/store/usePlayerStore";
 export function useAudioPlayer() {
   const {
     currentTrack,
+    nextTrackPreview,
     isPlaying,
     volume,
     setPlaying,
-    setBuffering,
-    setDuration,
     advanceNext,
     playTrackNow: selectTrackNow,
   } = usePlayerStore();
 
+  const [isBuffering, setIsBuffering] = useState(false);
+  const [duration, setDuration] = useState(currentTrack?.duration ?? 0);
+
   const progressMV = useMotionValue(0);
   const currentTimeMV = useMotionValue(0);
+
   const rafIdRef = useRef<number | null>(null);
   const lastStreamUrlRef = useRef<string | null>(null);
   const playbackRequestRef = useRef(0);
   const skipNextPlaybackEffectRef = useRef(false);
 
   const syncFrame = useCallback(() => {
-    const updateFrame = () => {
-      const engine = AudioEngine.getInstance();
-      const current = engine.getCurrentTime();
-      const total = engine.getDuration();
+    const engine = AudioEngine.getInstance();
 
-      currentTimeMV.set(current);
-      progressMV.set(total > 0 ? current / total : 0);
+    const current = engine.getCurrentTime();
+    const total = engine.getDuration();
 
-      rafIdRef.current = requestAnimationFrame(updateFrame);
-    };
+    currentTimeMV.set(current);
+    progressMV.set(
+      total > 0 && Number.isFinite(total)
+        ? Math.max(0, Math.min(current / total, 1))
+        : 0,
+    );
 
-    updateFrame();
+    if (total > 0 && Number.isFinite(total)) {
+      setDuration((previous) =>
+        Math.abs(previous - total) > 0.05 ? total : previous,
+      );
+    }
+
+    rafIdRef.current = requestAnimationFrame(syncFrame);
   }, [currentTimeMV, progressMV]);
 
   useEffect(() => {
     const engine = AudioEngine.getInstance();
-    const unsubscribeEnded = engine.onEnded(advanceNext);
-    const unsubscribeMetadata = engine.onLoadedMetadata(setDuration);
-    const unsubscribeBuffering = engine.onBufferingChange(setBuffering);
-    const unsubscribeError = engine.onError(() => {
-      ++playbackRequestRef.current;
-      skipNextPlaybackEffectRef.current = false;
-      setBuffering(false);
-      setPlaying(false);
+
+    return engine.onEnded(() => {
       advanceNext();
     });
-
-    return () => {
-      unsubscribeEnded();
-      unsubscribeMetadata();
-      unsubscribeBuffering();
-      unsubscribeError();
-    };
-  }, [advanceNext, setBuffering, setDuration, setPlaying]);
+  }, [advanceNext]);
 
   useEffect(() => {
     const engine = AudioEngine.getInstance();
 
     if (!currentTrack) {
       ++playbackRequestRef.current;
+
       lastStreamUrlRef.current = null;
+      skipNextPlaybackEffectRef.current = false;
+
       engine.pause();
-      setBuffering(false);
+
+      setIsBuffering(false);
+      setDuration(0);
+      currentTimeMV.set(0);
+      progressMV.set(0);
+
       return;
     }
 
@@ -84,112 +90,153 @@ export function useAudioPlayer() {
 
     if (lastStreamUrlRef.current !== currentTrack.streamUrl) {
       lastStreamUrlRef.current = currentTrack.streamUrl;
-      setDuration(currentTrack.duration);
-      setBuffering(true);
+
+      setDuration(currentTrack.duration || 0);
+      setIsBuffering(true);
+
       engine
         .loadAndPlay(currentTrack.streamUrl)
         .then(() => {
-          if (playbackRequestRef.current === requestId) {
-            setPlaying(true);
-            setBuffering(false);
+          if (playbackRequestRef.current !== requestId) return;
+
+          const actualDuration = engine.getDuration();
+
+          if (actualDuration > 0 && Number.isFinite(actualDuration)) {
+            setDuration(actualDuration);
           }
+
+          setPlaying(true);
+          setIsBuffering(false);
         })
-        .catch((err) => {
-          if (playbackRequestRef.current === requestId) {
-            console.error("Playback error:", err);
-            setBuffering(false);
-            setPlaying(false);
-          }
+        .catch((error: unknown) => {
+          if (playbackRequestRef.current !== requestId) return;
+
+          console.error("Playback error:", error);
+          setIsBuffering(false);
+          setPlaying(false);
         });
-    } else {
-      if (isPlaying) {
-        engine.play().catch((err) => {
-          if (playbackRequestRef.current === requestId) {
-            console.error("Resume error:", err);
-            setBuffering(false);
-            setPlaying(false);
-          }
-        });
-      } else {
-        engine.pause();
-        setBuffering(false);
-      }
+
+      return;
     }
-  }, [currentTrack, isPlaying, setBuffering, setDuration, setPlaying]);
+
+    if (isPlaying) {
+      engine.play().catch((error: unknown) => {
+        if (playbackRequestRef.current !== requestId) return;
+
+        console.error("Resume error:", error);
+        setIsBuffering(false);
+        setPlaying(false);
+      });
+    } else {
+      engine.pause();
+      setIsBuffering(false);
+    }
+  }, [
+    currentTrack,
+    isPlaying,
+    setPlaying,
+    currentTimeMV,
+    progressMV,
+  ]);
+
+  useEffect(() => {
+    const engine = AudioEngine.getInstance();
+
+    engine.preloadNextTrack(nextTrackPreview?.streamUrl ?? null);
+  }, [nextTrackPreview]);
 
   const startTrackFromGesture = useCallback(
     (track: Track) => {
-      const engine = AudioEngine.getInstance();
       const playerState = usePlayerStore.getState();
+
       if (
         playerState.currentTrack?.id === track.id &&
         playerState.isPlaying
       ) {
         return;
       }
+
+      const engine = AudioEngine.getInstance();
       const requestId = ++playbackRequestRef.current;
+
       lastStreamUrlRef.current = track.streamUrl;
       skipNextPlaybackEffectRef.current = true;
-      setDuration(track.duration);
-      setBuffering(true);
+
+      setDuration(track.duration || 0);
+      setIsBuffering(true);
 
       const playPromise = engine.loadAndPlay(track.streamUrl);
+
       selectTrackNow(track);
+
       playPromise
         .then(() => {
-          if (playbackRequestRef.current === requestId) {
-            setPlaying(true);
-            setBuffering(false);
+          if (playbackRequestRef.current !== requestId) return;
+
+          const actualDuration = engine.getDuration();
+
+          if (actualDuration > 0 && Number.isFinite(actualDuration)) {
+            setDuration(actualDuration);
           }
+
+          setPlaying(true);
+          setIsBuffering(false);
         })
-        .catch((err) => {
-          if (playbackRequestRef.current === requestId) {
-            console.error("Playback error:", err);
-            setBuffering(false);
-            setPlaying(false);
-          }
+        .catch((error: unknown) => {
+          if (playbackRequestRef.current !== requestId) return;
+
+          console.error("Playback error:", error);
+          setIsBuffering(false);
+          setPlaying(false);
         });
     },
-    [selectTrackNow, setBuffering, setDuration, setPlaying]
+    [selectTrackNow, setPlaying],
   );
 
   const togglePlaybackFromGesture = useCallback(() => {
     const playerState = usePlayerStore.getState();
+
+    if (!playerState.currentTrack) return;
+
     const engine = AudioEngine.getInstance();
     const requestId = ++playbackRequestRef.current;
 
     if (playerState.isPlaying) {
       skipNextPlaybackEffectRef.current = false;
+
       engine.pause();
-      setBuffering(false);
+      setIsBuffering(false);
       setPlaying(false);
+
       return;
     }
 
-    if (!playerState.currentTrack) return;
-
     skipNextPlaybackEffectRef.current = true;
-    setBuffering(true);
+
+    setIsBuffering(true);
     setPlaying(true);
+
     engine
       .play()
       .then(() => {
-        if (playbackRequestRef.current === requestId) setBuffering(false);
-      })
-      .catch((err) => {
         if (playbackRequestRef.current === requestId) {
-          console.error("Resume error:", err);
-          setBuffering(false);
-          setPlaying(false);
+          setIsBuffering(false);
         }
-      });
-  }, [setBuffering, setPlaying]);
+      })
+      .catch((error: unknown) => {
+        if (playbackRequestRef.current !== requestId) return;
 
-  // Vòng lặp cập nhật tiến trình 60fps
+        console.error("Resume error:", error);
+        setIsBuffering(false);
+        setPlaying(false);
+      });
+  }, [setPlaying]);
+
   useEffect(() => {
     if (isPlaying) {
       rafIdRef.current = requestAnimationFrame(syncFrame);
     }
+
     return () => {
       if (rafIdRef.current !== null) {
         cancelAnimationFrame(rafIdRef.current);
@@ -206,11 +253,18 @@ export function useAudioPlayer() {
     AudioEngine.getInstance().seek(seconds);
   }, []);
 
+  const getFrequencyData = useCallback(() => {
+    return AudioEngine.getInstance().getFrequencySnapshot();
+  }, []);
+
   return {
     progressMV,
     currentTimeMV,
+    duration,
+    isBuffering,
     seekTo,
     startTrackFromGesture,
     togglePlaybackFromGesture,
+    getFrequencyData,
   };
 }
