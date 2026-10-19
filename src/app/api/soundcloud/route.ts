@@ -13,8 +13,106 @@ interface SoundCloudTrack {
   user?: SoundCloudUser;
 }
 
-function getClientId(): string | null {
-  return process.env.SOUNDCLOUD_CLIENT_ID?.trim() || null;
+interface SoundCloudClientIdCache {
+  value: string | null;
+  expiresAt: number;
+  pending?: Promise<string | null>;
+}
+
+const CLIENT_ID_CACHE_KEY = "__aurasoundSoundCloudClientIdCache__";
+const CLIENT_ID_TTL_MS = 60 * 60 * 1000;
+const MAX_BUNDLES_TO_SCAN = 12;
+const globalCache = globalThis as typeof globalThis & {
+  [CLIENT_ID_CACHE_KEY]?: SoundCloudClientIdCache;
+};
+const clientIdCache = (globalCache[CLIENT_ID_CACHE_KEY] ??= {
+  value: null,
+  expiresAt: 0,
+});
+
+function extractScriptUrls(html: string, pageUrl: string): string[] {
+  const urls: string[] = [];
+  const scriptTagPattern = /<script\b[^>]*\bsrc\s*=\s*(["'])(.*?)\1[^>]*>/gi;
+  let match: RegExpExecArray | null;
+
+  while ((match = scriptTagPattern.exec(html)) !== null) {
+    try {
+      urls.push(new URL(match[2], pageUrl).toString());
+    } catch {
+      // Ignore malformed script references and continue scanning the page.
+    }
+  }
+
+  return urls;
+}
+
+async function scrapeClientId(): Promise<string | null> {
+  try {
+    const homepage = await fetch("https://soundcloud.com", {
+      headers: { "User-Agent": "Mozilla/5.0 AuraSound/1.0" },
+      cache: "no-store",
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!homepage.ok) return null;
+
+    const html = await homepage.text();
+    const bundleUrls = extractScriptUrls(html, "https://soundcloud.com")
+      .filter((url) => /\.js(?:\?|$)/i.test(url))
+      .slice(-MAX_BUNDLES_TO_SCAN)
+      .reverse();
+    const clientIdPattern = /client_id[:=]["']([a-zA-Z0-9]{32})["']/;
+
+    for (const bundleUrl of bundleUrls) {
+      try {
+        const bundleResponse = await fetch(bundleUrl, {
+          headers: { "User-Agent": "Mozilla/5.0 AuraSound/1.0" },
+          cache: "no-store",
+          signal: AbortSignal.timeout(6000),
+        });
+        if (!bundleResponse.ok) continue;
+        const bundle = await bundleResponse.text();
+        const clientId = bundle.match(clientIdPattern)?.[1];
+        if (clientId) return clientId;
+      } catch {
+        // A failed bundle should not prevent trying the remaining candidates.
+      }
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+async function getClientId(): Promise<string | null> {
+  const configured = process.env.SOUNDCLOUD_CLIENT_ID?.trim();
+  if (configured) return configured;
+
+  if (clientIdCache.value && clientIdCache.expiresAt > Date.now()) {
+    return clientIdCache.value;
+  }
+
+  if (!clientIdCache.pending) {
+    clientIdCache.pending = scrapeClientId().finally(() => {
+      clientIdCache.pending = undefined;
+    });
+  }
+
+  const scraped = await clientIdCache.pending;
+  if (scraped) {
+    clientIdCache.value = scraped;
+    clientIdCache.expiresAt = Date.now() + CLIENT_ID_TTL_MS;
+    return scraped;
+  }
+
+  const fallback = process.env.SOUNDCLOUD_FALLBACK_CLIENT_ID?.trim();
+  if (fallback) {
+    clientIdCache.value = fallback;
+    clientIdCache.expiresAt = Date.now() + CLIENT_ID_TTL_MS;
+    return fallback;
+  }
+
+  return null;
 }
 
 function normalizeArtwork(url?: string | null): string {
@@ -50,11 +148,14 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const query = searchParams.get("q")?.trim();
   const rawId = searchParams.get("id")?.trim();
-  const clientId = getClientId();
+  const clientId = await getClientId();
 
   if (!clientId) {
     return NextResponse.json(
-      { error: "SoundCloud is not configured. Set SOUNDCLOUD_CLIENT_ID on the server." },
+      {
+        error:
+          "Unable to obtain a SoundCloud client ID. Configure SOUNDCLOUD_CLIENT_ID or SOUNDCLOUD_FALLBACK_CLIENT_ID.",
+      },
       { status: 503 }
     );
   }
