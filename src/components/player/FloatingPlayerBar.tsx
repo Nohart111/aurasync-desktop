@@ -150,7 +150,7 @@ export function FloatingPlayerBar({ onToggleQueue }: { onToggleQueue?: () => voi
   };
 
   return (
-    <footer className="glass-acrylic gpu-accelerated fixed bottom-4 inset-x-6 z-50 flex h-20 items-center justify-between rounded-2xl px-6">
+    <footer className="glass-acrylic gpu-accelerated fixed bottom-4 left-[17.5rem] right-6 z-50 flex h-20 items-center justify-between rounded-2xl px-6">
       {/* Thông tin bài hát bên trái */}
       <div className="flex w-1/4 items-center gap-3.5 overflow-hidden">
         {currentTrack?.coverUrl ? (

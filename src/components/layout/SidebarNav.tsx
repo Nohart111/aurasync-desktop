@@ -5,7 +5,6 @@ import React, { useRef, useState } from "react";
 import {
   Compass,
   Library,
-  Users,
   PlusCircle,
   Loader2,
   Disc3,
@@ -47,14 +46,14 @@ export function SidebarNav() {
   return (
     <aside className="glass-panel flex h-full w-64 flex-col justify-between border-r border-glass-border p-5 select-none shrink-0 z-20">
       <div className="space-y-6">
-        {/* 3 nút điều khiển cửa sổ macOS (Đỏ - Vàng - Xanh) */}
+        {/* 3 nút điều khiển macOS */}
         <div className="flex items-center gap-2">
           <div className="h-3 w-3 rounded-full bg-[#FF5F56] shadow-sm hover:opacity-80 cursor-pointer" />
           <div className="h-3 w-3 rounded-full bg-[#FFBD2E] shadow-sm hover:opacity-80 cursor-pointer" />
           <div className="h-3 w-3 rounded-full bg-[#27C93F] shadow-sm hover:opacity-80 cursor-pointer" />
         </div>
 
-        {/* Logo AuraSound & Huy hiệu Lossless */}
+        {/* Logo AuraSound */}
         <div className="flex items-center gap-2.5 pt-1">
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-tr from-neon-violet to-neon-cyan shadow-neon-cyan">
             <Disc3 className="h-5 w-5 text-black animate-spin" style={{ animationDuration: "8s" }} />
@@ -72,7 +71,7 @@ export function SidebarNav() {
           </div>
         </div>
 
-        {/* Menu chuyển trang */}
+        {/* Menu chỉ giữ lại Khám phá & Thư viện cá nhân */}
         <nav className="space-y-1">
           <button
             onClick={() => setActiveTab("discover")}
@@ -96,21 +95,6 @@ export function SidebarNav() {
           >
             <Library className="h-4 w-4 text-neon-violet" />
             <span>Thư viện cá nhân</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab("rooms")}
-            className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition ${
-              activeTab === "rooms"
-                ? "bg-white/10 text-white shadow-sm"
-                : "text-zinc-400 hover:bg-white/5 hover:text-zinc-200"
-            }`}
-          >
-            <Users className="h-4 w-4 text-emerald-400" />
-            <span>Phòng nghe chung</span>
-            <span className="ml-auto rounded-full bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-400">
-              Live
-            </span>
           </button>
         </nav>
       </div>
