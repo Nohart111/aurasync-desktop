@@ -1,5 +1,6 @@
 // src/store/usePlayerStore.ts
 import { create } from "zustand";
+import { MAX_OUTPUT_GAIN } from "@/core/audio/AudioEngine";
 import { DoublyLinkedQueue, Track } from "@/core/algorithms/DoublyLinkedQueue";
 
 const internalQueue = new DoublyLinkedQueue();
@@ -37,7 +38,8 @@ export const usePlayerStore = create<PlayerState>((set) => ({
   setPlaying: (isPlaying) => set({ isPlaying }),
   setBuffering: (isBuffering) => set({ isBuffering }),
   setDuration: (duration) => set({ duration }),
-  setVolume: (volume) => set({ volume }),
+  setVolume: (volume) =>
+    set({ volume: Math.max(0, Math.min(volume, MAX_OUTPUT_GAIN)) }),
 
   enqueueTrack: (track) => {
     internalQueue.enqueue(track);

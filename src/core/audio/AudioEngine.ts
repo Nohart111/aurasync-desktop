@@ -1,4 +1,6 @@
-﻿export class AudioEngine {
+﻿export const MAX_OUTPUT_GAIN = 0.85;
+
+export class AudioEngine {
   private static instance: AudioEngine | null = null;
   private primaryAudio: HTMLAudioElement;
 
@@ -49,7 +51,7 @@
   }
 
   public setVolume(value: number): void {
-    this.primaryAudio.volume = Math.max(0, Math.min(value, 1));
+    this.primaryAudio.volume = Math.max(0, Math.min(value, MAX_OUTPUT_GAIN));
   }
 
   public getCurrentTime(): number {

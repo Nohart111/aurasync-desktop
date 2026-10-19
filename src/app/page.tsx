@@ -22,10 +22,11 @@ import { CursorSpotlight } from "@/components/layout/CursorSpotlight";
 import { MagneticSeekbar } from "@/components/player/MagneticSeekbar";
 import { QueueDrawer } from "@/components/layout/QueueDrawer";
 import { usePlayerStore } from "@/store/usePlayerStore";
+import { MAX_OUTPUT_GAIN } from "@/core/audio/AudioEngine";
 import { useAudioPlayer } from "@/hooks/useAudioPlayer";
 import { useYoutubeSearch } from "@/hooks/useYoutubeSearch";
 import { PlaylistSearchEngine } from "@/core/algorithms/PlaylistSearchEngine";
-import { getSoundCloudPermalink, searchSoundCloudTracks } from "@/core/services/soundCloudMusic";
+import { searchSoundCloudTracks } from "@/core/services/soundCloudMusic";
 import {
   youtubeMusic,
 } from "@/core/services/youtubeMusic";
@@ -110,7 +111,6 @@ export default function DesktopHome() {
   }>({ key: "", loading: false, error: "" });
   const [playbackError, setPlaybackError] = useState("");
   const [officialTrackUrl, setOfficialTrackUrl] = useState("");
-  const [soundCloudWidgetUrl, setSoundCloudWidgetUrl] = useState("");
   const [isAddPanelOpen, setIsAddPanelOpen] = useState(false);
   const [directUrl, setDirectUrl] = useState("");
   const [addError, setAddError] = useState("");
@@ -330,19 +330,11 @@ export default function DesktopHome() {
     const requestId = ++streamResolutionRequestRef.current;
     setPlaybackError("");
     setOfficialTrackUrl("");
-    setSoundCloudWidgetUrl("");
 
     if (track.soundCloudId) {
-      try {
-        const permalink = track.soundCloudPermalink || await getSoundCloudPermalink(track.soundCloudId);
-        if (requestId !== streamResolutionRequestRef.current) return;
-        setSoundCloudWidgetUrl(
-          `https://w.soundcloud.com/player/?url=${encodeURIComponent(permalink)}&auto_play=true`
-        );
-      } catch (error) {
-        console.error("SoundCloud playback failed:", error);
-        setPlaybackError(error instanceof Error ? error.message : "Không thể mở SoundCloud player.");
-      }
+      const permalink = track.soundCloudPermalink;
+      if (permalink) window.open(permalink, "_blank", "noopener,noreferrer");
+      else setPlaybackError("SoundCloud chưa cung cấp liên kết phát chính thức cho bài này.");
       return;
     }
 
@@ -658,30 +650,6 @@ export default function DesktopHome() {
           </button>
         )}
         {playbackError && <p role="alert" className="mb-4 text-xs text-amber-300">{playbackError}</p>}
-        {soundCloudWidgetUrl && (
-          <div className="mb-4 overflow-hidden rounded-xl border border-white/10 bg-black/30">
-            <div className="flex items-center justify-between px-3 py-2">
-              <span className="font-mono text-xs text-zinc-300">SOUNDCLOUD PLAYER</span>
-              <button
-                type="button"
-                onClick={() => setSoundCloudWidgetUrl("")}
-                className="rounded-md p-1 text-zinc-400 transition hover:bg-white/10 hover:text-white"
-                aria-label="Close SoundCloud player"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <iframe
-              title="SoundCloud track player"
-              width="100%"
-              height="166"
-              scrolling="no"
-              frameBorder="0"
-              allow="autoplay"
-              src={soundCloudWidgetUrl}
-            />
-          </div>
-        )}
         {officialTrackUrl && (
           <a
             href={officialTrackUrl}
@@ -797,7 +765,7 @@ export default function DesktopHome() {
             <input
               type="range"
               min="0"
-              max="1"
+              max={MAX_OUTPUT_GAIN}
               step="0.01"
               value={volume}
               onChange={(event) => setVolume(Number(event.target.value))}

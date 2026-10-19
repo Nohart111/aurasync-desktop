@@ -2,12 +2,15 @@ import { NextResponse } from "next/server";
 
 interface SoundCloudUser {
   username?: string;
+  verified?: boolean;
 }
 
 interface SoundCloudTrack {
   id: number;
   title?: string;
   duration?: number;
+  playback_count?: number;
+  kind?: string;
   permalink_url?: string;
   artwork_url?: string | null;
   user?: SoundCloudUser;
@@ -22,6 +25,10 @@ interface SoundCloudClientIdCache {
 const CLIENT_ID_CACHE_KEY = "__aurasoundSoundCloudClientIdCache__";
 const CLIENT_ID_TTL_MS = 60 * 60 * 1000;
 const MAX_BUNDLES_TO_SCAN = 12;
+const SOUND_CLOUD_BLACKLIST =
+  /\b(?:remix|speed\s*up|sped\s*up|slowed|reverb|cover|mashup|karaoke|beat|instrumental|tiktok|parody|reup)\b/i;
+const SOUND_CLOUD_TITLE_TAGS =
+  /\s*(?:\[(?:official audio|lyric video)\]|\((?:mv official|audio hd)\))\s*/gi;
 const globalCache = globalThis as typeof globalThis & {
   [CLIENT_ID_CACHE_KEY]?: SoundCloudClientIdCache;
 };
@@ -124,13 +131,47 @@ function normalizeTrack(track: SoundCloudTrack) {
   return {
     id: `sc_${track.id}`,
     rawId: track.id,
-    title: track.title || "Untitled track",
+    title: (track.title || "Untitled track")
+      .replace(SOUND_CLOUD_TITLE_TAGS, " ")
+      .replace(/\s+/g, " ")
+      .trim(),
     artist: track.user?.username || "SoundCloud artist",
+    artistVerified: track.user?.verified || false,
     duration: Math.round((track.duration || 0) / 1000),
     coverUrl: normalizeArtwork(track.artwork_url),
     album: "SoundCloud",
     permalinkUrl: track.permalink_url || "",
+    playbackCount: track.playback_count || 0,
   };
+}
+
+function rankSearchTracks(
+  tracks: SoundCloudTrack[],
+  query: string
+): SoundCloudTrack[] {
+  const queryTerms = query
+    .toLocaleLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((term) => term.length > 2);
+
+  return tracks
+    .filter((track) =>
+      (track.duration ?? 0) > 60 &&
+      !SOUND_CLOUD_BLACKLIST.test(track.title || "")
+    )
+    .sort((left, right) => score(right) - score(left));
+
+  function score(track: SoundCloudTrack): number {
+    const artist = track.user?.username?.toLocaleLowerCase() || "";
+    const title = track.title?.toLocaleLowerCase() || "";
+    const artistMatches = queryTerms.filter(
+      (term) => artist.includes(term) || title.includes(term)
+    ).length;
+    const verifiedBonus = track.user?.verified ? 1_000_000_000_000 : 0;
+    const artistMatchBonus = artistMatches * 1_000_000_000;
+    const playbackScore = Math.max(0, track.playback_count ?? 0);
+    return verifiedBonus + artistMatchBonus + playbackScore;
+  }
 }
 
 async function soundCloudJson<T>(url: URL, clientId: string): Promise<T> {
@@ -170,7 +211,9 @@ export async function GET(request: Request) {
       endpoint.searchParams.set("q", query);
       endpoint.searchParams.set("limit", "20");
       const payload = await soundCloudJson<{ collection?: SoundCloudTrack[] }>(endpoint, clientId);
-      return NextResponse.json({ tracks: (payload.collection ?? []).map(normalizeTrack) });
+      const tracks = rankSearchTracks(payload.collection ?? [], query)
+        .map(normalizeTrack)
+      return NextResponse.json({ tracks });
     } catch (error) {
       return NextResponse.json(
         { tracks: [], error: error instanceof Error ? error.message : "SoundCloud search failed." },
@@ -196,6 +239,7 @@ export async function GET(request: Request) {
         coverUrl: normalizeArtwork(track.artwork_url),
         album: "SoundCloud",
         permalinkUrl: track.permalink_url || "",
+        playbackCount: track.playback_count || 0,
       });
     } catch (error) {
       return NextResponse.json(
