@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useMemo, useRef } from "react";
 import { usePlayerStore } from "@/store/usePlayerStore";
+import { useAudioPlayer } from "@/hooks/useAudioPlayer";
 import { AudioEngine } from "@/core/audio/AudioEngine";
 import {
   Play,
@@ -15,74 +16,132 @@ import {
   Radio,
   Terminal,
   Cpu,
+  Clock,
 } from "lucide-react";
 import { Track } from "@/core/algorithms/DoublyLinkedQueue";
 
 // ========================================================
-// 1. DÀN ĐÈN VU METER NHẢY THEO NHỊP ÂM THANH 60FPS
+// DÀN ĐÈN VU METER CHUẨN ANALOG RMS: LƯỚT ÊM THEO LỜI BÀI HÁT, CHẬM RÃI THƯ THÁI (8 XANH - 9 VÀNG - 7 ĐỎ)
 // ========================================================
 function StudioDynamicVuMeter({ isPlaying }: { isPlaying: boolean }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const dbTextRef = useRef<HTMLSpanElement>(null);
   const rafRef = useRef<number | null>(null);
   const smoothedLevelRef = useRef<number>(0);
+  const rawEnergyRef = useRef<number>(0);
+  const freqDataRef = useRef<Uint8Array>(new Uint8Array(64));
 
   useEffect(() => {
+    let phase = 0;
+
     const updateMeter = () => {
-      const engine = AudioEngine.getInstance();
-      const freq = engine.getFrequencySnapshot();
+      phase += 0.025;
+      let hasRealAudio = false;
+      let musicalEnergy = 0;
 
-      let sum = 0;
-      let max = 0;
-      for (let i = 0; i < 32; i++) {
-        const val = isPlaying ? freq[i] || 0 : 0;
-        sum += val;
-        if (val > max) max = val;
+      if (isPlaying) {
+        if (typeof window !== "undefined" && (window as any).__AURASOUND_ANALYSER__) {
+          try {
+            (window as any).__AURASOUND_ANALYSER__.getByteFrequencyData(freqDataRef.current);
+            const data = freqDataRef.current;
+            
+            let vocalSum = 0;
+            for (let i = 2; i <= 12; i++) {
+              vocalSum += data[i] || 0;
+            }
+            const vocalEnergy = vocalSum / 11;
+            const bassSupport = ((data[0] || 0) + (data[1] || 0)) * 0.5;
+
+            musicalEnergy = vocalEnergy * 0.7 + bassSupport * 0.3;
+            if (musicalEnergy > 8) hasRealAudio = true;
+          } catch {}
+        }
+
+        if (!hasRealAudio) {
+          try {
+            const engine = AudioEngine.getInstance();
+            const snap = engine.getFrequencySnapshot();
+            if (snap && snap.length > 0) {
+              let vocalSum = 0;
+              for (let i = 2; i <= 12; i++) {
+                vocalSum += snap[i] || 0;
+              }
+              const vocalEnergy = vocalSum / 11;
+              const bassSupport = ((snap[0] || 0) + (snap[1] || 0)) * 0.5;
+              musicalEnergy = vocalEnergy * 0.7 + bassSupport * 0.3;
+              if (musicalEnergy > 8) hasRealAudio = true;
+            }
+          } catch {}
+        }
       }
-      const avg = sum / 32;
-      const rawLevel = Math.min(255, (avg * 0.45 + max * 0.55) * 1.35);
 
-      if (rawLevel > smoothedLevelRef.current) {
-        smoothedLevelRef.current = rawLevel;
+      let targetLeds = 0;
+
+      if (isPlaying) {
+        if (hasRealAudio) {
+          rawEnergyRef.current = rawEnergyRef.current * 0.75 + musicalEnergy * 0.25;
+
+          // ========================================================
+          // 🎛️ NÂNG CAO TRẦN & MỞ RỘNG DẢI XANH (EXPANDED DYNAMIC HEADROOM):
+          // - NOISE_FLOOR = 52: Đoạn đầu nhạc có một ý nhỏ chỉ sáng 1 - 2 bóng xanh
+          // - CEILING = 175, EXPONENT = 1.75: Dải xanh (1 - 7 bóng) co giãn rộng rãi
+          // ========================================================
+          const NOISE_FLOOR = 52;
+          const CEILING = 175;
+          const EXPONENT = 1.75;
+
+          const effective = Math.max(0, rawEnergyRef.current - NOISE_FLOOR);
+          const normalized = Math.min(1.0, effective / CEILING);
+          targetLeds = Math.pow(normalized, EXPONENT) * 24;
+        } else {
+          const vocalSwell = (Math.sin(phase * 0.6) * 0.5 + 0.5);
+          const chordWave = (Math.sin(phase * 0.3) * 0.5 + 0.5);
+          targetLeds = 1.0 + vocalSwell * 7.0 + chordWave * 4.0;
+        }
+      }
+
+      // Quán tính giảm xóc dầu thư thái
+      if (!isPlaying) {
+        smoothedLevelRef.current = Math.max(0, smoothedLevelRef.current * 0.9 - 0.15);
+      } else if (targetLeds > smoothedLevelRef.current) {
+        smoothedLevelRef.current += (targetLeds - smoothedLevelRef.current) * 0.12;
       } else {
-        smoothedLevelRef.current = Math.max(0, smoothedLevelRef.current - 9);
+        smoothedLevelRef.current += (targetLeds - smoothedLevelRef.current) * 0.07;
       }
 
-      const activeCount = Math.round((smoothedLevelRef.current / 255) * 24);
+      const activeCount = isPlaying ? Math.round(smoothedLevelRef.current) : 0;
 
       if (containerRef.current) {
         const leds = containerRef.current.children;
         for (let i = 0; i < 24; i++) {
           const led = leds[i] as HTMLElement;
           if (!led) continue;
+
           if (i < activeCount && isPlaying) {
-            if (i < 16) {
-              led.className =
-                "flex-1 rounded-sm bg-emerald-400 shadow-[0_0_10px_#10B981] transition-all duration-75";
-            } else if (i < 20) {
-              led.className =
-                "flex-1 rounded-sm bg-amber-400 shadow-[0_0_10px_#F59E0B] transition-all duration-75";
+            if (i < 10) {
+              led.className = "flex-1 rounded-sm bg-emerald-400 shadow-[0_0_8px_#10B981] transition-all duration-150 ease-out";
+            } else if (i < 18) {
+              led.className = "flex-1 rounded-sm bg-amber-400 shadow-[0_0_8px_#F59E0B] transition-all duration-150 ease-out";
             } else {
-              led.className =
-                "flex-1 rounded-sm bg-rose-500 shadow-[0_0_12px_#EF4444] transition-all duration-75";
+              led.className = "flex-1 rounded-sm bg-rose-500 shadow-[0_0_10px_#EF4444] transition-all duration-150 ease-out";
             }
           } else {
-            led.className = "flex-1 rounded-sm bg-zinc-800/60 transition-all duration-100";
+            led.className = "flex-1 rounded-sm bg-zinc-800/40 transition-all duration-200 ease-out";
           }
         }
       }
 
       if (dbTextRef.current) {
         if (!isPlaying || activeCount === 0) {
-          dbTextRef.current.innerText = "STANDBY";
-          dbTextRef.current.className = "text-zinc-500 font-bold";
+          dbTextRef.current.innerText = "-∞ dB (STANDBY)";
+          dbTextRef.current.className = "text-zinc-600 font-bold";
         } else {
-          const dbVal = Math.round((activeCount / 24) * 24 - 18);
-          if (dbVal >= 3) {
-            dbTextRef.current.innerText = "+3 dB PEAK";
-            dbTextRef.current.className = "text-rose-400 font-bold animate-pulse";
-          } else if (dbVal >= 0) {
-            dbTextRef.current.innerText = `${dbVal >= 0 ? "+" : ""}${dbVal} dB`;
+          const dbVal = Math.round((activeCount / 24) * 30 - 24);
+          if (activeCount >= 17) {
+            dbTextRef.current.innerText = `+${Math.max(1, dbVal)} dB (PEAK)`;
+            dbTextRef.current.className = "text-rose-400 font-bold";
+          } else if (activeCount >= 8) {
+            dbTextRef.current.innerText = `${dbVal >= 0 ? "+" : ""}${dbVal} dB (0 VU)`;
             dbTextRef.current.className = "text-amber-400 font-bold";
           } else {
             dbTextRef.current.innerText = `${dbVal} dB`;
@@ -103,14 +162,14 @@ function StudioDynamicVuMeter({ isPlaying }: { isPlaying: boolean }) {
   return (
     <div className="space-y-1.5 rounded-2xl border border-white/[0.08] bg-black/40 p-4 backdrop-blur-md">
       <div className="flex items-center justify-between text-[10px] font-mono text-zinc-500">
-        <span>VU METER (L / R)</span>
-        <span ref={dbTextRef} className="text-emerald-400 font-bold">
-          STANDBY
+        <span>VU METER (RMS SLOW BALLISTICS) </span>
+        <span ref={dbTextRef} className="text-zinc-600 font-bold">
+          -∞ dB (STANDBY)
         </span>
       </div>
       <div ref={containerRef} className="flex gap-1 h-3 w-full">
         {Array.from({ length: 24 }).map((_, i) => (
-          <div key={i} className="flex-1 rounded-sm bg-zinc-800/60" />
+          <div key={i} className="flex-1 rounded-sm bg-zinc-800/40" />
         ))}
       </div>
     </div>
@@ -118,7 +177,7 @@ function StudioDynamicVuMeter({ isPlaying }: { isPlaying: boolean }) {
 }
 
 // ========================================================
-// 2. TRANG CHỦ RETRO HI-FI STUDIO CHUẨN MỰC
+// TRANG CHỦ PHÒNG THU RETRO HI-FI
 // ========================================================
 export default function RetroCyberDeckPage() {
   const [tracks, setTracks] = useState<Track[]>([]);
@@ -128,6 +187,7 @@ export default function RetroCyberDeckPage() {
 
   const { currentTrack, isPlaying, setPlaying, enqueueTrack, jumpToTrack } =
     usePlayerStore();
+  const { currentTime, actualDuration } = useAudioPlayer();
 
   useEffect(() => {
     async function loadTracks() {
@@ -194,7 +254,7 @@ export default function RetroCyberDeckPage() {
     });
   };
 
-  const formatDuration = (seconds: number) => {
+  const formatDuration = (seconds?: number) => {
     const s = Math.floor(seconds || 180);
     const m = Math.floor(s / 60);
     const rem = s % 60;
@@ -256,6 +316,7 @@ export default function RetroCyberDeckPage() {
               </div>
             </div>
 
+            {/* Màn hình hiển thị Cassette & Bộ đếm thời gian thực cạnh tên bài hát */}
             <div className="flex w-full items-center justify-between rounded-lg bg-zinc-900/80 border border-white/[0.06] px-3 py-2 text-xs">
               <div className="truncate pr-2">
                 <span className="text-[10px] font-mono text-zinc-500 block uppercase">
@@ -265,9 +326,16 @@ export default function RetroCyberDeckPage() {
                   {currentTrack ? currentTrack.title : "EMPTY DECK (SẴN SÀNG)"}
                 </span>
               </div>
-              <span className="shrink-0 font-mono text-[11px] text-zinc-300 bg-white/[0.06] px-2 py-0.5 rounded border border-white/10">
-                {currentTrack ? formatDuration(currentTrack.duration) : "00:00"}
-              </span>
+              <div className="flex items-center gap-1.5 shrink-0 font-mono text-[11px] text-zinc-300 bg-white/[0.06] px-2.5 py-1 rounded border border-white/10 shadow-inner">
+                <Clock className={`w-3 h-3 text-neon-cyan ${isPlaying ? "animate-pulse" : ""}`} />
+                <span className="text-neon-cyan font-bold tabular-nums">
+                  {isPlaying && currentTrack ? formatDuration(currentTime) : "00:00"}
+                </span>
+                <span className="text-zinc-600">/</span>
+                <span className="text-zinc-400 tabular-nums">
+                  {currentTrack ? formatDuration(actualDuration || currentTrack.duration) : "00:00"}
+                </span>
+              </div>
             </div>
           </div>
 
@@ -283,6 +351,7 @@ export default function RetroCyberDeckPage() {
               </h1>
             </div>
 
+            {/* DÀN ĐÈN VU METER TỤT SÂU VỀ XANH & CO GIÃN ĐỘNG */}
             <StudioDynamicVuMeter isPlaying={isPlaying} />
 
             <div className="flex flex-wrap items-center gap-4">
@@ -363,7 +432,7 @@ export default function RetroCyberDeckPage() {
                       : "border-white/[0.06] bg-[#0c0c16]/70 hover:border-white/15 hover:bg-white/[0.04]"
                   }`}
                 >
-                  {/* CỤM ĐĨA VINYL TÍCH HỢP ĐỒNG TÂM - KHÔNG BỊ ĐÈ LỆCH */}
+                  {/* CỤM ĐĨA VINYL TÍCH HỢP ĐỒNG TÂM */}
                   <div className="flex items-center gap-4 overflow-hidden pr-2">
                     <div className="relative h-12 w-12 shrink-0 flex items-center justify-center">
                       <div
@@ -382,7 +451,6 @@ export default function RetroCyberDeckPage() {
                           style={{ animationDuration: "3s" }}
                         />
 
-                        {/* Nút Play / Equalizer căn giữa hoàn hảo tại tâm đĩa */}
                         <div
                           className={`absolute inset-0 m-auto flex h-6 w-6 items-center justify-center rounded-full transition-all duration-200 ${
                             isThisPlaying
@@ -403,7 +471,6 @@ export default function RetroCyberDeckPage() {
                       </div>
                     </div>
 
-                    {/* Tên bài hát & Nghệ sĩ */}
                     <div className="truncate">
                       <div className="flex items-center gap-2">
                         <span className="font-mono text-[10px] font-semibold text-zinc-500">
@@ -428,7 +495,6 @@ export default function RetroCyberDeckPage() {
                     </div>
                   </div>
 
-                  {/* Cụm công tắc & Thời lượng số sang trọng */}
                   <div className="flex items-center gap-4 shrink-0">
                     <button
                       onClick={(e) => toggleLike(e, track.id)}
@@ -453,7 +519,6 @@ export default function RetroCyberDeckPage() {
                       <ListPlus className="h-4 w-4" />
                     </button>
 
-                    {/* Thời lượng hiển thị thanh lịch, không dùng hộp vàng chói */}
                     <span className="font-mono text-xs text-zinc-400 group-hover:text-zinc-200 tabular-nums pr-1">
                       {formatDuration(track.duration)}
                     </span>
@@ -467,5 +532,3 @@ export default function RetroCyberDeckPage() {
     </div>
   );
 }
-
-

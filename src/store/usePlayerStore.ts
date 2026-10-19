@@ -1,102 +1,169 @@
-﻿import { create } from "zustand";
-import { DoublyLinkedQueue, Track } from "@/core/algorithms/DoublyLinkedQueue";
+﻿import { create } from 'zustand';
 
-const internalQueue = new DoublyLinkedQueue();
+export interface Track {
+  id: string;
+  title: string;
+  artist?: string;
+  album?: string;
+  duration?: number;
+  streamUrl?: string;
+  url?: string;
+  coverUrl?: string;
+}
 
 interface PlayerState {
   currentTrack: Track | null;
-  nextTrackPreview: Track | null;
+  queue: Track[];
   queueItems: Track[];
   isPlaying: boolean;
   volume: number;
   isSidebarCollapsed: boolean;
+
+  setIsPlaying: (isPlaying: boolean) => void;
+  setPlaying: (isPlaying: boolean) => void;
+  togglePlay: () => void;
+  setVolume: (volume: number) => void;
   toggleSidebar: () => void;
-  setPlaying: (playing: boolean) => void;
-  setVolume: (vol: number) => void;
-  playTrackNow: (track: Track) => void;
+  playTrackNow: (track: Track, newQueue?: Track[]) => void;
   enqueueTrack: (track: Track) => void;
-  playNextInQueue: (track: Track) => void;
   removeTrackFromQueue: (trackId: string) => void;
   jumpToTrack: (trackId: string) => void;
   advanceNext: () => Track | null;
   advancePrev: () => Track | null;
+  setQueue: (tracks: Track[]) => void;
 }
 
-export const usePlayerStore = create<PlayerState>((set) => ({
+export const usePlayerStore = create<PlayerState>((set, get) => ({
   currentTrack: null,
-  nextTrackPreview: null,
+  queue: [],
   queueItems: [],
   isPlaying: false,
   volume: 0.85,
   isSidebarCollapsed: false,
 
-  toggleSidebar: () => set((s) => ({ isSidebarCollapsed: !s.isSidebarCollapsed })),
+  setIsPlaying: (isPlaying) => set({ isPlaying }),
   setPlaying: (isPlaying) => set({ isPlaying }),
+  
+  togglePlay: () => set((state) => ({ isPlaying: !state.isPlaying })),
+
   setVolume: (volume) => set({ volume }),
 
-  playTrackNow: (track) => {
-    internalQueue.enqueue(track);
-    const selected = internalQueue.jumpTo(track.id) || track;
+  toggleSidebar: () => set((state) => ({ isSidebarCollapsed: !state.isSidebarCollapsed })),
+
+  playTrackNow: (track, newQueue) => {
+    const { queue } = get();
+    let finalQueue = queue;
+    if (newQueue && newQueue.length > 0) {
+      finalQueue = newQueue;
+    } else if (!queue.some((t) => String(t.id) === String(track.id))) {
+      finalQueue = [...queue, track];
+    }
     set({
-      currentTrack: selected,
-      nextTrackPreview: internalQueue.peekNext(),
-      queueItems: internalQueue.toArray(),
+      currentTrack: track,
+      queue: finalQueue,
+      queueItems: finalQueue,
       isPlaying: true,
     });
   },
 
   enqueueTrack: (track) => {
-    internalQueue.enqueue(track);
-    set({
-      currentTrack: internalQueue.getCurrent(),
-      nextTrackPreview: internalQueue.peekNext(),
-      queueItems: internalQueue.toArray(),
-    });
-  },
-
-  playNextInQueue: (track) => {
-    internalQueue.insertAfterCurrent(track);
-    set({
-      nextTrackPreview: internalQueue.peekNext(),
-      queueItems: internalQueue.toArray(),
+    set((state) => {
+      const exists = state.queue.some((t) => String(t.id) === String(track.id));
+      if (exists) return state;
+      const updated = [...state.queue, track];
+      return {
+        queue: updated,
+        queueItems: updated,
+        currentTrack: state.currentTrack || track,
+      };
     });
   },
 
   removeTrackFromQueue: (trackId) => {
-    internalQueue.removeById(trackId);
-    set({
-      currentTrack: internalQueue.getCurrent(),
-      nextTrackPreview: internalQueue.peekNext(),
-      queueItems: internalQueue.toArray(),
+    set((state) => {
+      const updated = state.queue.filter((t) => String(t.id) !== String(trackId));
+      const isCurrent = state.currentTrack && String(state.currentTrack.id) === String(trackId);
+      return {
+        queue: updated,
+        queueItems: updated,
+        currentTrack: isCurrent ? (updated[0] || null) : state.currentTrack,
+        isPlaying: isCurrent && updated.length === 0 ? false : state.isPlaying,
+      };
     });
   },
 
   jumpToTrack: (trackId) => {
-    const track = internalQueue.jumpTo(trackId);
-    set({
-      currentTrack: track,
-      nextTrackPreview: internalQueue.peekNext(),
-      isPlaying: Boolean(track),
-    });
+    const { queue } = get();
+    const track = queue.find((t) => String(t.id) === String(trackId));
+    if (track) {
+      set({ currentTrack: track, isPlaying: true });
+    }
   },
 
   advanceNext: () => {
-    const next = internalQueue.next();
+    const { queue, currentTrack } = get();
+    if (!queue || queue.length === 0) return null;
+
+    // Nếu chỉ có 1 bài trong danh sách
+    if (queue.length === 1) {
+      set({ currentTrack: queue[0], isPlaying: true });
+      return queue[0];
+    }
+
+    // Tìm index bài hiện tại (so khớp cả ID lẫn tên bài hát)
+    const currentIndex = queue.findIndex(
+      (t) => String(t.id) === String(currentTrack?.id) || t.title === currentTrack?.title
+    );
+    const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % queue.length;
+    const nextTrack = queue[nextIndex];
+
     set({
-      currentTrack: next,
-      nextTrackPreview: internalQueue.peekNext(),
-      isPlaying: Boolean(next),
+      currentTrack: nextTrack,
+      isPlaying: true,
     });
-    return next;
+    return nextTrack;
   },
 
   advancePrev: () => {
-    const prev = internalQueue.prev();
+    const { queue, currentTrack } = get();
+    if (!queue || queue.length === 0) return null;
+
+    if (queue.length === 1) {
+      set({ currentTrack: queue[0], isPlaying: true });
+      return queue[0];
+    }
+
+    const currentIndex = queue.findIndex(
+      (t) => String(t.id) === String(currentTrack?.id) || t.title === currentTrack?.title
+    );
+    const prevIndex = currentIndex === -1 ? 0 : (currentIndex - 1 + queue.length) % queue.length;
+    const prevTrack = queue[prevIndex];
+
     set({
-      currentTrack: prev,
-      nextTrackPreview: internalQueue.peekNext(),
-      isPlaying: Boolean(prev),
+      currentTrack: prevTrack,
+      isPlaying: true,
     });
-    return prev;
+    return prevTrack;
   },
+
+  setQueue: (tracks) => set({ queue: tracks, queueItems: tracks }),
 }));
+
+// Tự động nạp toàn bộ bài hát từ CDN/Catalog vào queue khi mở trang
+if (typeof window !== 'undefined') {
+  fetch('/api/tracks/search')
+    .then((res) => res.json())
+    .then((data) => {
+      const tracks = Array.isArray(data) ? data : (data.tracks || []);
+      if (Array.isArray(tracks) && tracks.length > 0) {
+        const store = usePlayerStore.getState();
+        if (!store.queue || store.queue.length === 0) {
+          store.setQueue(tracks);
+          if (!store.currentTrack) {
+            usePlayerStore.setState({ currentTrack: tracks[0] });
+          }
+        }
+      }
+    })
+    .catch(() => {});
+}

@@ -1,5 +1,33 @@
 [
   {
+    "id": "656677829",
+    "title": "Bầu Trời Mới - Da LAB ft. Minh Tốc & Lam",
+    "artist": "Nghệ sĩ chưa rõ",
+    "album": "Lossless Single",
+    "duration": 180,
+    "bpm": 120,
+    "streamUrl": "https://github.com/Nohart111/aurasound-music-data/releases/download/tracks-v1/1792424205833_B_u_Tr_i_M_i_-_Da_LAB_ft._Minh_T_c___Lam.mp3",
+    "coverUrl": "",
+    "dominantColors": [
+      "#8A2BE2",
+      "#00F0FF"
+    ]
+  },
+  {
+    "id": "656677549",
+    "title": "'một đời' x 'Người Tốt Nhất Cho Em' - 14 CASPER",
+    "artist": "Nghệ sĩ chưa rõ",
+    "album": "Lossless Single",
+    "duration": 180,
+    "bpm": 120,
+    "streamUrl": "https://github.com/Nohart111/aurasound-music-data/releases/download/tracks-v1/1792424196244__m_t___i__x__Ng__i_T_t_Nh_t_Cho_Em__-_14_CASPER.mp3",
+    "coverUrl": "",
+    "dominantColors": [
+      "#8A2BE2",
+      "#00F0FF"
+    ]
+  },
+  {
     "id": "656005023",
     "title": "Hngle - Tìm em ft. Bảo Anh - Official Music Video",
     "artist": "Nghệ sĩ chưa rõ",
@@ -7,76 +35,6 @@
     "duration": 180,
     "bpm": 120,
     "streamUrl": "https://github.com/Nohart111/aurasound-music-data/releases/download/tracks-v1/1792407104992_Hngle_-_T_m_em_ft._B_o_Anh_-_Official_Music_Video.mp3",
-    "coverUrl": "",
-    "dominantColors": [
-      "#8A2BE2",
-      "#00F0FF"
-    ]
-  },
-  {
-    "id": "655985346",
-    "title": "Hngle - Tìm em ft. Bảo Anh - Official Music Video",
-    "artist": "Nghệ sĩ chưa rõ",
-    "album": "Đĩa đơn",
-    "duration": 180,
-    "bpm": 120,
-    "streamUrl": "https://github.com/Nohart111/aurasound-music-data/releases/download/tracks-v1/1792406608223_Hngle_-_T_m_em_ft._B_o_Anh_-_Official_Music_Video.mp3",
-    "coverUrl": "",
-    "dominantColors": [
-      "#8A2BE2",
-      "#00F0FF"
-    ]
-  },
-  {
-    "id": "655981788",
-    "title": "Hngle - Tìm em ft. Bảo Anh - Official Music Video",
-    "artist": "Nghệ sĩ chưa rõ",
-    "album": "Đĩa đơn",
-    "duration": 180,
-    "bpm": 120,
-    "streamUrl": "https://github.com/Nohart111/aurasound-music-data/releases/download/tracks-v1/1792406509923_Hngle_-_T_m_em_ft._B_o_Anh_-_Official_Music_Video.mp3",
-    "coverUrl": "",
-    "dominantColors": [
-      "#8A2BE2",
-      "#00F0FF"
-    ]
-  },
-  {
-    "id": "655976135",
-    "title": "Hngle - Tìm em ft. Bảo Anh - Official Music Video",
-    "artist": "Nghệ sĩ chưa rõ",
-    "album": "Đĩa đơn",
-    "duration": 180,
-    "bpm": 120,
-    "streamUrl": "https://github.com/Nohart111/aurasound-music-data/releases/download/tracks-v1/1792406334849_Hngle_-_T_m_em_ft._B_o_Anh_-_Official_Music_Video.mp3",
-    "coverUrl": "",
-    "dominantColors": [
-      "#8A2BE2",
-      "#00F0FF"
-    ]
-  },
-  {
-    "id": "655972203",
-    "title": "Hngle - Tìm em ft. Bảo Anh - Official Music Video",
-    "artist": "Nghệ sĩ chưa rõ",
-    "album": "Đĩa đơn",
-    "duration": 180,
-    "bpm": 120,
-    "streamUrl": "https://github.com/Nohart111/aurasound-music-data/releases/download/tracks-v1/1792406222334_Hngle_-_T_m_em_ft._B_o_Anh_-_Official_Music_Video.mp3",
-    "coverUrl": "",
-    "dominantColors": [
-      "#8A2BE2",
-      "#00F0FF"
-    ]
-  },
-  {
-    "id": "655971620",
-    "title": "Hngle - Tìm em ft. Bảo Anh - Official Music Video",
-    "artist": "Nghệ sĩ chưa rõ",
-    "album": "Đĩa đơn",
-    "duration": 180,
-    "bpm": 120,
-    "streamUrl": "https://github.com/Nohart111/aurasound-music-data/releases/download/tracks-v1/1792406209209_Hngle_-_T_m_em_ft._B_o_Anh_-_Official_Music_Video.mp3",
     "coverUrl": "",
     "dominantColors": [
       "#8A2BE2",

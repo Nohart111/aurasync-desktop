@@ -1,270 +1,182 @@
-﻿
-"use client";
+﻿'use client';
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useMotionValue } from "framer-motion";
-import { AudioEngine } from "@/core/audio/AudioEngine";
-import type { Track } from "@/core/algorithms/DoublyLinkedQueue";
-import { usePlayerStore } from "@/store/usePlayerStore";
+import { useEffect, useRef, useState, useCallback } from 'react';
+import { useMotionValue } from 'framer-motion';
+import { usePlayerStore } from '@/store/usePlayerStore';
+
+let globalAudio: HTMLAudioElement | null = null;
+let globalAudioCtx: AudioContext | null = null;
+let globalAnalyser: AnalyserNode | null = null;
+
+function getAudioSrc(track: any): string {
+  if (!track) return '';
+  const url = track.streamUrl || track.url || track.audioUrl || track.src || '';
+  if (!url) return '';
+  if (url.startsWith('/api/tracks/stream') || url.startsWith('blob:') || url.startsWith('/')) {
+    return url;
+  }
+  return `/api/tracks/stream?url=${encodeURIComponent(url)}`;
+}
 
 export function useAudioPlayer() {
   const {
     currentTrack,
-    nextTrackPreview,
     isPlaying,
     volume,
-    setPlaying,
-    advanceNext,
-    playTrackNow: selectTrackNow,
+    setIsPlaying,
   } = usePlayerStore();
-
-  const [isBuffering, setIsBuffering] = useState(false);
-  const [duration, setDuration] = useState(currentTrack?.duration ?? 0);
 
   const progressMV = useMotionValue(0);
   const currentTimeMV = useMotionValue(0);
-
-  const rafIdRef = useRef<number | null>(null);
-  const lastStreamUrlRef = useRef<string | null>(null);
-  const playbackRequestRef = useRef(0);
-  const skipNextPlaybackEffectRef = useRef(false);
-
-  const syncFrame = useCallback(() => {
-    const engine = AudioEngine.getInstance();
-
-    const current = engine.getCurrentTime();
-    const total = engine.getDuration();
-
-    currentTimeMV.set(current);
-    progressMV.set(
-      total > 0 && Number.isFinite(total)
-        ? Math.max(0, Math.min(current / total, 1))
-        : 0,
-    );
-
-    if (total > 0 && Number.isFinite(total)) {
-      setDuration((previous) =>
-        Math.abs(previous - total) > 0.05 ? total : previous,
-      );
-    }
-
-    rafIdRef.current = requestAnimationFrame(syncFrame);
-  }, [currentTimeMV, progressMV]);
+  const [actualDuration, setActualDuration] = useState<number>(0);
+  const [currentTime, setCurrentTime] = useState<number>(0);
+  const rafRef = useRef<number | null>(null);
 
   useEffect(() => {
-    const engine = AudioEngine.getInstance();
+    if (typeof window === 'undefined') return;
 
-    return engine.onEnded(() => {
-      advanceNext();
-    });
-  }, [advanceNext]);
-
-  useEffect(() => {
-    const engine = AudioEngine.getInstance();
-
-    if (!currentTrack) {
-      ++playbackRequestRef.current;
-
-      lastStreamUrlRef.current = null;
-      skipNextPlaybackEffectRef.current = false;
-
-      engine.pause();
-
-      setIsBuffering(false);
-      setDuration(0);
-      currentTimeMV.set(0);
-      progressMV.set(0);
-
-      return;
+    if (!globalAudio) {
+      globalAudio = new Audio();
+      globalAudio.crossOrigin = 'anonymous';
+      globalAudio.preload = 'auto';
     }
 
-    if (
-      skipNextPlaybackEffectRef.current &&
-      lastStreamUrlRef.current === currentTrack.streamUrl
-    ) {
-      skipNextPlaybackEffectRef.current = false;
-      return;
-    }
+    const audio = globalAudio;
 
-    const requestId = ++playbackRequestRef.current;
-
-    if (lastStreamUrlRef.current !== currentTrack.streamUrl) {
-      lastStreamUrlRef.current = currentTrack.streamUrl;
-
-      setDuration(currentTrack.duration || 0);
-      setIsBuffering(true);
-
-      engine
-        .loadAndPlay(currentTrack.streamUrl)
-        .then(() => {
-          if (playbackRequestRef.current !== requestId) return;
-
-          const actualDuration = engine.getDuration();
-
-          if (actualDuration > 0 && Number.isFinite(actualDuration)) {
-            setDuration(actualDuration);
-          }
-
-          setPlaying(true);
-          setIsBuffering(false);
-        })
-        .catch((error: unknown) => {
-          if (playbackRequestRef.current !== requestId) return;
-
-          console.error("Playback error:", error);
-          setIsBuffering(false);
-          setPlaying(false);
-        });
-
-      return;
-    }
-
-    if (isPlaying) {
-      engine.play().catch((error: unknown) => {
-        if (playbackRequestRef.current !== requestId) return;
-
-        console.error("Resume error:", error);
-        setIsBuffering(false);
-        setPlaying(false);
-      });
-    } else {
-      engine.pause();
-      setIsBuffering(false);
-    }
-  }, [
-    currentTrack,
-    isPlaying,
-    setPlaying,
-    currentTimeMV,
-    progressMV,
-  ]);
-
-  useEffect(() => {
-    const engine = AudioEngine.getInstance();
-
-    engine.preloadNextTrack(nextTrackPreview?.streamUrl ?? null);
-  }, [nextTrackPreview]);
-
-  const startTrackFromGesture = useCallback(
-    (track: Track) => {
-      const playerState = usePlayerStore.getState();
-
-      if (
-        playerState.currentTrack?.id === track.id &&
-        playerState.isPlaying
-      ) {
-        return;
-      }
-
-      const engine = AudioEngine.getInstance();
-      const requestId = ++playbackRequestRef.current;
-
-      lastStreamUrlRef.current = track.streamUrl;
-      skipNextPlaybackEffectRef.current = true;
-
-      setDuration(track.duration || 0);
-      setIsBuffering(true);
-
-      const playPromise = engine.loadAndPlay(track.streamUrl);
-
-      selectTrackNow(track);
-
-      playPromise
-        .then(() => {
-          if (playbackRequestRef.current !== requestId) return;
-
-          const actualDuration = engine.getDuration();
-
-          if (actualDuration > 0 && Number.isFinite(actualDuration)) {
-            setDuration(actualDuration);
-          }
-
-          setPlaying(true);
-          setIsBuffering(false);
-        })
-        .catch((error: unknown) => {
-          if (playbackRequestRef.current !== requestId) return;
-
-          console.error("Playback error:", error);
-          setIsBuffering(false);
-          setPlaying(false);
-        });
-    },
-    [selectTrackNow, setPlaying],
-  );
-
-  const togglePlaybackFromGesture = useCallback(() => {
-    const playerState = usePlayerStore.getState();
-
-    if (!playerState.currentTrack) return;
-
-    const engine = AudioEngine.getInstance();
-    const requestId = ++playbackRequestRef.current;
-
-    if (playerState.isPlaying) {
-      skipNextPlaybackEffectRef.current = false;
-
-      engine.pause();
-      setIsBuffering(false);
-      setPlaying(false);
-
-      return;
-    }
-
-    skipNextPlaybackEffectRef.current = true;
-
-    setIsBuffering(true);
-    setPlaying(true);
-
-    engine
-      .play()
-      .then(() => {
-        if (playbackRequestRef.current === requestId) {
-          setIsBuffering(false);
-        }
-      })
-      .catch((error: unknown) => {
-        if (playbackRequestRef.current !== requestId) return;
-
-        console.error("Resume error:", error);
-        setIsBuffering(false);
-        setPlaying(false);
-      });
-  }, [setPlaying]);
-
-  useEffect(() => {
-    if (isPlaying) {
-      rafIdRef.current = requestAnimationFrame(syncFrame);
-    }
-
-    return () => {
-      if (rafIdRef.current !== null) {
-        cancelAnimationFrame(rafIdRef.current);
-        rafIdRef.current = null;
+    const handleLoadedMetadata = () => {
+      if (isFinite(audio.duration) && audio.duration > 0) {
+        setActualDuration(audio.duration);
       }
     };
-  }, [isPlaying, syncFrame]);
+
+    const handleDurationChange = () => {
+      if (isFinite(audio.duration) && audio.duration > 0) {
+        setActualDuration(audio.duration);
+      }
+    };
+
+    const handleTimeUpdate = () => {
+      if (audio) {
+        setCurrentTime(audio.currentTime || 0);
+      }
+    };
+
+    const handleEnded = () => {
+      usePlayerStore.getState().advanceNext();
+    };
+
+    audio.addEventListener('loadedmetadata', handleLoadedMetadata);
+    audio.addEventListener('durationchange', handleDurationChange);
+    audio.addEventListener('timeupdate', handleTimeUpdate);
+    audio.addEventListener('ended', handleEnded);
+
+    return () => {
+      audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
+      audio.removeEventListener('durationchange', handleDurationChange);
+      audio.removeEventListener('timeupdate', handleTimeUpdate);
+      audio.removeEventListener('ended', handleEnded);
+    };
+  }, []);
+
+  // Xử lý nạp và phát khi đổi bài hoặc bấm Play/Pause
+  useEffect(() => {
+    if (!globalAudio || !currentTrack) return;
+    const audio = globalAudio;
+    const targetSrc = getAudioSrc(currentTrack);
+    if (!targetSrc) return;
+
+    const resolvedTarget = new URL(targetSrc, window.location.origin).href;
+
+    if (audio.src !== resolvedTarget) {
+      audio.src = targetSrc;
+    }
+
+    if (isPlaying) {
+      try {
+        if (!globalAudioCtx) {
+          const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+          if (AudioContextClass) {
+            globalAudioCtx = new AudioContextClass();
+            const source = globalAudioCtx.createMediaElementSource(audio);
+            globalAnalyser = globalAudioCtx.createAnalyser();
+            globalAnalyser.fftSize = 128;
+            globalAnalyser.smoothingTimeConstant = 0.82;
+            source.connect(globalAnalyser);
+            globalAnalyser.connect(globalAudioCtx.destination);
+            (window as any).__AURASOUND_ANALYSER__ = globalAnalyser;
+          }
+        }
+        if (globalAudioCtx && globalAudioCtx.state === 'suspended') {
+          globalAudioCtx.resume();
+        }
+      } catch {
+        // Đã kết nối audio graph
+      }
+
+      const playPromise = audio.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(() => {
+          const onCanPlay = () => {
+            audio.removeEventListener('canplay', onCanPlay);
+            if (usePlayerStore.getState().isPlaying) {
+              audio.play().catch(console.error);
+            }
+          };
+          audio.addEventListener('canplay', onCanPlay);
+        });
+      }
+    } else {
+      audio.pause();
+    }
+  }, [currentTrack, isPlaying]);
 
   useEffect(() => {
-    AudioEngine.getInstance().setVolume(volume);
+    if (globalAudio) {
+      globalAudio.volume = Math.max(0, Math.min(1, volume));
+    }
   }, [volume]);
 
+  // Vòng lặp cập nhật Seekbar 60fps
+  useEffect(() => {
+    const updateProgress = () => {
+      if (globalAudio) {
+        const cur = globalAudio.currentTime || 0;
+        const dur = isFinite(globalAudio.duration) && globalAudio.duration > 0
+          ? globalAudio.duration
+          : actualDuration || (currentTrack && currentTrack.duration) || 180;
+
+        currentTimeMV.set(cur);
+        progressMV.set(dur > 0 ? Math.min(1, cur / dur) : 0);
+      }
+      rafRef.current = requestAnimationFrame(updateProgress);
+    };
+
+    rafRef.current = requestAnimationFrame(updateProgress);
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+  }, [actualDuration, currentTrack, currentTimeMV, progressMV]);
+
   const seekTo = useCallback((seconds: number) => {
-    AudioEngine.getInstance().seek(seconds);
+    if (globalAudio && isFinite(seconds)) {
+      globalAudio.currentTime = Math.max(0, seconds);
+    }
   }, []);
 
-  const getFrequencyData = useCallback(() => {
-    return AudioEngine.getInstance().getFrequencySnapshot();
-  }, []);
+  // Tính toán thời lượng an toàn, không bao giờ undefined hoặc NaN
+  const safeDuration = (isFinite(actualDuration) && actualDuration > 0)
+    ? actualDuration
+    : ((currentTrack && typeof currentTrack.duration === 'number' && currentTrack.duration > 0)
+        ? currentTrack.duration
+        : 180);
 
   return {
     progressMV,
     currentTimeMV,
-    duration,
-    isBuffering,
+    currentTime,
+    actualDuration: safeDuration,
+    duration: safeDuration,
+    currentDuration: safeDuration,
     seekTo,
-    startTrackFromGesture,
-    togglePlaybackFromGesture,
-    getFrequencyData,
   };
 }
