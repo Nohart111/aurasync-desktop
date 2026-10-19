@@ -1,20 +1,14 @@
-// src/core/algorithms/DoublyLinkedQueue.ts
-export interface Track {
+﻿export interface Track {
   id: string;
   title: string;
-  artist: string;
-  album: string;
-  duration: number; // tính bằng giây
-  bpm: number;
-  streamUrl: string; // URL từ Cloudflare R2 hỗ trợ HTTP Range
-  coverUrl: string;
-  dominantColors: [string, string];
-  youtubeVideoId?: string;
-  soundCloudId?: number;
-  soundCloudPermalink?: string;
-  r2Key?: string;
-  isCachedOnR2?: boolean;
-  externalStreamUrl?: string;
+  artist?: string;
+  album?: string;
+  duration?: number;
+  bpm?: number;
+  streamUrl?: string;
+  url?: string;
+  coverUrl?: string;
+  dominantColors?: [string, string];
 }
 
 export class QueueNode {
@@ -23,17 +17,12 @@ export class QueueNode {
   constructor(public track: Track) {}
 }
 
-/**
- * DoublyLinkedQueue: Kết hợp Doubly Linked List và Hash Map (Map<string, QueueNode>)
- * Đảm bảo O(1) cho enqueue, removeById, insertAfterCurrent (Play Next), và jumpToTrack.
- */
 export class DoublyLinkedQueue {
   private head: QueueNode | null = null;
   private tail: QueueNode | null = null;
   private current: QueueNode | null = null;
   private nodeMap: Map<string, QueueNode> = new Map();
 
-  // Thêm bài hát vào cuối hàng đợi: O(1)
   public enqueue(track: Track): void {
     if (this.nodeMap.has(track.id)) return;
     const newNode = new QueueNode(track);
@@ -49,7 +38,6 @@ export class DoublyLinkedQueue {
     this.tail = newNode;
   }
 
-  // Chèn bài hát phát ngay sau bài hiện tại (Play Next): O(1)
   public insertAfterCurrent(track: Track): void {
     if (this.nodeMap.has(track.id)) {
       this.removeById(track.id);
@@ -74,7 +62,6 @@ export class DoublyLinkedQueue {
     }
   }
 
-  // Xóa bất kỳ bài hát nào theo ID mà không cần duyệt mảng: O(1)
   public removeById(trackId: string): boolean {
     const target = this.nodeMap.get(trackId);
     if (!target) return false;
@@ -101,44 +88,56 @@ export class DoublyLinkedQueue {
     return true;
   }
 
-  // Nhảy trực tiếp tới bài hát bất kỳ theo ID: O(1)
   public jumpTo(trackId: string): Track | null {
-    const node = this.nodeMap.get(trackId);
-    if (!node) return null;
-    this.current = node;
-    return node.track;
+    const target = this.nodeMap.get(trackId);
+    if (!target) return null;
+    this.current = target;
+    return target.track;
   }
 
-  // Chuyển sang bài kế tiếp: O(1)
   public next(): Track | null {
-    if (!this.current?.next) return null;
-    this.current = this.current.next;
-    return this.current.track;
+    if (!this.current) return null;
+    if (this.current.next) {
+      this.current = this.current.next;
+      return this.current.track;
+    }
+    this.current = this.head;
+    return this.head ? this.head.track : null;
   }
 
-  // Lùi về bài trước đó: O(1)
   public prev(): Track | null {
-    if (!this.current?.prev) return null;
-    this.current = this.current.prev;
-    return this.current.track;
-  }
-
-  // Lấy bài kế tiếp để Gapless Preloader tải trước vào bộ nhớ đệm: O(1)
-  public peekNext(): Track | null {
-    return this.current?.next?.track ?? null;
+    if (!this.current) return null;
+    if (this.current.prev) {
+      this.current = this.current.prev;
+      return this.current.track;
+    }
+    this.current = this.tail;
+    return this.tail ? this.tail.track : null;
   }
 
   public getCurrent(): Track | null {
-    return this.current?.track ?? null;
+    return this.current ? this.current.track : null;
+  }
+
+  public peekNext(): Track | null {
+    if (!this.current) return null;
+    return this.current.next ? this.current.next.track : (this.head ? this.head.track : null);
   }
 
   public toArray(): Track[] {
     const result: Track[] = [];
-    let ptr = this.head;
-    while (ptr) {
-      result.push(ptr.track);
-      ptr = ptr.next;
+    let curr = this.head;
+    while (curr) {
+      result.push(curr.track);
+      curr = curr.next;
     }
     return result;
+  }
+
+  public clear(): void {
+    this.head = null;
+    this.tail = null;
+    this.current = null;
+    this.nodeMap.clear();
   }
 }
