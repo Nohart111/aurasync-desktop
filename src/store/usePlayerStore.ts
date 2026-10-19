@@ -13,6 +13,7 @@ interface PlayerState {
   toggleSidebar: () => void;
   setPlaying: (playing: boolean) => void;
   setVolume: (vol: number) => void;
+  playTrackNow: (track: Track) => void;
   enqueueTrack: (track: Track) => void;
   playNextInQueue: (track: Track) => void;
   removeTrackFromQueue: (trackId: string) => void;
@@ -32,6 +33,17 @@ export const usePlayerStore = create<PlayerState>((set) => ({
   toggleSidebar: () => set((s) => ({ isSidebarCollapsed: !s.isSidebarCollapsed })),
   setPlaying: (isPlaying) => set({ isPlaying }),
   setVolume: (volume) => set({ volume }),
+
+  playTrackNow: (track) => {
+    internalQueue.enqueue(track);
+    const selected = internalQueue.jumpTo(track.id) || track;
+    set({
+      currentTrack: selected,
+      nextTrackPreview: internalQueue.peekNext(),
+      queueItems: internalQueue.toArray(),
+      isPlaying: true,
+    });
+  },
 
   enqueueTrack: (track) => {
     internalQueue.enqueue(track);
