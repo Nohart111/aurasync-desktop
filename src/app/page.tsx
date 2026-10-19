@@ -27,9 +27,6 @@ import { useAudioPlayer } from "@/hooks/useAudioPlayer";
 import { useYoutubeSearch } from "@/hooks/useYoutubeSearch";
 import { PlaylistSearchEngine } from "@/core/algorithms/PlaylistSearchEngine";
 import { searchSoundCloudTracks } from "@/core/services/soundCloudMusic";
-import {
-  youtubeMusic,
-} from "@/core/services/youtubeMusic";
 import type { Track } from "@/core/algorithms/DoublyLinkedQueue";
 
 // Danh sách nhạc stream trực tiếp từ Google Cloud Storage (100% CORS & Range streaming)
@@ -110,13 +107,11 @@ export default function DesktopHome() {
     error: string;
   }>({ key: "", loading: false, error: "" });
   const [playbackError, setPlaybackError] = useState("");
-  const [officialTrackUrl, setOfficialTrackUrl] = useState("");
   const [isAddPanelOpen, setIsAddPanelOpen] = useState(false);
   const [directUrl, setDirectUrl] = useState("");
   const [addError, setAddError] = useState("");
   const [addedMessage, setAddedMessage] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const streamResolutionRequestRef = useRef(0);
   const previousVolumeRef = useRef(0.85);
   const {
     currentTrack,
@@ -326,23 +321,19 @@ export default function DesktopHome() {
     }
   };
 
-  const handleTrackPlay = async (track: Track) => {
-    const requestId = ++streamResolutionRequestRef.current;
+  const handleTrackPlay = (track: Track) => {
     setPlaybackError("");
-    setOfficialTrackUrl("");
 
     if (track.soundCloudId) {
-      const permalink = track.soundCloudPermalink;
-      if (permalink) window.open(permalink, "_blank", "noopener,noreferrer");
-      else setPlaybackError("SoundCloud chưa cung cấp liên kết phát chính thức cho bài này.");
+      setPlaybackError(
+        "SoundCloud không cung cấp stream native cho AudioEngine qua API tìm kiếm hiện tại. Bài hát chưa được phát."
+      );
       return;
     }
 
     if (track.youtubeVideoId) {
-      window.open(
-        `https://www.youtube.com/watch?v=${encodeURIComponent(track.youtubeVideoId)}`,
-        "_blank",
-        "noopener,noreferrer"
+      setPlaybackError(
+        "YouTube không cung cấp stream native trong luồng tìm kiếm này. Bài hát chưa được phát."
       );
       return;
     }
@@ -354,26 +345,7 @@ export default function DesktopHome() {
 
     if (track.streamUrl) startTrackFromGesture(track);
     else {
-      setPlaybackError("Bài này không có preview iTunes. Có thể mở bản chính thức trên YouTube nếu tìm thấy.");
-    }
-
-    try {
-      const result = await youtubeMusic.findBestMatch(
-        track.artist,
-        track.title
-      );
-      const videoId = result?.videoId;
-      if (!result || !videoId) return;
-      if (requestId !== streamResolutionRequestRef.current) return;
-      setOfficialTrackUrl(`https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`);
-    } catch (error) {
-      if (requestId === streamResolutionRequestRef.current) {
-        setPlaybackError(track.streamUrl
-          ? "Không thể tìm kiếm YouTube lúc này; preview iTunes vẫn đang phát."
-          : error instanceof Error
-            ? error.message
-            : "Không thể tìm kiếm YouTube lúc này.");
-      }
+      setPlaybackError("Bài này không có URL phát trực tiếp hợp lệ.");
     }
   };
 
@@ -650,44 +622,24 @@ export default function DesktopHome() {
           </button>
         )}
         {playbackError && <p role="alert" className="mb-4 text-xs text-amber-300">{playbackError}</p>}
-        {officialTrackUrl && (
-          <a
-            href={officialTrackUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="mb-4 inline-flex items-center rounded-lg border border-neon-cyan/30 bg-neon-cyan/10 px-3 py-2 text-xs font-medium text-neon-cyan transition hover:bg-neon-cyan/20"
-          >
-            Mở Official Audio trên YouTube
-          </a>
-        )}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {visibleTracks.map((t) => (
-            <div
+            <button
               key={t.id}
+              type="button"
               onClick={() => handleTrackPlay(t)}
               onPointerMove={updateSpotlightTarget}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") handleTrackPlay(t);
-              }}
-              role="button"
-              tabIndex={0}
-              className="cursor-spotlight-target glass-panel group relative flex cursor-pointer items-center gap-4 rounded-2xl p-4 transition duration-300 hover:border-neon-cyan/40 hover:bg-white/10"
+              className="cursor-spotlight-target glass-panel group relative flex w-full cursor-pointer items-center gap-4 rounded-2xl border text-left transition duration-300 hover:border-neon-cyan/40 hover:bg-white/10"
             >
               <img src={t.coverUrl} alt={t.title} className="h-16 w-16 rounded-xl object-cover shadow-md" />
               <div className="flex-1 truncate">
                 <p className="font-display font-semibold text-white group-hover:text-neon-cyan transition">{t.title}</p>
                 <p className="text-xs text-zinc-400">{t.artist} • {t.album}</p>
               </div>
-              <button 
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleTrackPlay(t);
-                }}
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-neon-cyan text-obsidian-950 shadow-neon-cyan transition hover:scale-110 active:scale-95"
-              >
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-neon-cyan text-obsidian-950 shadow-neon-cyan transition group-hover:scale-105 group-active:scale-95">
                 <Play className="h-4 w-4 fill-current ml-0.5" />
-              </button>
-            </div>
+              </span>
+            </button>
           ))}
         </div>
         {visibleTracks.length === 0 && !isSearchLoading && !searchError && (searchSource === "library" || Boolean(searchQuery.trim())) && (
