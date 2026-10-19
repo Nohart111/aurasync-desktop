@@ -1,26 +1,10 @@
 // src/components/layout/SidebarNav.tsx
 "use client";
 
-import { useRef, useState } from "react";
-import { Disc3, FolderMusic, PlusCircle, Radio, Loader2 } from "lucide-react";
+import React, { useRef, useState } from "react";
+import { Music, PlusCircle, Loader2 } from "lucide-react";
 
-function getAudioFileDuration(file: File): Promise<number> {
-  return new Promise((resolve) => {
-    const audio = document.createElement("audio");
-    const objectUrl = URL.createObjectURL(file);
-    audio.src = objectUrl;
-    audio.onloadedmetadata = () => {
-      URL.revokeObjectURL(objectUrl);
-      resolve(Math.round(audio.duration) || 180);
-    };
-    audio.onerror = () => {
-      URL.revokeObjectURL(objectUrl);
-      resolve(180);
-    };
-  });
-}
-
-export function SidebarNav({ onTrackUploaded }: { onTrackUploaded: () => void }) {
+export function SidebarNav() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
 
@@ -28,20 +12,23 @@ export function SidebarNav({ onTrackUploaded }: { onTrackUploaded: () => void })
     const file = e.target.files?.[0];
     if (!file) return;
 
+    setIsUploading(true);
     try {
-      setIsUploading(true);
-      const duration = await getAudioFileDuration(file);
-      const fd = new FormData();
-      fd.append("file", file);
-      fd.append("title", file.name.replace(/\.[^/.]+$/, ""));
-      fd.append("duration", String(duration));
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("title", file.name.replace(/\.[^/.]+$/, ""));
+      formData.append("artist", "Nghệ sĩ chưa rõ");
+      formData.append("duration", "180"); // fallback giây
 
-      const res = await fetch("/api/tracks/upload", { method: "POST", body: fd });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Lỗi tải file");
-      onTrackUploaded();
-    } catch (err: any) {
-      alert("Lỗi upload: " + err.message);
+      const res = await fetch("/api/tracks/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) throw new Error("Tải bài hát lên thất bại");
+      window.location.reload();
+    } catch (err) {
+      alert("Lỗi tải lên: " + (err as Error).message);
     } finally {
       setIsUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -49,42 +36,39 @@ export function SidebarNav({ onTrackUploaded }: { onTrackUploaded: () => void })
   };
 
   return (
-    <aside className="glass-panel flex w-64 flex-col justify-between p-5 select-none">
-      <div className="space-y-6">
-        <div className="flex items-center gap-2.5">
-          <Disc3 className="h-7 w-7 text-neon-cyan" />
-          <span className="font-display text-lg font-bold tracking-tight text-white">AuraSound</span>
-        </div>
-
-        <nav className="space-y-1">
-          <button className="flex w-full items-center gap-3 rounded-xl bg-white/10 px-3.5 py-2.5 text-sm font-medium text-white">
-            <FolderMusic className="h-4 w-4 text-neon-cyan" />
-            Thư viện nhạc
-          </button>
-          <button className="flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium text-zinc-400 transition hover:bg-white/5 hover:text-white">
-            <Radio className="h-4 w-4" />
-            Phòng nghe chung
-          </button>
-        </nav>
+    <aside className="glass-panel flex w-64 flex-col border-r border-glass-border p-5">
+      <div className="flex items-center gap-2.5 pb-6">
+        <Music className="h-6 w-6 text-neon-cyan" />
+        <span className="font-display text-lg font-bold tracking-tight text-white">
+          AuraSound
+        </span>
       </div>
 
-      <div>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="audio/*"
-          className="hidden"
-          onChange={handleFileChange}
-        />
-        <button
-          onClick={() => fileInputRef.current?.click()}
-          disabled={isUploading}
-          className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-neon-violet to-neon-cyan py-3 text-sm font-semibold text-white shadow-neon-cyan transition hover:opacity-90 disabled:opacity-50"
-        >
-          {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlusCircle className="h-4 w-4" />}
-          {isUploading ? "Đang tải lên CDN..." : "Thêm bài hát mới"}
-        </button>
-      </div>
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileChange}
+        accept="audio/*"
+        className="hidden"
+      />
+
+      <button
+        onClick={() => fileInputRef.current?.click()}
+        disabled={isUploading}
+        className="flex items-center justify-center gap-2 rounded-xl bg-neon-violet/30 border border-neon-violet/50 px-4 py-2.5 text-sm font-semibold text-white shadow-neon-violet transition hover:bg-neon-violet/50 disabled:opacity-50"
+      >
+        {isUploading ? (
+          <>
+            <Loader2 className="h-4 w-4 animate-spin text-neon-cyan" />
+            <span>Đang đẩy lên GitHub...</span>
+          </>
+        ) : (
+          <>
+            <PlusCircle className="h-4 w-4 text-neon-cyan" />
+            <span>Thêm bài hát mới</span>
+          </>
+        )}
+      </button>
     </aside>
   );
 }

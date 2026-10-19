@@ -1,11 +1,14 @@
 // src/components/player/SpectrumVisualizer.tsx
 "use client";
 
-import { useEffect, useRef } from "react";
+import React, { useEffect, useRef } from "react";
 import { AudioEngine } from "@/core/audio/AudioEngine";
+import { usePlayerStore } from "@/store/usePlayerStore";
 
 export function SpectrumVisualizer() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const isPlaying = usePlayerStore((state) => state.isPlaying);
+  const rafIdRef = useRef<number | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -13,38 +16,49 @@ export function SpectrumVisualizer() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    let animId: number;
-
     const render = () => {
-      const data = AudioEngine.getInstance().getFrequencySnapshot();
+      const engine = AudioEngine.getInstance();
+      const freqData = engine.getFrequencySnapshot();
+
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      const barCount = 28;
-      const step = canvas.width / barCount;
-      const barWidth = step * 0.65;
+      const barCount = 16;
+      const barWidth = 3;
+      const gap = 2;
 
       for (let i = 0; i < barCount; i++) {
-        const val = data[i] || 0;
-        const barHeight = Math.max(3, (val / 255) * canvas.height * 0.9);
-        const x = i * step;
+        // Lấy dải tần số thấp đến trung bình
+        const val = isPlaying ? freqData[i * 2] || 0 : 4;
+        const percent = val / 255;
+        const barHeight = Math.max(3, percent * canvas.height);
+        const x = i * (barWidth + gap);
         const y = canvas.height - barHeight;
 
-        const grad = ctx.createLinearGradient(0, y, 0, canvas.height);
-        grad.addColorStop(0, "#00F0FF");
-        grad.addColorStop(1, "#8A2BE2");
+        // Gradient màu Neon Cyan sang Violet
+        const gradient = ctx.createLinearGradient(0, canvas.height, 0, 0);
+        gradient.addColorStop(0, "#00F0FF");
+        gradient.addColorStop(1, "#8A2BE2");
 
-        ctx.fillStyle = grad;
-        ctx.beginPath();
-        ctx.roundRect(x, y, barWidth, barHeight, 2);
-        ctx.fill();
+        ctx.fillStyle = gradient;
+        ctx.fillRect(x, y, barWidth, barHeight);
       }
 
-      animId = requestAnimationFrame(render);
+      rafIdRef.current = requestAnimationFrame(render);
     };
 
     render();
-    return () => cancelAnimationFrame(animId);
-  }, []);
 
-  return <canvas ref={canvasRef} width={140} height={32} className="opacity-90" />;
+    return () => {
+      if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
+    };
+  }, [isPlaying]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      width={80}
+      height={28}
+      className="shrink-0 opacity-80"
+    />
+  );
 }
