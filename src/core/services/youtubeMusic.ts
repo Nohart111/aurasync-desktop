@@ -6,6 +6,8 @@ export interface YoutubeMusicResult {
   duration: number;
   coverUrl: string;
   watchUrl: string;
+  streamUrl?: string;
+  provider?: "yt-search" | "invidious" | "itunes";
 }
 
 interface YoutubeSearchResponse {
@@ -14,6 +16,21 @@ interface YoutubeSearchResponse {
 }
 
 const INVIDIOUS_FALLBACK_INSTANCE_COUNT = 2;
+
+async function safeFetchJson<T>(
+  url: string,
+  options?: RequestInit
+): Promise<T | null> {
+  try {
+    const response = await fetch(url, options);
+    if (!response.ok) return null;
+    const text = await response.text();
+    if (!text.trim()) return null;
+    return JSON.parse(text) as T;
+  } catch {
+    return null;
+  }
+}
 
 export class YoutubeMusicSearchError extends Error {
   constructor(
@@ -69,14 +86,12 @@ export class YoutubeMusicService {
       params.set("instance", String(invidiousInstance));
     }
 
-    const response = await fetch(`/api/youtube/search?${params}`, {
-      signal,
-      cache: "no-store",
-    });
-    const payload = (await response.json()) as YoutubeSearchResponse;
-    if (!response.ok) {
-      throw new Error(payload.error || `YouTube search returned HTTP ${response.status}.`);
-    }
+    const payload = await safeFetchJson<YoutubeSearchResponse>(
+      `/api/youtube/search?${params}`,
+      { signal, cache: "no-store" }
+    );
+    if (!payload) throw new Error("YouTube search returned an empty or invalid JSON response.");
+    if (payload.error) throw new Error(payload.error);
     return payload.results ?? [];
   }
 }

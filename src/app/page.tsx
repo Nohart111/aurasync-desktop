@@ -178,6 +178,7 @@ export default function DesktopHome() {
   const youtubeTracks = youtubeSearch.results
     .filter((result) => {
       const duration = result.duration ?? 0;
+      if (result.provider === "itunes") return Boolean(result.streamUrl);
       return (
         Boolean(result.videoId) &&
         duration >= 120 &&
@@ -188,14 +189,14 @@ export default function DesktopHome() {
     .map((result): Track => {
       const videoId = result.videoId;
       return {
-        id: `youtube-${videoId}`,
-        youtubeVideoId: videoId,
+        id: result.provider === "itunes" ? `itunes-${result.id}` : `youtube-${videoId}`,
+        youtubeVideoId: videoId || undefined,
         title: result.title,
         artist: result.artist,
-        album: "YouTube Music",
+        album: result.provider === "itunes" ? "iTunes preview" : "YouTube Music",
         duration: result.duration,
         bpm: 0,
-        streamUrl: "",
+        streamUrl: result.streamUrl || "",
         coverUrl: result.coverUrl || FALLBACK_COVER,
         dominantColors: ["#FF2A85", "#00F0FF"],
       };
