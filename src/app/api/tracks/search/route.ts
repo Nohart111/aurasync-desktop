@@ -1,8 +1,14 @@
-﻿import { NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
+import { connection } from "next/server";
 import fs from "fs";
 import path from "path";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  // Báo cho Next.js 16 không chạy thử lúc build tĩnh
+  try {
+    await connection();
+  } catch {}
+
   const token = process.env.GITHUB_TOKEN;
   const owner = process.env.GITHUB_OWNER || "Nohart111";
   const repo = process.env.GITHUB_REPO || "aurasound-music-data";
@@ -10,6 +16,7 @@ export async function GET() {
 
   const trackMap = new Map();
 
+  // 1. Đọc metadata từ catalog.json cục bộ (nếu có)
   try {
     const catalogPath = path.join(process.cwd(), "data", "catalog.json");
     if (fs.existsSync(catalogPath)) {
@@ -19,10 +26,9 @@ export async function GET() {
         localList.forEach((t) => trackMap.set(t.id, t));
       }
     }
-  } catch (err) {
-    console.error("Lỗi đọc catalog:", err);
-  }
+  } catch (err) {}
 
+  // 2. Lấy danh sách bài hát từ GitHub Releases
   try {
     const headers: Record<string, string> = {
       Accept: "application/vnd.github+json",
@@ -61,9 +67,7 @@ export async function GET() {
         }
       });
     }
-  } catch (err) {
-    console.error("Lỗi lấy assets:", err);
-  }
+  } catch (err) {}
 
   const tracks = Array.from(trackMap.values());
   return NextResponse.json({ tracks });
