@@ -27,7 +27,6 @@ import { useYoutubeSearch } from "@/hooks/useYoutubeSearch";
 import { PlaylistSearchEngine } from "@/core/algorithms/PlaylistSearchEngine";
 import {
   youtubeMusic,
-  type YoutubeMusicResult,
 } from "@/core/services/youtubeMusic";
 import type { Track } from "@/core/algorithms/DoublyLinkedQueue";
 
@@ -82,36 +81,6 @@ interface AppleSearchTrack {
 
 const YOUTUBE_NOISE_PATTERN =
   /\b(?:cover|karaoke|beat|reaction|slowed|reverb|1\s*hour|1h)\b|nhạc\s*chế/i;
-
-function chooseOfficialResult(
-  results: YoutubeMusicResult[],
-  track: Track
-): YoutubeMusicResult | null {
-  const normalizedTitle = track.title.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
-  const titleTerms = normalizedTitle.split(/\s+/).filter((term) => term.length > 2);
-  const artistTerms = track.artist.toLocaleLowerCase().split(/[^\p{L}\p{N}]+/u).filter((term) => term.length > 2);
-  const candidates = results.filter((result) => {
-    const duration = result.duration ?? 0;
-    return (
-      Boolean(result.videoId) &&
-      duration >= 120 &&
-      duration <= 420 &&
-      !YOUTUBE_NOISE_PATTERN.test(result.title ?? "")
-    );
-  });
-
-  candidates.sort((left, right) => score(right) - score(left));
-  return candidates[0] ?? null;
-
-  function score(result: YoutubeMusicResult) {
-    const title = (result.title ?? "").toLocaleLowerCase();
-    const uploader = (result.artist ?? "").toLocaleLowerCase();
-    const titleMatches = titleTerms.filter((term) => title.includes(term)).length;
-    const artistMatches = artistTerms.filter((term) => title.includes(term) || uploader.includes(term)).length;
-    const officialChannel = /\b(topic|official)\b/i.test(uploader);
-    return titleMatches * 5 + artistMatches * 3 + (officialChannel ? 50 : 0);
-  }
-}
 
 const FALLBACK_COVER =
   "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&q=80";
@@ -177,14 +146,8 @@ export default function DesktopHome() {
   });
   const youtubeTracks = youtubeSearch.results
     .filter((result) => {
-      const duration = result.duration ?? 0;
       if (result.provider === "itunes") return Boolean(result.streamUrl);
-      return (
-        Boolean(result.videoId) &&
-        duration >= 120 &&
-        duration <= 420 &&
-        !YOUTUBE_NOISE_PATTERN.test(result.title ?? "")
-      );
+      return Boolean(result.videoId) && !YOUTUBE_NOISE_PATTERN.test(result.title);
     })
     .map((result): Track => {
       const videoId = result.videoId;
@@ -399,20 +362,25 @@ export default function DesktopHome() {
     }
 
     try {
-      const query = `${track.artist} ${track.title} Official Audio`;
-      const results = await youtubeMusic.search(query);
-      const result = chooseOfficialResult(results, track);
+      const result = await youtubeMusic.findBestMatch(
+        track.artist,
+        track.title,
+        track.duration
+      );
       const videoId = result?.videoId;
-      if (!result || !videoId) throw new Error("No clean official audio result was found.");
+      if (!result || !videoId) {
+        setPlaybackError("Không tìm thấy video phù hợp trên YouTube.");
+        return;
+      }
       if (requestId !== streamResolutionRequestRef.current) return;
       setOfficialTrackUrl(`https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`);
     } catch (error) {
       if (requestId === streamResolutionRequestRef.current) {
         setPlaybackError(track.streamUrl
-          ? "Không tìm được video Official Audio phù hợp; preview iTunes vẫn đang phát."
+          ? "Không thể tìm kiếm YouTube lúc này; preview iTunes vẫn đang phát."
           : error instanceof Error
             ? error.message
-            : "Không thể tìm video Official Audio trên Piped.");
+            : "Không thể tìm kiếm YouTube lúc này.");
       }
     }
   };
