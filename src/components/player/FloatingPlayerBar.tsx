@@ -1,5 +1,4 @@
-// src/components/player/FloatingPlayerBar.tsx
-"use client";
+﻿"use client";
 
 import React, { useRef, useState, useEffect } from "react";
 import { motion, useSpring, useTransform } from "framer-motion";
@@ -16,7 +15,6 @@ import {
   Music,
 } from "lucide-react";
 
-// 1. THANH TUA NHẠC MAGNETIC SEEKBAR
 export function MagneticSeekbar({
   progressMV,
   duration,
@@ -72,7 +70,6 @@ export function MagneticSeekbar({
   );
 }
 
-// 2. SÓNG NHẠC SPECTRUM VISUALIZER
 export function SpectrumVisualizer() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const isPlaying = usePlayerStore((state) => state.isPlaying);
@@ -129,7 +126,6 @@ export function SpectrumVisualizer() {
   );
 }
 
-// 3. THANH PLAYER CHÍNH (LUÔN HIỂN THỊ TRẠNG THÁI SẴN SÀNG)
 export function FloatingPlayerBar({ onToggleQueue }: { onToggleQueue?: () => void }) {
   const {
     currentTrack,
@@ -140,6 +136,7 @@ export function FloatingPlayerBar({ onToggleQueue }: { onToggleQueue?: () => voi
     volume,
     setVolume,
     queueItems,
+    isSidebarCollapsed,
   } = usePlayerStore();
 
   const { progressMV, seekTo } = useAudioPlayer();
@@ -150,8 +147,11 @@ export function FloatingPlayerBar({ onToggleQueue }: { onToggleQueue?: () => voi
   };
 
   return (
-    <footer className="glass-acrylic gpu-accelerated fixed bottom-4 left-[17.5rem] right-6 z-50 flex h-20 items-center justify-between rounded-2xl px-6">
-      {/* Thông tin bài hát bên trái */}
+    <footer
+      className={`fixed bottom-4 right-6 z-50 flex h-20 items-center justify-between rounded-2xl px-6 transition-all duration-300 ease-in-out border border-white/15 bg-[#0a0a14]/95 backdrop-blur-2xl shadow-[0_12px_40px_rgba(0,0,0,0.8)] ${
+        isSidebarCollapsed ? "left-[6rem]" : "left-[17.5rem]"
+      }`}
+    >
       <div className="flex w-1/4 items-center gap-3.5 overflow-hidden">
         {currentTrack?.coverUrl ? (
           <img
@@ -174,7 +174,6 @@ export function FloatingPlayerBar({ onToggleQueue }: { onToggleQueue?: () => voi
         </div>
       </div>
 
-      {/* Cụm điều khiển Play / Pause & Seekbar ở giữa */}
       <div className="flex w-2/4 flex-col items-center gap-1.5">
         <div className="flex items-center gap-5">
           <button
@@ -216,7 +215,6 @@ export function FloatingPlayerBar({ onToggleQueue }: { onToggleQueue?: () => voi
         </div>
       </div>
 
-      {/* Sóng nhạc Canvas, Âm lượng & Nút Hàng đợi bên phải */}
       <div className="flex w-1/4 items-center justify-end gap-4">
         <SpectrumVisualizer />
 

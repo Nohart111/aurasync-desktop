@@ -1,23 +1,126 @@
-// src/app/(desktop)/page.tsx
-"use client";
+﻿"use client";
 
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useRef } from "react";
 import { usePlayerStore } from "@/store/usePlayerStore";
+import { AudioEngine } from "@/core/audio/AudioEngine";
 import {
   Play,
   Pause,
-  Clock,
+  Shuffle,
+  Search,
   Heart,
   ListPlus,
-  Search,
-  Shuffle,
-  Music2,
+  Disc,
   Disc3,
-  Sparkles,
+  Radio,
+  Terminal,
+  Cpu,
 } from "lucide-react";
 import { Track } from "@/core/algorithms/DoublyLinkedQueue";
 
-export default function SpotifyStyleLibraryPage() {
+// ========================================================
+// 1. DÀN ĐÈN VU METER NHẢY THEO NHỊP ÂM THANH 60FPS
+// ========================================================
+function StudioDynamicVuMeter({ isPlaying }: { isPlaying: boolean }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const dbTextRef = useRef<HTMLSpanElement>(null);
+  const rafRef = useRef<number | null>(null);
+  const smoothedLevelRef = useRef<number>(0);
+
+  useEffect(() => {
+    const updateMeter = () => {
+      const engine = AudioEngine.getInstance();
+      const freq = engine.getFrequencySnapshot();
+
+      let sum = 0;
+      let max = 0;
+      for (let i = 0; i < 32; i++) {
+        const val = isPlaying ? freq[i] || 0 : 0;
+        sum += val;
+        if (val > max) max = val;
+      }
+      const avg = sum / 32;
+      const rawLevel = Math.min(255, (avg * 0.45 + max * 0.55) * 1.35);
+
+      if (rawLevel > smoothedLevelRef.current) {
+        smoothedLevelRef.current = rawLevel;
+      } else {
+        smoothedLevelRef.current = Math.max(0, smoothedLevelRef.current - 9);
+      }
+
+      const activeCount = Math.round((smoothedLevelRef.current / 255) * 24);
+
+      if (containerRef.current) {
+        const leds = containerRef.current.children;
+        for (let i = 0; i < 24; i++) {
+          const led = leds[i] as HTMLElement;
+          if (!led) continue;
+          if (i < activeCount && isPlaying) {
+            if (i < 16) {
+              led.className =
+                "flex-1 rounded-sm bg-emerald-400 shadow-[0_0_10px_#10B981] transition-all duration-75";
+            } else if (i < 20) {
+              led.className =
+                "flex-1 rounded-sm bg-amber-400 shadow-[0_0_10px_#F59E0B] transition-all duration-75";
+            } else {
+              led.className =
+                "flex-1 rounded-sm bg-rose-500 shadow-[0_0_12px_#EF4444] transition-all duration-75";
+            }
+          } else {
+            led.className = "flex-1 rounded-sm bg-zinc-800/60 transition-all duration-100";
+          }
+        }
+      }
+
+      if (dbTextRef.current) {
+        if (!isPlaying || activeCount === 0) {
+          dbTextRef.current.innerText = "STANDBY";
+          dbTextRef.current.className = "text-zinc-500 font-bold";
+        } else {
+          const dbVal = Math.round((activeCount / 24) * 24 - 18);
+          if (dbVal >= 3) {
+            dbTextRef.current.innerText = "+3 dB PEAK";
+            dbTextRef.current.className = "text-rose-400 font-bold animate-pulse";
+          } else if (dbVal >= 0) {
+            dbTextRef.current.innerText = `${dbVal >= 0 ? "+" : ""}${dbVal} dB`;
+            dbTextRef.current.className = "text-amber-400 font-bold";
+          } else {
+            dbTextRef.current.innerText = `${dbVal} dB`;
+            dbTextRef.current.className = "text-emerald-400 font-bold";
+          }
+        }
+      }
+
+      rafRef.current = requestAnimationFrame(updateMeter);
+    };
+
+    rafRef.current = requestAnimationFrame(updateMeter);
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+  }, [isPlaying]);
+
+  return (
+    <div className="space-y-1.5 rounded-2xl border border-white/[0.08] bg-black/40 p-4 backdrop-blur-md">
+      <div className="flex items-center justify-between text-[10px] font-mono text-zinc-500">
+        <span>VU METER (L / R)</span>
+        <span ref={dbTextRef} className="text-emerald-400 font-bold">
+          STANDBY
+        </span>
+      </div>
+      <div ref={containerRef} className="flex gap-1 h-3 w-full">
+        {Array.from({ length: 24 }).map((_, i) => (
+          <div key={i} className="flex-1 rounded-sm bg-zinc-800/60" />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ========================================================
+// 2. TRANG CHỦ RETRO HI-FI STUDIO CHUẨN MỰC
+// ========================================================
+export default function RetroCyberDeckPage() {
   const [tracks, setTracks] = useState<Track[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -26,7 +129,6 @@ export default function SpotifyStyleLibraryPage() {
   const { currentTrack, isPlaying, setPlaying, enqueueTrack, jumpToTrack } =
     usePlayerStore();
 
-  // Nạp danh sách bài hát từ API (tắt cache để luôn nhận bài mới nhất)
   useEffect(() => {
     async function loadTracks() {
       try {
@@ -47,7 +149,6 @@ export default function SpotifyStyleLibraryPage() {
     loadTracks();
   }, []);
 
-  // Lọc bài hát theo ô tìm kiếm
   const filteredTracks = useMemo(() => {
     if (!searchQuery.trim()) return tracks;
     const q = searchQuery.toLowerCase();
@@ -58,7 +159,6 @@ export default function SpotifyStyleLibraryPage() {
     );
   }, [tracks, searchQuery]);
 
-  // Xử lý phát bài hát
   const handlePlayTrack = (track: Track) => {
     if (currentTrack?.id === track.id) {
       setPlaying(!isPlaying);
@@ -69,7 +169,6 @@ export default function SpotifyStyleLibraryPage() {
     }
   };
 
-  // Nút Play tròn to: Phát tất cả bài hát từ đầu
   const handlePlayAll = () => {
     if (tracks.length === 0) return;
     tracks.forEach((t) => enqueueTrack(t));
@@ -77,7 +176,6 @@ export default function SpotifyStyleLibraryPage() {
     setPlaying(true);
   };
 
-  // Nút xáo trộn bài hát
   const handleShuffle = () => {
     if (tracks.length === 0) return;
     const shuffled = [...tracks].sort(() => Math.random() - 0.5);
@@ -100,233 +198,274 @@ export default function SpotifyStyleLibraryPage() {
     const s = Math.floor(seconds || 180);
     const m = Math.floor(s / 60);
     const rem = s % 60;
-    return `${m}:${rem < 10 ? "0" : ""}${rem}`;
+    return `${m.toString().padStart(2, "0")}:${rem.toString().padStart(2, "0")}`;
   };
 
   return (
-    <div className="space-y-6 pb-12 select-none">
-      {/* 1. HERO HEADER PHONG CÁCH SPOTIFY DESKTOP */}
-      <section className="flex flex-col sm:flex-row items-end gap-6 pt-2 pb-4">
-        {/* Bìa Playlist lớn dạng Vinyl Gradient */}
-        <div className="group relative flex h-48 w-48 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-neon-violet via-purple-900 to-obsidian-900 shadow-2xl shadow-neon-violet/30 border border-white/10">
-          <Disc3
-            className={`h-24 w-24 text-white/80 transition-transform duration-700 ${
-              isPlaying ? "animate-spin" : "group-hover:rotate-45"
-            }`}
-            style={{ animationDuration: "10s" }}
-          />
-          <div className="absolute inset-0 rounded-2xl bg-black/20" />
-        </div>
+    <div className="space-y-8 pb-16 select-none font-sans">
+      {/* KHUNG TAPE DECK TRÊN CÙNG */}
+      <section className="relative overflow-hidden rounded-3xl border border-white/[0.08] bg-gradient-to-b from-[#121222]/80 via-[#090912]/90 to-[#050508] p-6 shadow-2xl backdrop-blur-2xl">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(0,240,255,0.06),transparent_60%)]" />
 
-        {/* Thông tin Playlist */}
-        <div className="flex flex-1 flex-col justify-end space-y-2">
-          <span className="text-xs font-bold tracking-wider uppercase text-neon-cyan flex items-center gap-1.5">
-            <Sparkles className="h-3.5 w-3.5" />
-            Danh sách phát công khai
-          </span>
-          <h1 className="font-display text-4xl sm:text-5xl font-extrabold tracking-tight text-white drop-shadow-md">
-            Bài hát đã lưu
-          </h1>
-          <p className="text-sm text-zinc-400">
-            Kho âm thanh Lossless chất lượng phòng thu lưu trữ trực tiếp trên GitHub CDN
-          </p>
-          <div className="flex items-center gap-2 pt-1 text-xs font-medium text-zinc-300">
-            <span className="font-bold text-white">AuraSound</span>
-            <span>•</span>
-            <span>{tracks.length} bài hát</span>
-            <span>•</span>
-            <span className="text-zinc-400">Không giới hạn dung lượng</span>
-          </div>
-        </div>
-      </section>
+        <div className="relative z-10 flex flex-col lg:flex-row items-center justify-between gap-8">
+          {/* Đầu máy băng cassette cơ học */}
+          <div className="relative flex w-full max-w-md flex-col items-center rounded-2xl border border-white/[0.08] bg-gradient-to-b from-[#18182c] to-[#0c0c16] p-5 shadow-inner">
+            <div className="flex w-full items-center justify-between border-b border-white/[0.08] pb-3 text-[10px] font-mono tracking-widest text-zinc-400 uppercase">
+              <span className="flex items-center gap-1.5 text-neon-cyan">
+                <Radio className="h-3.5 w-3.5 animate-pulse" />
+                HI-FI STEREO TAPE
+              </span>
+              <span className="rounded bg-neon-violet/20 px-2 py-0.5 font-bold text-white border border-neon-violet/40">
+                1411 KBPS
+              </span>
+              <span className="text-emerald-400">SIDE A / DIRECT</span>
+            </div>
 
-      {/* 2. THANH CÔNG CỤ (NÚT PLAY SPOTIFY, TRỘN BÀI & TÌM KIẾM) */}
-      <section className="flex flex-wrap items-center justify-between gap-4 py-2 border-b border-white/5">
-        <div className="flex items-center gap-4">
-          {/* Nút Play xanh lá tròn to chuẩn Spotify */}
-          <button
-            onClick={handlePlayAll}
-            disabled={tracks.length === 0}
-            className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500 text-black shadow-lg shadow-emerald-500/30 transition hover:scale-105 active:scale-95 disabled:opacity-40 disabled:hover:scale-100"
-            title="Phát tất cả"
-          >
-            {isPlaying ? (
-              <Pause className="h-6 w-6 fill-black" />
-            ) : (
-              <Play className="ml-1 h-6 w-6 fill-black" />
-            )}
-          </button>
-
-          {/* Nút trộn bài */}
-          <button
-            onClick={handleShuffle}
-            disabled={tracks.length === 0}
-            className="rounded-full p-2.5 text-zinc-400 transition hover:bg-white/10 hover:text-white disabled:opacity-40"
-            title="Trộn bài ngẫu nhiên"
-          >
-            <Shuffle className="h-5 w-5" />
-          </button>
-        </div>
-
-        {/* Ô tìm kiếm nhanh bài hát */}
-        <div className="relative w-64 sm:w-72">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Tìm kiếm bài hát, nghệ sĩ..."
-            className="w-full rounded-full bg-white/5 border border-white/10 pl-9 pr-4 py-2 text-xs text-white placeholder-zinc-500 outline-none transition focus:border-neon-cyan focus:bg-white/10"
-          />
-        </div>
-      </section>
-
-      {/* 3. BẢNG DANH SÁCH BÀI HÁT (SPOTIFY TRACKLIST TABLE) */}
-      {isLoading ? (
-        <div className="flex h-64 items-center justify-center text-zinc-500">
-          Đang nạp thư viện nhạc...
-        </div>
-      ) : filteredTracks.length === 0 ? (
-        <div className="flex h-64 flex-col items-center justify-center rounded-2xl border border-dashed border-zinc-800 p-8 text-center">
-          <Music2 className="mb-3 h-10 w-10 text-zinc-600" />
-          <p className="text-base font-semibold text-zinc-300">
-            {tracks.length === 0
-              ? "Kho nhạc đang trống."
-              : "Không tìm thấy bài hát phù hợp."}
-          </p>
-          <p className="mt-1 text-xs text-zinc-500">
-            {tracks.length === 0
-              ? "Bấm nút 'Thêm bài hát mới' ở thanh bên trái để tải bài hát đầu tiên lên GitHub!"
-              : "Thử tìm kiếm với từ khóa khác."}
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-1">
-          {/* Tiêu đề các cột */}
-          <div className="grid grid-cols-12 px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-400 border-b border-white/10">
-            <span className="col-span-1 text-center">#</span>
-            <span className="col-span-6 sm:col-span-5">Tiêu đề</span>
-            <span className="hidden sm:block sm:col-span-3">Album</span>
-            <span className="hidden md:block md:col-span-2">Nguồn</span>
-            <span className="col-span-5 sm:col-span-3 md:col-span-1 text-right flex items-center justify-end">
-              <Clock className="h-3.5 w-3.5" />
-            </span>
-          </div>
-
-          {/* Hàng từng bài hát */}
-          {filteredTracks.map((track, idx) => {
-            const isThisPlaying = currentTrack?.id === track.id && isPlaying;
-            const isThisActive = currentTrack?.id === track.id;
-            const isLiked = likedTrackIds.has(track.id);
-
-            return (
-              <div
-                key={track.id || idx}
-                onClick={() => handlePlayTrack(track)}
-                className={`group grid grid-cols-12 items-center rounded-xl px-4 py-2.5 transition cursor-pointer select-none ${
-                  isThisActive
-                    ? "bg-white/15 border border-white/10"
-                    : "hover:bg-white/10"
-                }`}
-              >
-                {/* Cột 1: Thứ tự (#) hoặc nút Play khi hover / Sóng nhạc khi đang phát */}
-                <div className="col-span-1 flex items-center justify-center text-sm font-medium">
-                  {isThisPlaying ? (
-                    <div className="flex items-end gap-0.5 h-3.5 w-3.5">
-                      <span className="h-full w-1 bg-emerald-400 animate-pulse" />
-                      <span className="h-2/3 w-1 bg-emerald-400 animate-pulse delay-75" />
-                      <span className="h-4/5 w-1 bg-emerald-400 animate-pulse delay-150" />
-                    </div>
-                  ) : (
-                    <>
-                      <span className="text-zinc-500 group-hover:hidden tabular-nums">
-                        {idx + 1}
-                      </span>
-                      <Play className="hidden h-3.5 w-3.5 fill-white text-white group-hover:block" />
-                    </>
-                  )}
-                </div>
-
-                {/* Cột 2: Ảnh bìa đĩa nhỏ + Tên bài hát + Nghệ sĩ */}
-                <div className="col-span-6 sm:col-span-5 flex items-center gap-3 overflow-hidden pr-2">
-                  <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-800 shadow-sm overflow-hidden">
-                    {track.coverUrl ? (
-                      <img
-                        src={track.coverUrl}
-                        alt={track.title}
-                        className="h-full w-full object-cover"
-                      />
-                    ) : (
-                      <Music2 className="h-5 w-5 text-zinc-500" />
-                    )}
-                  </div>
-                  <div className="truncate">
-                    <p
-                      className={`truncate text-sm font-medium transition ${
-                        isThisActive
-                          ? "text-emerald-400 font-semibold"
-                          : "text-zinc-100 group-hover:text-white"
-                      }`}
-                    >
-                      {track.title}
-                    </p>
-                    <p className="truncate text-xs text-zinc-400">
-                      {track.artist || "Nghệ sĩ chưa rõ"}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Cột 3: Album */}
-                <div className="hidden sm:block sm:col-span-3 truncate text-xs text-zinc-400">
-                  {track.album || "Lossless Single"}
-                </div>
-
-                {/* Cột 4: Nguồn lưu trữ (GitHub CDN) */}
-                <div className="hidden md:flex md:col-span-2 items-center gap-1.5">
-                  <span className="rounded-full bg-white/5 border border-white/10 px-2.5 py-0.5 text-[10px] font-medium text-neon-cyan">
-                    GitHub CDN
-                  </span>
-                </div>
-
-                {/* Cột 5: Nút Like, Thêm hàng đợi & Thời lượng */}
-                <div className="col-span-5 sm:col-span-3 md:col-span-1 flex items-center justify-end gap-3 text-right">
-                  {/* Nút Thả tim (Like) */}
-                  <button
-                    onClick={(e) => toggleLike(e, track.id)}
-                    className={`p-1 transition ${
-                      isLiked
-                        ? "text-emerald-400 opacity-100"
-                        : "text-zinc-500 opacity-0 group-hover:opacity-100 hover:text-white"
-                    }`}
-                    title={isLiked ? "Bỏ thích" : "Yêu thích"}
-                  >
-                    <Heart
-                      className={`h-4 w-4 ${isLiked ? "fill-emerald-400" : ""}`}
-                    />
-                  </button>
-
-                  {/* Nút Thêm vào hàng đợi */}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      enqueueTrack(track);
-                    }}
-                    className="p-1 text-zinc-500 opacity-0 transition group-hover:opacity-100 hover:text-white"
-                    title="Thêm vào danh sách chờ"
-                  >
-                    <ListPlus className="h-4 w-4" />
-                  </button>
-
-                  {/* Thời lượng */}
-                  <span className="tabular-time text-xs text-zinc-400 w-10 text-right">
-                    {formatDuration(track.duration)}
-                  </span>
-                </div>
+            <div className="relative my-4 flex h-32 w-full items-center justify-around rounded-xl border border-black/80 bg-[#06060c] px-4 shadow-[inset_0_4px_12px_rgba(0,0,0,0.9)]">
+              <div className="relative flex h-20 w-20 items-center justify-center rounded-full border-4 border-zinc-700 bg-gradient-to-tr from-zinc-900 to-zinc-800 shadow-md">
+                <Disc3
+                  className={`h-14 w-14 text-zinc-400 transition-all ${
+                    isPlaying ? "animate-spin" : ""
+                  }`}
+                  style={{ animationDuration: "3s" }}
+                />
+                <div className="absolute h-4 w-4 rounded-full bg-neon-cyan/80 shadow-neon-cyan" />
               </div>
-            );
-          })}
+
+              <div className="relative flex flex-1 flex-col items-center justify-center px-2">
+                <div className="h-1.5 w-full bg-zinc-800 rounded-full overflow-hidden border border-white/5">
+                  <div
+                    className={`h-full bg-gradient-to-r from-neon-cyan to-neon-violet transition-all ${
+                      isPlaying ? "w-2/3 animate-pulse" : "w-1/3"
+                    }`}
+                  />
+                </div>
+                <span className="mt-2 text-[9px] font-mono text-zinc-500 uppercase tracking-widest">
+                  {isPlaying ? "TAPE ROLLING" : "DECK STOPPED"}
+                </span>
+              </div>
+
+              <div className="relative flex h-20 w-20 items-center justify-center rounded-full border-4 border-zinc-700 bg-gradient-to-tr from-zinc-900 to-zinc-800 shadow-md">
+                <Disc3
+                  className={`h-14 w-14 text-zinc-400 transition-all ${
+                    isPlaying ? "animate-spin" : ""
+                  }`}
+                  style={{ animationDuration: "3s" }}
+                />
+                <div className="absolute h-4 w-4 rounded-full bg-neon-violet/80 shadow-neon-violet" />
+              </div>
+            </div>
+
+            <div className="flex w-full items-center justify-between rounded-lg bg-zinc-900/80 border border-white/[0.06] px-3 py-2 text-xs">
+              <div className="truncate pr-2">
+                <span className="text-[10px] font-mono text-zinc-500 block uppercase">
+                  MASTER CASSETTE
+                </span>
+                <span className="font-mono font-bold text-neon-cyan truncate block">
+                  {currentTrack ? currentTrack.title : "EMPTY DECK (SẴN SÀNG)"}
+                </span>
+              </div>
+              <span className="shrink-0 font-mono text-[11px] text-zinc-300 bg-white/[0.06] px-2 py-0.5 rounded border border-white/10">
+                {currentTrack ? formatDuration(currentTrack.duration) : "00:00"}
+              </span>
+            </div>
+          </div>
+
+          {/* Bảng điều khiển Studio Controller & Dynamic VU */}
+          <div className="flex flex-1 flex-col justify-between space-y-6">
+            <div>
+              <div className="flex items-center gap-2 text-xs font-mono text-neon-cyan tracking-wider uppercase">
+                <Terminal className="h-4 w-4" />
+                <span>VAULT_CONTROLLER // V2.6</span>
+              </div>
+              <h1 className="mt-1 font-display text-4xl sm:text-5xl font-extrabold tracking-tight text-white">
+                Studio Tape Rack
+              </h1>
+            </div>
+
+            <StudioDynamicVuMeter isPlaying={isPlaying} />
+
+            <div className="flex flex-wrap items-center gap-4">
+              <button
+                onClick={handlePlayAll}
+                disabled={tracks.length === 0}
+                className="group flex items-center gap-2.5 rounded-xl bg-gradient-to-r from-neon-cyan to-neon-violet px-6 py-3.5 text-xs font-mono font-bold tracking-wider text-black shadow-lg shadow-neon-cyan/20 transition hover:scale-105 active:scale-95 disabled:opacity-40"
+              >
+                {isPlaying ? (
+                  <Pause className="h-4 w-4 fill-black" />
+                ) : (
+                  <Play className="h-4 w-4 fill-black" />
+                )}
+                <span>[ TAPE_PLAY_ALL ]</span>
+              </button>
+
+              <button
+                onClick={handleShuffle}
+                disabled={tracks.length === 0}
+                className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-3.5 text-xs font-mono text-zinc-300 transition hover:bg-white/10 hover:text-white disabled:opacity-40"
+                title="Trộn bài"
+              >
+                <Shuffle className="h-4 w-4 text-neon-cyan" />
+                <span>SHUFFLE</span>
+              </button>
+
+              <div className="relative flex-1 min-w-[200px]">
+                <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-500" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="FILTER_TRACK_BY_NAME..."
+                  className="w-full rounded-xl border border-white/[0.08] bg-black/50 pl-9 pr-3 py-3 text-xs font-mono text-neon-cyan placeholder-zinc-600 outline-none transition focus:border-neon-cyan/50 focus:bg-black/80"
+                />
+              </div>
+            </div>
+          </div>
         </div>
-      )}
+      </section>
+
+      {/* DANH SÁCH BÀI HÁT AUDIOPHILE CHUYÊN NGHIỆP */}
+      <section className="space-y-3">
+        <div className="flex items-center justify-between border-b border-white/[0.08] pb-2 text-xs font-mono text-zinc-400 uppercase">
+          <span className="flex items-center gap-2">
+            <Cpu className="h-4 w-4 text-neon-cyan" />
+            CATALOG_CARTRIDGES ({filteredTracks.length} TAPES LOADED)
+          </span>
+          <span>FORMAT: 44.1kHz / 16-BIT PCM</span>
+        </div>
+
+        {isLoading ? (
+          <div className="flex h-48 items-center justify-center font-mono text-xs text-zinc-500">
+            LOADING_DATA_CARTRIDGES...
+          </div>
+        ) : filteredTracks.length === 0 ? (
+          <div className="flex h-48 flex-col items-center justify-center rounded-2xl border border-dashed border-zinc-800 p-8 text-center font-mono">
+            <Disc className="mb-2 h-8 w-8 text-zinc-600" />
+            <p className="text-sm text-zinc-400">NO CARTRIDGES FOUND</p>
+            <p className="mt-1 text-xs text-zinc-600">
+              Bấm nút &quot;Thêm bài hát mới&quot; ở Sidebar để chèn băng nhạc đầu tiên.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+            {filteredTracks.map((track, idx) => {
+              const isThisPlaying = currentTrack?.id === track.id && isPlaying;
+              const isThisActive = currentTrack?.id === track.id;
+              const isLiked = likedTrackIds.has(track.id);
+
+              return (
+                <div
+                  key={track.id || idx}
+                  onClick={() => handlePlayTrack(track)}
+                  className={`group relative flex items-center justify-between rounded-2xl p-3.5 transition-all duration-300 cursor-pointer border ${
+                    isThisActive
+                      ? "border-neon-cyan/40 bg-gradient-to-r from-neon-violet/15 via-[#121222] to-[#0a0a14] shadow-[0_4px_24px_rgba(0,240,255,0.08)]"
+                      : "border-white/[0.06] bg-[#0c0c16]/70 hover:border-white/15 hover:bg-white/[0.04]"
+                  }`}
+                >
+                  {/* CỤM ĐĨA VINYL TÍCH HỢP ĐỒNG TÂM - KHÔNG BỊ ĐÈ LỆCH */}
+                  <div className="flex items-center gap-4 overflow-hidden pr-2">
+                    <div className="relative h-12 w-12 shrink-0 flex items-center justify-center">
+                      <div
+                        className={`relative flex h-12 w-12 items-center justify-center rounded-full bg-[#0a0a12] border border-white/10 shadow-md transition-transform duration-300 group-hover:scale-105 ${
+                          isThisPlaying ? "shadow-[0_0_14px_rgba(0,240,255,0.35)]" : ""
+                        }`}
+                        style={{
+                          backgroundImage:
+                            "repeating-radial-gradient(circle, #181826 0, #181826 2px, #0b0b14 3px, #0b0b14 4px)",
+                        }}
+                      >
+                        <Disc3
+                          className={`h-full w-full p-1.5 text-zinc-600 transition-all ${
+                            isThisPlaying ? "animate-spin text-neon-cyan/70" : "group-hover:text-zinc-400"
+                          }`}
+                          style={{ animationDuration: "3s" }}
+                        />
+
+                        {/* Nút Play / Equalizer căn giữa hoàn hảo tại tâm đĩa */}
+                        <div
+                          className={`absolute inset-0 m-auto flex h-6 w-6 items-center justify-center rounded-full transition-all duration-200 ${
+                            isThisPlaying
+                              ? "bg-neon-cyan/20 border border-neon-cyan text-neon-cyan shadow-[0_0_8px_#00F0FF]"
+                              : "bg-zinc-900/90 border border-white/20 text-zinc-300 group-hover:bg-neon-cyan group-hover:text-black group-hover:border-neon-cyan group-hover:shadow-[0_0_10px_#00F0FF]"
+                          }`}
+                        >
+                          {isThisPlaying ? (
+                            <div className="flex items-end gap-0.5 h-3 w-3 justify-center">
+                              <span className="h-full w-0.5 rounded-full bg-neon-cyan animate-pulse" />
+                              <span className="h-2/3 w-0.5 rounded-full bg-neon-cyan animate-pulse delay-75" />
+                              <span className="h-4/5 w-0.5 rounded-full bg-neon-cyan animate-pulse delay-150" />
+                            </div>
+                          ) : (
+                            <Play className="ml-0.5 h-3 w-3 fill-current" />
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Tên bài hát & Nghệ sĩ */}
+                    <div className="truncate">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-[10px] font-semibold text-zinc-500">
+                          TRK_{String(idx + 1).padStart(2, "0")}
+                        </span>
+                        {isThisPlaying && (
+                          <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[9px] font-mono text-emerald-400 font-bold border border-emerald-500/30">
+                            NOW_PLAYING
+                          </span>
+                        )}
+                      </div>
+                      <p
+                        className={`truncate text-sm font-semibold transition ${
+                          isThisActive ? "text-neon-cyan" : "text-zinc-100 group-hover:text-white"
+                        }`}
+                      >
+                        {track.title}
+                      </p>
+                      <p className="truncate text-xs font-mono text-zinc-400">
+                        {track.artist || "Nghệ sĩ chưa rõ"}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Cụm công tắc & Thời lượng số sang trọng */}
+                  <div className="flex items-center gap-4 shrink-0">
+                    <button
+                      onClick={(e) => toggleLike(e, track.id)}
+                      className={`p-1.5 transition ${
+                        isLiked
+                          ? "text-rose-500"
+                          : "text-zinc-500 opacity-0 group-hover:opacity-100 hover:text-white"
+                      }`}
+                      title={isLiked ? "Unlike" : "Like"}
+                    >
+                      <Heart className={`h-4 w-4 ${isLiked ? "fill-rose-500" : ""}`} />
+                    </button>
+
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        enqueueTrack(track);
+                      }}
+                      className="p-1.5 text-zinc-500 opacity-0 group-hover:opacity-100 hover:text-neon-cyan transition"
+                      title="Add to Queue"
+                    >
+                      <ListPlus className="h-4 w-4" />
+                    </button>
+
+                    {/* Thời lượng hiển thị thanh lịch, không dùng hộp vàng chói */}
+                    <span className="font-mono text-xs text-zinc-400 group-hover:text-zinc-200 tabular-nums pr-1">
+                      {formatDuration(track.duration)}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
     </div>
   );
 }
+
+

@@ -1,5 +1,4 @@
-// src/store/usePlayerStore.ts
-import { create } from "zustand";
+﻿import { create } from "zustand";
 import { DoublyLinkedQueue, Track } from "@/core/algorithms/DoublyLinkedQueue";
 
 const internalQueue = new DoublyLinkedQueue();
@@ -10,9 +9,10 @@ interface PlayerState {
   queueItems: Track[];
   isPlaying: boolean;
   volume: number;
+  isSidebarCollapsed: boolean;
+  toggleSidebar: () => void;
   setPlaying: (playing: boolean) => void;
   setVolume: (vol: number) => void;
-  playTrackNow: (track: Track) => void;
   enqueueTrack: (track: Track) => void;
   playNextInQueue: (track: Track) => void;
   removeTrackFromQueue: (trackId: string) => void;
@@ -27,21 +27,11 @@ export const usePlayerStore = create<PlayerState>((set) => ({
   queueItems: [],
   isPlaying: false,
   volume: 0.85,
+  isSidebarCollapsed: false,
 
+  toggleSidebar: () => set((s) => ({ isSidebarCollapsed: !s.isSidebarCollapsed })),
   setPlaying: (isPlaying) => set({ isPlaying }),
   setVolume: (volume) => set({ volume }),
-
-  // Bấm vào bài hát là thêm vào hàng đợi và phát ngay lập tức
-  playTrackNow: (track) => {
-    internalQueue.enqueue(track);
-    const jumped = internalQueue.jumpTo(track.id);
-    set({
-      currentTrack: jumped,
-      nextTrackPreview: internalQueue.peekNext(),
-      queueItems: internalQueue.toArray(),
-      isPlaying: true,
-    });
-  },
 
   enqueueTrack: (track) => {
     internalQueue.enqueue(track);
