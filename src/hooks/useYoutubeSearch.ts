@@ -2,30 +2,29 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
-  pipedClient,
-  PipedRequestError,
-  type PipedSearchResult,
-} from "@/core/services/PipedClient";
+  youtubeMusic,
+  type YoutubeMusicResult,
+} from "@/core/services/youtubeMusic";
 
-interface PipedSearchState {
+interface SearchState {
   query: string;
-  results: PipedSearchResult[];
+  results: YoutubeMusicResult[];
   isLoading: boolean;
   isRetrying: boolean;
   error: string | null;
   attempts: number;
 }
 
-interface UsePipedSearchOptions {
+interface UseYoutubeSearchOptions {
   enabled?: boolean;
   debounceMs?: number;
 }
 
-export function usePipedSearch(
+export function useYoutubeSearch(
   query: string,
-  { enabled = true, debounceMs = 350 }: UsePipedSearchOptions = {}
+  { enabled = true, debounceMs = 350 }: UseYoutubeSearchOptions = {}
 ) {
-  const [state, setState] = useState<PipedSearchState>({
+  const [state, setState] = useState<SearchState>({
     query: "",
     results: [],
     isLoading: false,
@@ -37,9 +36,7 @@ export function usePipedSearch(
 
   useEffect(() => {
     const normalizedQuery = query.trim();
-    if (!enabled || !normalizedQuery) {
-      return;
-    }
+    if (!enabled || !normalizedQuery) return;
 
     const controller = new AbortController();
     const requestKey = normalizedQuery;
@@ -61,33 +58,32 @@ export function usePipedSearch(
             ? { ...current, isRetrying: true }
             : current
         );
-      }, 650);
+      }, 700);
 
-      void pipedClient
+      void youtubeMusic
         .search(normalizedQuery, controller.signal)
-        .then((response) => {
+        .then((results) => {
           setState({
             query: requestKey,
-            results: response.items,
+            results,
             isLoading: false,
             isRetrying: false,
             error: null,
-            attempts: response.attempts,
+            attempts: 1,
           });
         })
         .catch((error: unknown) => {
           if (controller.signal.aborted) return;
-          const message =
-            error instanceof PipedRequestError || error instanceof Error
-              ? error.message
-              : "Piped search failed. Please try again.";
           setState({
             query: requestKey,
             results: [],
             isLoading: false,
             isRetrying: false,
-            error: message,
-            attempts: error instanceof PipedRequestError ? error.attempts : 0,
+            error: error instanceof Error ? error.message : "YouTube search failed.",
+            attempts:
+              typeof error === "object" && error !== null && "attempts" in error
+                ? Number(error.attempts)
+                : 0,
           });
         })
         .finally(() => {

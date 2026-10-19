@@ -23,9 +23,12 @@ import { MagneticSeekbar } from "@/components/player/MagneticSeekbar";
 import { QueueDrawer } from "@/components/layout/QueueDrawer";
 import { usePlayerStore } from "@/store/usePlayerStore";
 import { useAudioPlayer } from "@/hooks/useAudioPlayer";
-import { usePipedSearch } from "@/hooks/usePipedSearch";
+import { useYoutubeSearch } from "@/hooks/useYoutubeSearch";
 import { PlaylistSearchEngine } from "@/core/algorithms/PlaylistSearchEngine";
-import { pipedClient, type PipedSearchResult } from "@/core/services/PipedClient";
+import {
+  youtubeMusic,
+  type YoutubeMusicResult,
+} from "@/core/services/youtubeMusic";
 import type { Track } from "@/core/algorithms/DoublyLinkedQueue";
 
 // Danh sách nhạc stream trực tiếp từ Google Cloud Storage (100% CORS & Range streaming)
@@ -80,29 +83,17 @@ interface AppleSearchTrack {
 const YOUTUBE_NOISE_PATTERN =
   /\b(?:cover|karaoke|beat|reaction|slowed|reverb|1\s*hour|1h)\b|nhạc\s*chế/i;
 
-function getPipedVideoId(result: PipedSearchResult): string | null {
-  if (result.videoId) return result.videoId;
-  if (!result.url) return null;
-
-  try {
-    return new URL(result.url, "https://www.youtube.com").searchParams.get("v");
-  } catch {
-    return null;
-  }
-}
-
 function chooseOfficialResult(
-  results: PipedSearchResult[],
+  results: YoutubeMusicResult[],
   track: Track
-): PipedSearchResult | null {
+): YoutubeMusicResult | null {
   const normalizedTitle = track.title.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
   const titleTerms = normalizedTitle.split(/\s+/).filter((term) => term.length > 2);
   const artistTerms = track.artist.toLocaleLowerCase().split(/[^\p{L}\p{N}]+/u).filter((term) => term.length > 2);
   const candidates = results.filter((result) => {
     const duration = result.duration ?? 0;
     return (
-      result.type === "stream" &&
-      getPipedVideoId(result) !== null &&
+      Boolean(result.videoId) &&
       duration >= 120 &&
       duration <= 420 &&
       !YOUTUBE_NOISE_PATTERN.test(result.title ?? "")
@@ -112,9 +103,9 @@ function chooseOfficialResult(
   candidates.sort((left, right) => score(right) - score(left));
   return candidates[0] ?? null;
 
-  function score(result: PipedSearchResult) {
+  function score(result: YoutubeMusicResult) {
     const title = (result.title ?? "").toLocaleLowerCase();
-    const uploader = (result.uploaderName ?? "").toLocaleLowerCase();
+    const uploader = (result.artist ?? "").toLocaleLowerCase();
     const titleMatches = titleTerms.filter((term) => title.includes(term)).length;
     const artistMatches = artistTerms.filter((term) => title.includes(term) || uploader.includes(term)).length;
     const officialChannel = /\b(topic|official)\b/i.test(uploader);
@@ -181,32 +172,31 @@ export default function DesktopHome() {
     startTrackFromGesture,
     togglePlaybackFromGesture,
   } = useAudioPlayer();
-  const pipedSearch = usePipedSearch(searchQuery, {
+  const youtubeSearch = useYoutubeSearch(searchQuery, {
     enabled: searchSource === "youtube",
   });
-  const pipedTracks = pipedSearch.results
+  const youtubeTracks = youtubeSearch.results
     .filter((result) => {
       const duration = result.duration ?? 0;
       return (
-        result.type === "stream" &&
+        Boolean(result.videoId) &&
         duration >= 120 &&
         duration <= 420 &&
-        !YOUTUBE_NOISE_PATTERN.test(result.title ?? "") &&
-        Boolean(getPipedVideoId(result))
+        !YOUTUBE_NOISE_PATTERN.test(result.title ?? "")
       );
     })
     .map((result): Track => {
-      const videoId = getPipedVideoId(result)!;
+      const videoId = result.videoId;
       return {
         id: `youtube-${videoId}`,
         youtubeVideoId: videoId,
-        title: result.title || "YouTube track",
-        artist: result.uploaderName || "YouTube artist",
+        title: result.title,
+        artist: result.artist,
         album: "YouTube Music",
-        duration: result.duration ?? 0,
+        duration: result.duration,
         bpm: 0,
         streamUrl: "",
-        coverUrl: result.thumbnail || FALLBACK_COVER,
+        coverUrl: result.coverUrl || FALLBACK_COVER,
         dominantColors: ["#FF2A85", "#00F0FF"],
       };
     });
@@ -215,19 +205,19 @@ export default function DesktopHome() {
       ? playlistSearch.searchByPrefix(searchQuery)
       : searchQuery.trim()
         ? searchSource === "youtube"
-          ? pipedTracks
+          ? youtubeTracks
           : onlineTracks
         : [];
   const activeSearchKey = `${searchSource}:${searchQuery.trim()}`;
   const isSearchLoading = searchSource === "youtube"
-    ? pipedSearch.isLoading
+    ? youtubeSearch.isLoading
     : searchSource !== "library" &&
       Boolean(searchQuery.trim()) &&
       searchStatus.key === activeSearchKey &&
       searchStatus.loading;
   const searchError =
     searchSource === "youtube"
-      ? pipedSearch.error
+      ? youtubeSearch.error
       : searchStatus.key === activeSearchKey
         ? searchStatus.error
         : "";
@@ -409,9 +399,9 @@ export default function DesktopHome() {
 
     try {
       const query = `${track.artist} ${track.title} Official Audio`;
-      const payload = await pipedClient.search(query);
-      const result = chooseOfficialResult(payload.items ?? [], track);
-      const videoId = result ? getPipedVideoId(result) : null;
+      const results = await youtubeMusic.search(query);
+      const result = chooseOfficialResult(results, track);
+      const videoId = result?.videoId;
       if (!result || !videoId) throw new Error("No clean official audio result was found.");
       if (requestId !== streamResolutionRequestRef.current) return;
       setOfficialTrackUrl(`https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`);
@@ -683,8 +673,8 @@ export default function DesktopHome() {
         {isSearchLoading && (
           <p role="status" className="mb-4 flex items-center gap-2 text-xs text-zinc-400">
             <LoaderCircle className="h-3.5 w-3.5 animate-spin text-neon-cyan" />
-            {pipedSearch.isRetrying
-              ? `Piped chậm, đang thử instance dự phòng${pipedSearch.attempts ? ` (${pipedSearch.attempts + 1}/4)` : "..."}`
+            {youtubeSearch.isRetrying
+              ? `Nguồn YouTube chính chậm, đang thử Invidious${youtubeSearch.attempts ? ` (${youtubeSearch.attempts + 1}/3)` : "..."}`
               : "Đang tìm kiếm..."}
           </p>
         )}
@@ -692,10 +682,10 @@ export default function DesktopHome() {
         {searchError && searchSource === "youtube" && (
           <button
             type="button"
-            onClick={pipedSearch.retry}
+            onClick={youtubeSearch.retry}
             className="mb-4 rounded-lg border border-white/10 px-3 py-2 text-xs text-zinc-300 transition hover:border-neon-cyan/40 hover:text-neon-cyan"
           >
-            Retry Piped search{pipedSearch.attempts ? ` (${pipedSearch.attempts} instances tried)` : ""}
+            Thử tìm lại{youtubeSearch.attempts ? ` (${youtubeSearch.attempts} nguồn đã thử)` : ""}
           </button>
         )}
         {playbackError && <p role="alert" className="mb-4 text-xs text-amber-300">{playbackError}</p>}
