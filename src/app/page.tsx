@@ -25,7 +25,7 @@ import { usePlayerStore } from "@/store/usePlayerStore";
 import { useAudioPlayer } from "@/hooks/useAudioPlayer";
 import { useYoutubeSearch } from "@/hooks/useYoutubeSearch";
 import { PlaylistSearchEngine } from "@/core/algorithms/PlaylistSearchEngine";
-import { getPlayableNCTTrack, searchNCTSongs } from "@/core/services/musicSources";
+import { getSoundCloudPermalink, searchSoundCloudTracks } from "@/core/services/soundCloudMusic";
 import {
   youtubeMusic,
 } from "@/core/services/youtubeMusic";
@@ -60,7 +60,7 @@ const DEMO_TRACKS: Track[] = [
 const playlistSearch = new PlaylistSearchEngine();
 playlistSearch.indexTracks(DEMO_TRACKS);
 
-type SearchSource = "library" | "all" | "apple" | "youtube";
+type SearchSource = "library" | "soundcloud" | "apple" | "youtube";
 
 interface AppleSearchTrack {
   trackId: number;
@@ -79,7 +79,7 @@ const FALLBACK_COVER =
   "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&q=80";
 const SOURCE_TABS: { id: SearchSource; label: string }[] = [
   { id: "library", label: "Thư viện Mặc định" },
-  { id: "all", label: "All song" },
+  { id: "soundcloud", label: "SoundCloud (V-Pop & Quốc Tế)" },
   { id: "apple", label: "Khám phá V-Pop/US-UK (Apple Music)" },
   { id: "youtube", label: "YouTube Music" },
 ];
@@ -110,6 +110,7 @@ export default function DesktopHome() {
   }>({ key: "", loading: false, error: "" });
   const [playbackError, setPlaybackError] = useState("");
   const [officialTrackUrl, setOfficialTrackUrl] = useState("");
+  const [soundCloudWidgetUrl, setSoundCloudWidgetUrl] = useState("");
   const [isAddPanelOpen, setIsAddPanelOpen] = useState(false);
   const [directUrl, setDirectUrl] = useState("");
   const [addError, setAddError] = useState("");
@@ -191,9 +192,23 @@ export default function DesktopHome() {
       setSearchStatus({ key: searchKey, loading: true, error: "" });
 
       try {
-        if (searchSource === "all") {
-          const tracks = await searchNCTSongs(query);
-          if (!controller.signal.aborted) setOnlineTracks(tracks);
+        if (searchSource === "soundcloud") {
+          const results = await searchSoundCloudTracks(query, controller.signal);
+          if (!controller.signal.aborted) {
+            setOnlineTracks(results.map((result): Track => ({
+              id: result.id,
+              soundCloudId: result.rawId,
+              soundCloudPermalink: result.permalinkUrl,
+              title: result.title,
+              artist: result.artist,
+              album: result.album,
+              duration: result.duration,
+              bpm: 0,
+              streamUrl: "",
+              coverUrl: result.coverUrl || FALLBACK_COVER,
+              dominantColors: ["#FF5500", "#00F0FF"],
+            })));
+          }
         } else {
           const response = await fetch(
             `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&entity=song&limit=15`,
@@ -315,18 +330,18 @@ export default function DesktopHome() {
     const requestId = ++streamResolutionRequestRef.current;
     setPlaybackError("");
     setOfficialTrackUrl("");
+    setSoundCloudWidgetUrl("");
 
-    if (track.nctKey) {
+    if (track.soundCloudId) {
       try {
-        const fullTrack = await getPlayableNCTTrack(track.nctKey);
-        if (!fullTrack.streamUrl) {
-          window.alert("Bài hát này hiện chưa có link phát trực tiếp.");
-          return;
-        }
+        const permalink = track.soundCloudPermalink || await getSoundCloudPermalink(track.soundCloudId);
         if (requestId !== streamResolutionRequestRef.current) return;
-        startTrackFromGesture(fullTrack);
+        setSoundCloudWidgetUrl(
+          `https://w.soundcloud.com/player/?url=${encodeURIComponent(permalink)}&auto_play=true`
+        );
       } catch (error) {
-        console.error("Lỗi phát nhạc NCT:", error);
+        console.error("SoundCloud playback failed:", error);
+        setPlaybackError(error instanceof Error ? error.message : "Không thể mở SoundCloud player.");
       }
       return;
     }
@@ -622,7 +637,7 @@ export default function DesktopHome() {
           ))}
         </div>
         {searchSource !== "library" && !searchQuery.trim() && (
-          <p className="mb-4 text-xs text-zinc-500">Nhập từ khóa để tìm nhạc trên {searchSource === "all" ? "NhacCuaTui" : searchSource === "apple" ? "Apple Music" : "YouTube Music"}.</p>
+          <p className="mb-4 text-xs text-zinc-500">Nhập từ khóa để tìm nhạc trên {searchSource === "soundcloud" ? "SoundCloud" : searchSource === "apple" ? "Apple Music" : "YouTube Music"}.</p>
         )}
         {isSearchLoading && (
           <p role="status" className="mb-4 flex items-center gap-2 text-xs text-zinc-400">
@@ -643,6 +658,30 @@ export default function DesktopHome() {
           </button>
         )}
         {playbackError && <p role="alert" className="mb-4 text-xs text-amber-300">{playbackError}</p>}
+        {soundCloudWidgetUrl && (
+          <div className="mb-4 overflow-hidden rounded-xl border border-white/10 bg-black/30">
+            <div className="flex items-center justify-between px-3 py-2">
+              <span className="font-mono text-xs text-zinc-300">SOUNDCLOUD PLAYER</span>
+              <button
+                type="button"
+                onClick={() => setSoundCloudWidgetUrl("")}
+                className="rounded-md p-1 text-zinc-400 transition hover:bg-white/10 hover:text-white"
+                aria-label="Close SoundCloud player"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <iframe
+              title="SoundCloud track player"
+              width="100%"
+              height="166"
+              scrolling="no"
+              frameBorder="0"
+              allow="autoplay"
+              src={soundCloudWidgetUrl}
+            />
+          </div>
+        )}
         {officialTrackUrl && (
           <a
             href={officialTrackUrl}

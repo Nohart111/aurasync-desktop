@@ -10,7 +10,8 @@ export interface Track {
   coverUrl: string;
   dominantColors: [string, string];
   youtubeVideoId?: string;
-  nctKey?: string;
+  soundCloudId?: number;
+  soundCloudPermalink?: string;
 }
 
 export class QueueNode {
