@@ -7,6 +7,7 @@
   bpm?: number;
   streamUrl?: string;
   url?: string;
+  r2Key?: string;
   coverUrl?: string;
   dominantColors?: [string, string];
 }

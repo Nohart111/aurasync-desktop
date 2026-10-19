@@ -1,47 +1,37 @@
-import { NextResponse } from "next/server";
-import { checkFileExistsOnR2, getR2ObjectUrl } from "@/lib/r2-client";
-import type { Track } from "@/core/algorithms/DoublyLinkedQueue";
+﻿import { NextRequest, NextResponse } from "next/server";
+import { connection } from "next/server";
 
-interface ResolveRequest extends Partial<Track> {
-  externalStreamUrl?: string;
+export interface ResolveRequest {
+  trackId?: string;
+  r2Key?: string;
+  fileKey?: string;
+  url?: string;
+  [key: string]: any;
 }
 
-export async function POST(request: Request) {
+export async function POST(req: NextRequest) {
+  await connection();
   try {
-    const payload = (await request.json()) as ResolveRequest;
-    if (!payload.id || !payload.title) {
-      return NextResponse.json({ error: "Track id and title are required." }, { status: 400 });
-    }
-
-    if (payload.externalStreamUrl) {
-      return NextResponse.json(
-        { error: "External media ingestion is disabled. Upload an audio file you own." },
-        { status: 403 }
-      );
-    }
-
-    const key = payload.r2Key || `tracks/${payload.id}.mp3`;
-    if (!(await checkFileExistsOnR2(key))) {
-      return NextResponse.json({ error: "Track is not present in the R2 catalog." }, { status: 404 });
-    }
-
-    const track: Track = {
-      id: payload.id,
-      title: payload.title,
-      artist: payload.artist || "Unknown artist",
-      album: payload.album || "AuraSound Studio",
-      duration: payload.duration || 0,
-      bpm: payload.bpm || 0,
-      coverUrl: payload.coverUrl || "",
-      dominantColors: payload.dominantColors || ["#00F0FF", "#8A2BE2"],
-      streamUrl: getR2ObjectUrl(key),
-    };
-
-    return NextResponse.json({ status: "cached", track: { ...track, isCachedOnR2: true } });
-  } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Unable to resolve R2 track." },
-      { status: 500 }
-    );
+    const body: ResolveRequest = await req.json();
+    const key = body.r2Key || body.fileKey || body.trackId || "";
+    return NextResponse.json({
+      streamUrl: body.url || `/api/tracks/stream?url=${encodeURIComponent(key)}`,
+      r2Key: body.r2Key,
+      trackId: body.trackId,
+    });
+  } catch {
+    return NextResponse.json({ error: "Invalid request" }, { status: 400 });
   }
+}
+
+export async function GET(req: NextRequest) {
+  await connection();
+  const { searchParams } = new URL(req.url);
+  const r2Key = searchParams.get("r2Key") || searchParams.get("key") || "";
+  const trackId = searchParams.get("trackId") || "";
+  return NextResponse.json({
+    streamUrl: `/api/tracks/stream?url=${encodeURIComponent(r2Key || trackId)}`,
+    r2Key,
+    trackId,
+  });
 }

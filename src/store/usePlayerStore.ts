@@ -6,13 +6,18 @@ export interface Track {
   artist?: string;
   album?: string;
   duration?: number;
+  bpm?: number;
   streamUrl?: string;
   url?: string;
+  r2Key?: string;
   coverUrl?: string;
+  dominantColors?: [string, string];
 }
 
 interface PlayerState {
   currentTrack: Track | null;
+  currentDuration: number;
+  duration: number;
   queue: Track[];
   queueItems: Track[];
   isPlaying: boolean;
@@ -35,6 +40,8 @@ interface PlayerState {
 
 export const usePlayerStore = create<PlayerState>((set, get) => ({
   currentTrack: null,
+  currentDuration: 180,
+  duration: 180,
   queue: [],
   queueItems: [],
   isPlaying: false,
@@ -60,6 +67,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     }
     set({
       currentTrack: track,
+      currentDuration: track.duration || 180,
+      duration: track.duration || 180,
       queue: finalQueue,
       queueItems: finalQueue,
       isPlaying: true,
@@ -96,7 +105,12 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const { queue } = get();
     const track = queue.find((t) => String(t.id) === String(trackId));
     if (track) {
-      set({ currentTrack: track, isPlaying: true });
+      set({ 
+        currentTrack: track, 
+        currentDuration: track.duration || 180,
+        duration: track.duration || 180,
+        isPlaying: true 
+      });
     }
   },
 
@@ -104,13 +118,11 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const { queue, currentTrack } = get();
     if (!queue || queue.length === 0) return null;
 
-    // Nếu chỉ có 1 bài trong danh sách
     if (queue.length === 1) {
       set({ currentTrack: queue[0], isPlaying: true });
       return queue[0];
     }
 
-    // Tìm index bài hiện tại (so khớp cả ID lẫn tên bài hát)
     const currentIndex = queue.findIndex(
       (t) => String(t.id) === String(currentTrack?.id) || t.title === currentTrack?.title
     );
@@ -119,6 +131,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
     set({
       currentTrack: nextTrack,
+      currentDuration: nextTrack.duration || 180,
+      duration: nextTrack.duration || 180,
       isPlaying: true,
     });
     return nextTrack;
@@ -141,6 +155,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
     set({
       currentTrack: prevTrack,
+      currentDuration: prevTrack.duration || 180,
+      duration: prevTrack.duration || 180,
       isPlaying: true,
     });
     return prevTrack;
@@ -149,7 +165,6 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   setQueue: (tracks) => set({ queue: tracks, queueItems: tracks }),
 }));
 
-// Tự động nạp toàn bộ bài hát từ CDN/Catalog vào queue khi mở trang
 if (typeof window !== 'undefined') {
   fetch('/api/tracks/search')
     .then((res) => res.json())
@@ -160,7 +175,11 @@ if (typeof window !== 'undefined') {
         if (!store.queue || store.queue.length === 0) {
           store.setQueue(tracks);
           if (!store.currentTrack) {
-            usePlayerStore.setState({ currentTrack: tracks[0] });
+            usePlayerStore.setState({ 
+              currentTrack: tracks[0],
+              currentDuration: tracks[0].duration || 180,
+              duration: tracks[0].duration || 180,
+            });
           }
         }
       }
