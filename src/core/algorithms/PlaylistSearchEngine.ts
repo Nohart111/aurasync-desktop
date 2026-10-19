@@ -22,7 +22,6 @@ export class PlaylistSearchEngine {
       }
     }
 
-    // Xử lý an toàn undefined khi so sánh BPM
     this.sortedByBpm = [...tracks].sort((a, b) => (a.bpm || 0) - (b.bpm || 0));
   }
 
@@ -62,16 +61,25 @@ export class PlaylistSearchEngine {
       if (matchedIds === null) {
         matchedIds = new Set(currentTokenIds);
       } else {
-        matchedIds = new Set(
-          [...matchedIds].filter((id) => currentTokenIds.has(id))
-        );
+        // Giao 2 tập hợp (Set Intersection) tường minh, triệt tiêu hoàn toàn lỗi TS2769 (id: never)
+        const nextMatched = new Set<string>();
+        for (const id of Array.from(matchedIds)) {
+          if (currentTokenIds.has(id)) {
+            nextMatched.add(id);
+          }
+        }
+        matchedIds = nextMatched;
       }
     }
 
-    if (!matchedIds) return [];
-    return Array.from(matchedIds)
-      .map((id) => this.trackById.get(id)!)
-      .filter(Boolean);
+    if (!matchedIds || matchedIds.size === 0) return [];
+
+    const results: Track[] = [];
+    for (const id of Array.from(matchedIds)) {
+      const track = this.trackById.get(id);
+      if (track) results.push(track);
+    }
+    return results;
   }
 
   public filterByBpmRange(minBpm: number, maxBpm: number): Track[] {
@@ -88,7 +96,6 @@ export class PlaylistSearchEngine {
     while (low <= high) {
       const mid = (low + high) >>> 1;
       const track = this.sortedByBpm[mid];
-      // Kiểm tra an toàn Object is possibly undefined
       if (track && (track.bpm || 0) >= target) {
         ans = mid;
         high = mid - 1;
@@ -106,7 +113,6 @@ export class PlaylistSearchEngine {
     while (low <= high) {
       const mid = (low + high) >>> 1;
       const track = this.sortedByBpm[mid];
-      // Kiểm tra an toàn Object is possibly undefined
       if (track && (track.bpm || 0) <= target) {
         ans = mid;
         low = mid + 1;
