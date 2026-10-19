@@ -4,6 +4,7 @@ export interface YoutubeMusicResult {
   title: string;
   artist: string;
   duration: number;
+  views: number;
   coverUrl: string;
   watchUrl: string;
   streamUrl?: string;
@@ -80,7 +81,6 @@ export class YoutubeMusicService {
   async findBestMatch(
     artist: string,
     title: string,
-    duration: number,
     signal?: AbortSignal
   ): Promise<YoutubeMusicResult | null> {
     const query = `${artist} ${title}`.trim();
@@ -90,27 +90,16 @@ export class YoutubeMusicService {
     );
     if (candidates.length === 0) return null;
 
-    const withDuration = candidates.filter(
-      (result) => Number.isFinite(result.duration) && result.duration > 0
+    const eligibleVideos = candidates.filter(
+      (result) => result.duration > 60 && result.duration < 600
     );
-    const closeMatches = withDuration.filter(
-      (result) => Math.abs(result.duration - duration) <= 25
+    const selectionPool = eligibleVideos.length > 0 ? eligibleVideos : candidates;
+    const preferredTitleMatch = selectionPool.find((result) =>
+      /\b(?:official|mv|audio)\b/i.test(result.title)
     );
-    if (closeMatches.length === 0) {
-      return withDuration.sort(
-        (left, right) =>
-          Math.abs(left.duration - duration) - Math.abs(right.duration - duration)
-      )[0] ?? candidates[0];
-    }
+    if (preferredTitleMatch) return preferredTitleMatch;
 
-    return closeMatches.sort((left, right) => {
-      const leftOfficial = this.isPreferredChannel(left, artist) ? 1 : 0;
-      const rightOfficial = this.isPreferredChannel(right, artist) ? 1 : 0;
-      if (leftOfficial !== rightOfficial) return rightOfficial - leftOfficial;
-      return (
-        Math.abs(left.duration - duration) - Math.abs(right.duration - duration)
-      );
-    })[0];
+    return [...selectionPool].sort((left, right) => right.views - left.views)[0];
   }
 
   private async fetchResults(
@@ -133,14 +122,6 @@ export class YoutubeMusicService {
     return payload.results ?? [];
   }
 
-  private isPreferredChannel(result: YoutubeMusicResult, artist: string): boolean {
-    const channel = result.artist.toLocaleLowerCase();
-    const normalizedArtist = artist.toLocaleLowerCase().trim();
-    return (
-      (normalizedArtist.length > 0 && channel.includes(normalizedArtist)) ||
-      /\b(?:official|mv|audio)\b/i.test(channel)
-    );
-  }
 }
 
 export const youtubeMusic = new YoutubeMusicService();

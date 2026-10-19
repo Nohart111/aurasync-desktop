@@ -364,14 +364,10 @@ export default function DesktopHome() {
     try {
       const result = await youtubeMusic.findBestMatch(
         track.artist,
-        track.title,
-        track.duration
+        track.title
       );
       const videoId = result?.videoId;
-      if (!result || !videoId) {
-        setPlaybackError("Không tìm thấy video phù hợp trên YouTube.");
-        return;
-      }
+      if (!result || !videoId) return;
       if (requestId !== streamResolutionRequestRef.current) return;
       setOfficialTrackUrl(`https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`);
     } catch (error) {

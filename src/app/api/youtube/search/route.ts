@@ -11,6 +11,7 @@ interface InvidiousVideo {
   title?: string;
   author?: string;
   lengthSeconds?: number;
+  viewCount?: number;
   videoThumbnails?: Array<{ quality?: string; url?: string }>;
 }
 
@@ -54,6 +55,7 @@ function normalizeInvidiousVideo(video: InvidiousVideo) {
     title: video.title,
     artist: video.author || "YouTube artist",
     duration: video.lengthSeconds ?? 0,
+    views: video.viewCount ?? 0,
     coverUrl: thumbnail || `https://i.ytimg.com/vi/${video.videoId}/hqdefault.jpg`,
     watchUrl: `https://www.youtube.com/watch?v=${encodeURIComponent(video.videoId)}`,
   };
@@ -104,6 +106,7 @@ export async function GET(request: Request) {
       title: video.title,
       artist: video.author?.name || "YouTube Music",
       duration: video.seconds,
+      views: video.views || 0,
       coverUrl: video.thumbnail || video.image,
       watchUrl: `https://www.youtube.com/watch?v=${encodeURIComponent(video.videoId)}`,
     }));
@@ -131,6 +134,7 @@ export async function GET(request: Request) {
             title: song.trackName!,
             artist: song.artistName || "Apple Music",
             duration: Math.round((song.trackTimeMillis || 0) / 1000),
+            views: 0,
             coverUrl: song.artworkUrl100?.replace("100x100bb", "600x600bb") || "",
             watchUrl: "",
             streamUrl: song.previewUrl || "",
