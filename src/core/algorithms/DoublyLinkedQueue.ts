@@ -10,6 +10,7 @@ export interface Track {
   coverUrl: string;
   dominantColors: [string, string];
   youtubeVideoId?: string;
+  nctKey?: string;
 }
 
 export class QueueNode {

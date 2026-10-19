@@ -25,6 +25,7 @@ import { usePlayerStore } from "@/store/usePlayerStore";
 import { useAudioPlayer } from "@/hooks/useAudioPlayer";
 import { useYoutubeSearch } from "@/hooks/useYoutubeSearch";
 import { PlaylistSearchEngine } from "@/core/algorithms/PlaylistSearchEngine";
+import { getPlayableNCTTrack, searchNCTSongs } from "@/core/services/musicSources";
 import {
   youtubeMusic,
 } from "@/core/services/youtubeMusic";
@@ -59,15 +60,7 @@ const DEMO_TRACKS: Track[] = [
 const playlistSearch = new PlaylistSearchEngine();
 playlistSearch.indexTracks(DEMO_TRACKS);
 
-type SearchSource = "library" | "audius" | "apple" | "youtube";
-
-interface AudiusSearchTrack {
-  id: string | number;
-  title: string;
-  duration?: number;
-  user?: { name?: string };
-  artwork?: { "150x150"?: string } | null;
-}
+type SearchSource = "library" | "all" | "apple" | "youtube";
 
 interface AppleSearchTrack {
   trackId: number;
@@ -86,7 +79,7 @@ const FALLBACK_COVER =
   "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&q=80";
 const SOURCE_TABS: { id: SearchSource; label: string }[] = [
   { id: "library", label: "Thư viện Mặc định" },
-  { id: "audius", label: "Nhạc Full (Audius)" },
+  { id: "all", label: "All song" },
   { id: "apple", label: "Khám phá V-Pop/US-UK (Apple Music)" },
   { id: "youtube", label: "YouTube Music" },
 ];
@@ -198,28 +191,9 @@ export default function DesktopHome() {
       setSearchStatus({ key: searchKey, loading: true, error: "" });
 
       try {
-        if (searchSource === "audius") {
-          const response = await fetch(
-            `https://discoveryprovider.audius.co/v1/tracks/search?query=${encodeURIComponent(query)}&app_name=AuraSyncDesktop`,
-            { signal: controller.signal }
-          );
-          if (!response.ok) throw new Error("Audius search request failed.");
-
-          const payload = (await response.json()) as {
-            data?: AudiusSearchTrack[];
-          };
-          const tracks = (payload.data ?? []).map((track): Track => ({
-            id: `audius-${track.id}`,
-            title: track.title || "Untitled track",
-            artist: track.user?.name || "Audius artist",
-            album: "Audius",
-            duration: Math.max(0, track.duration ?? 0),
-            bpm: 0,
-            streamUrl: `https://discoveryprovider.audius.co/v1/tracks/${encodeURIComponent(String(track.id))}/stream?app_name=AuraSyncDesktop`,
-            coverUrl: track.artwork?.["150x150"] || FALLBACK_COVER,
-            dominantColors: ["#8A2BE2", "#00F0FF"],
-          }));
-          setOnlineTracks(tracks);
+        if (searchSource === "all") {
+          const tracks = await searchNCTSongs(query);
+          if (!controller.signal.aborted) setOnlineTracks(tracks);
         } else {
           const response = await fetch(
             `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&entity=song&limit=15`,
@@ -341,6 +315,21 @@ export default function DesktopHome() {
     const requestId = ++streamResolutionRequestRef.current;
     setPlaybackError("");
     setOfficialTrackUrl("");
+
+    if (track.nctKey) {
+      try {
+        const fullTrack = await getPlayableNCTTrack(track.nctKey);
+        if (!fullTrack.streamUrl) {
+          window.alert("Bài hát này hiện chưa có link phát trực tiếp.");
+          return;
+        }
+        if (requestId !== streamResolutionRequestRef.current) return;
+        startTrackFromGesture(fullTrack);
+      } catch (error) {
+        console.error("Lỗi phát nhạc NCT:", error);
+      }
+      return;
+    }
 
     if (track.youtubeVideoId) {
       window.open(
@@ -633,7 +622,7 @@ export default function DesktopHome() {
           ))}
         </div>
         {searchSource !== "library" && !searchQuery.trim() && (
-          <p className="mb-4 text-xs text-zinc-500">Nhập từ khóa để tìm nhạc trên {searchSource === "audius" ? "Audius" : searchSource === "apple" ? "Apple Music" : "YouTube Music"}.</p>
+          <p className="mb-4 text-xs text-zinc-500">Nhập từ khóa để tìm nhạc trên {searchSource === "all" ? "NhacCuaTui" : searchSource === "apple" ? "Apple Music" : "YouTube Music"}.</p>
         )}
         {isSearchLoading && (
           <p role="status" className="mb-4 flex items-center gap-2 text-xs text-zinc-400">
