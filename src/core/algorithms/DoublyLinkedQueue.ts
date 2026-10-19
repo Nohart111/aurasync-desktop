@@ -12,6 +12,9 @@ export interface Track {
   youtubeVideoId?: string;
   soundCloudId?: number;
   soundCloudPermalink?: string;
+  r2Key?: string;
+  isCachedOnR2?: boolean;
+  externalStreamUrl?: string;
 }
 
 export class QueueNode {

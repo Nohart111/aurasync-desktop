@@ -58,7 +58,7 @@ const DEMO_TRACKS: Track[] = [
 const playlistSearch = new PlaylistSearchEngine();
 playlistSearch.indexTracks(DEMO_TRACKS);
 
-type SearchSource = "library" | "soundcloud" | "apple" | "youtube";
+type SearchSource = "library" | "r2" | "soundcloud" | "apple" | "youtube";
 
 interface AppleSearchTrack {
   trackId: number;
@@ -77,6 +77,7 @@ const FALLBACK_COVER =
   "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&q=80";
 const SOURCE_TABS: { id: SearchSource; label: string }[] = [
   { id: "library", label: "Thư viện Mặc định" },
+  { id: "r2", label: "AuraSound R2 Studio" },
   { id: "soundcloud", label: "SoundCloud (V-Pop & Quốc Tế)" },
   { id: "apple", label: "Khám phá V-Pop/US-UK (Apple Music)" },
   { id: "youtube", label: "YouTube Music" },
@@ -117,9 +118,11 @@ export default function DesktopHome() {
     currentTrack,
     isPlaying,
     isBuffering,
+    isSyncingToR2,
     volume,
     duration,
     setVolume,
+    setSyncingToR2,
     advanceNext,
     advancePrev,
   } = usePlayerStore();
@@ -187,7 +190,17 @@ export default function DesktopHome() {
       setSearchStatus({ key: searchKey, loading: true, error: "" });
 
       try {
-        if (searchSource === "soundcloud") {
+        if (searchSource === "r2") {
+          const response = await fetch(`/api/tracks/search?q=${encodeURIComponent(query)}`, {
+            signal: controller.signal,
+            cache: "no-store",
+          });
+          const text = await response.text();
+          if (!text.trim()) throw new Error("R2 catalog returned an empty response.");
+          const payload = JSON.parse(text) as { tracks?: Track[]; error?: string };
+          if (!response.ok) throw new Error(payload.error || "R2 catalog search failed.");
+          if (!controller.signal.aborted) setOnlineTracks(payload.tracks ?? []);
+        } else if (searchSource === "soundcloud") {
           const results = await searchSoundCloudTracks(query, controller.signal);
           if (!controller.signal.aborted) {
             setOnlineTracks(results.map((result): Track => ({
@@ -324,59 +337,48 @@ export default function DesktopHome() {
   const handleTrackPlay = (track: Track) => {
     setPlaybackError("");
 
-    if (track.soundCloudId) {
-      setPlaybackError(
-        "SoundCloud không cung cấp stream native cho AudioEngine qua API tìm kiếm hiện tại. Bài hát chưa được phát."
-      );
+    if (!track.streamUrl) {
+      setPlaybackError("Bài này chưa có luồng phát hợp lệ trong AuraSound.");
       return;
     }
-
-    if (track.youtubeVideoId) {
-      setPlaybackError(
-        "YouTube không cung cấp stream native trong luồng tìm kiếm này. Bài hát chưa được phát."
-      );
-      return;
-    }
-
-    if (!track.id.startsWith("itunes-")) {
-      startTrackFromGesture(track);
-      return;
-    }
-
-    if (track.streamUrl) startTrackFromGesture(track);
-    else {
-      setPlaybackError("Bài này không có URL phát trực tiếp hợp lệ.");
-    }
+    void usePlayerStore.getState().selectAndPlayTrack(track).catch((error: unknown) => {
+      setPlaybackError(error instanceof Error ? error.message : "Không thể phát bài hát.");
+    });
   };
 
-  const handleLocalFiles = (event: ChangeEvent<HTMLInputElement>) => {
+  const handleLocalFiles = async (event: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files ?? []);
     if (files.length === 0) return;
 
-    const tracks = files.map((file): Track => {
-      const title = file.name.replace(/\.[^.]+$/, "") || file.name;
-      return {
-        id: `local-${crypto.randomUUID()}`,
-        title,
-        artist: "Tệp trên thiết bị",
-        album: "Thư viện cục bộ",
-        duration: 0,
-        bpm: 0,
-        streamUrl: URL.createObjectURL(file),
-        coverUrl: FALLBACK_COVER,
-        dominantColors: ["#00F0FF", "#10B981"],
-      };
-    });
-
-    setLibraryTracks((currentTracks) => {
-      const nextTracks = [...currentTracks, ...tracks];
-      playlistSearch.indexTracks(nextTracks);
-      return nextTracks;
-    });
-    tracks.forEach((track) => usePlayerStore.getState().enqueueTrack(track));
-    setAddedMessage(`${tracks.length} tệp đã được thêm vào hàng đợi.`);
+    setSyncingToR2(true);
     setAddError("");
-    if (fileInputRef.current) fileInputRef.current.value = "";
+    try {
+      const tracks = await Promise.all(files.map(async (file): Promise<Track> => {
+        const formData = new FormData();
+        formData.set("file", file);
+        const response = await fetch("/api/tracks/upload", {
+          method: "POST",
+          body: formData,
+        });
+        const payload = (await response.json()) as { track?: Track; error?: string };
+        if (!response.ok || !payload.track) {
+          throw new Error(payload.error || `Không thể tải ${file.name} lên R2.`);
+        }
+        return payload.track;
+      }));
+
+      setLibraryTracks((currentTracks) => {
+        const nextTracks = [...currentTracks, ...tracks];
+        playlistSearch.indexTracks(nextTracks);
+        return nextTracks;
+      });
+      setAddedMessage(`${tracks.length} tệp đã được tải lên R2 Studio.`);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    } catch (error) {
+      setAddError(error instanceof Error ? error.message : "Không thể tải tệp lên R2.");
+    } finally {
+      setSyncingToR2(false);
+    }
   };
 
   const handleDirectUrlSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -498,8 +500,8 @@ export default function DesktopHome() {
             className="flex h-10 items-center gap-2 rounded-lg border border-neon-cyan/30 bg-neon-cyan/10 px-3 text-sm font-medium text-neon-cyan transition hover:bg-neon-cyan/20"
           >
             <Upload className="h-4 w-4" />
-            <span className="hidden sm:inline">Thêm Nhạc Của Bạn</span>
-            <span className="sm:hidden">Thêm nhạc</span>
+            <span className="hidden sm:inline">{isSyncingToR2 ? "Đang đồng bộ lên R2 Studio..." : "Thêm Nhạc Của Bạn"}</span>
+            <span className="sm:hidden">{isSyncingToR2 ? "Đang đồng bộ..." : "Thêm nhạc"}</span>
           </button>
           {isAddPanelOpen && (
             <div className="glass-acrylic absolute right-0 top-full z-50 mt-3 w-[min(24rem,calc(100vw-2rem))] rounded-xl p-4 shadow-glass-dock">
@@ -601,7 +603,7 @@ export default function DesktopHome() {
           ))}
         </div>
         {searchSource !== "library" && !searchQuery.trim() && (
-          <p className="mb-4 text-xs text-zinc-500">Nhập từ khóa để tìm nhạc trên {searchSource === "soundcloud" ? "SoundCloud" : searchSource === "apple" ? "Apple Music" : "YouTube Music"}.</p>
+          <p className="mb-4 text-xs text-zinc-500">Nhập từ khóa để tìm nhạc trên {searchSource === "r2" ? "AuraSound R2 Studio" : searchSource === "soundcloud" ? "SoundCloud" : searchSource === "apple" ? "Apple Music" : "YouTube Music"}.</p>
         )}
         {isSearchLoading && (
           <p role="status" className="mb-4 flex items-center gap-2 text-xs text-zinc-400">
@@ -659,6 +661,11 @@ export default function DesktopHome() {
                     {currentTrack.artist}
                     {isPlaying && <AudioLines className="h-3.5 w-3.5 shrink-0 animate-pulse text-neon-cyan" />}
                   </p>
+                  {isSyncingToR2 && (
+                    <p role="status" className="animate-pulse truncate font-mono text-[10px] text-neon-cyan">
+                      Đang đồng bộ lên kho R2 Studio...
+                    </p>
+                  )}
                 </div>
               </>
             ) : (
