@@ -2,8 +2,6 @@
 import fs from "fs";
 import path from "path";
 
-export const dynamic = "force-dynamic";
-
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
@@ -23,12 +21,11 @@ export async function POST(req: NextRequest) {
 
     if (!token) {
       return NextResponse.json(
-        { error: "Chưa nạp GITHUB_TOKEN trong .env.local" },
+        { error: "Chưa nạp GITHUB_TOKEN trong biến môi trường" },
         { status: 500 }
       );
     }
 
-    // 1. Lấy upload_url từ GitHub Release kèm User-Agent
     const releaseRes = await fetch(
       `https://api.github.com/repos/${owner}/${repo}/releases/tags/${tag}`,
       {
@@ -54,7 +51,6 @@ export async function POST(req: NextRequest) {
     const cleanFileName = `${Date.now()}_${encodeURIComponent(file.name.replace(/[^a-zA-Z0-9._-]/g, "_"))}`;
     const fileBuffer = Buffer.from(await file.arrayBuffer());
 
-    // 2. Upload file nhị phân vào Release Asset
     const uploadRes = await fetch(`${uploadUrl}?name=${cleanFileName}`, {
       method: "POST",
       headers: {
@@ -77,7 +73,6 @@ export async function POST(req: NextRequest) {
     const assetData = await uploadRes.json();
     const streamUrl = assetData.browser_download_url;
 
-    // 3. Lưu vào catalog.json cục bộ
     const catalogDir = path.join(process.cwd(), "data");
     const catalogPath = path.join(catalogDir, "catalog.json");
 

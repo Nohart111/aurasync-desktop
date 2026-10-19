@@ -9,9 +9,7 @@ export async function GET() {
   const tag = process.env.GITHUB_RELEASE_TAG || "tracks-v1";
 
   const trackMap = new Map();
-  let debugInfo: any = {};
 
-  // Đọc danh mục cục bộ
   try {
     const catalogPath = path.join(process.cwd(), "data", "catalog.json");
     if (fs.existsSync(catalogPath)) {
@@ -22,10 +20,9 @@ export async function GET() {
       }
     }
   } catch (err) {
-    debugInfo.localError = (err as Error).message;
+    console.error("Lỗi đọc catalog:", err);
   }
 
-  // Đồng bộ từ GitHub Releases
   try {
     const headers: Record<string, string> = {
       Accept: "application/vnd.github+json",
@@ -40,12 +37,9 @@ export async function GET() {
       { headers, cache: "no-store" }
     );
 
-    debugInfo.githubStatus = res.status;
-
     if (res.ok) {
       const releaseData = await res.json();
       const assets = releaseData.assets || [];
-      debugInfo.assetsFound = assets.length;
 
       assets.forEach((asset: any) => {
         const id = String(asset.id);
@@ -66,20 +60,11 @@ export async function GET() {
           });
         }
       });
-    } else {
-      debugInfo.githubError = await res.text();
     }
   } catch (err) {
-    debugInfo.fetchError = (err as Error).message;
+    console.error("Lỗi lấy assets:", err);
   }
 
   const tracks = Array.from(trackMap.values());
-
-  return new NextResponse(JSON.stringify({ tracks, debug: debugInfo }), {
-    status: 200,
-    headers: {
-      "Content-Type": "application/json",
-      "Cache-Control": "no-store, no-cache, must-revalidate",
-    },
-  });
+  return NextResponse.json({ tracks });
 }
