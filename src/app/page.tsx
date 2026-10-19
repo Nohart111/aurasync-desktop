@@ -23,7 +23,9 @@ import { MagneticSeekbar } from "@/components/player/MagneticSeekbar";
 import { QueueDrawer } from "@/components/layout/QueueDrawer";
 import { usePlayerStore } from "@/store/usePlayerStore";
 import { useAudioPlayer } from "@/hooks/useAudioPlayer";
+import { usePipedSearch } from "@/hooks/usePipedSearch";
 import { PlaylistSearchEngine } from "@/core/algorithms/PlaylistSearchEngine";
+import { pipedClient, type PipedSearchResult } from "@/core/services/PipedClient";
 import type { Track } from "@/core/algorithms/DoublyLinkedQueue";
 
 // Danh sách nhạc stream trực tiếp từ Google Cloud Storage (100% CORS & Range streaming)
@@ -75,16 +77,6 @@ interface AppleSearchTrack {
   artworkUrl100?: string;
 }
 
-interface PipedSearchResult {
-  type?: string;
-  url?: string;
-  videoId?: string;
-  title?: string;
-  uploaderName?: string;
-  duration?: number;
-  thumbnail?: string;
-}
-
 const YOUTUBE_NOISE_PATTERN =
   /\b(?:cover|karaoke|beat|reaction|slowed|reverb|1\s*hour|1h)\b|nhạc\s*chế/i;
 
@@ -97,20 +89,6 @@ function getPipedVideoId(result: PipedSearchResult): string | null {
   } catch {
     return null;
   }
-}
-
-async function searchPiped(query: string, signal?: AbortSignal) {
-  const params = new URLSearchParams({
-    type: "search",
-    q: query,
-    filter: "music_songs",
-  });
-  const response = await fetch(`/api/piped?${params}`, { signal });
-  if (!response.ok) throw new Error("Piped search is temporarily unavailable.");
-    const payload = (await response.json()) as
-      | PipedSearchResult[]
-      | { items?: PipedSearchResult[] };
-    return Array.isArray(payload) ? { items: payload } : payload;
 }
 
 function chooseOfficialResult(
@@ -203,23 +181,59 @@ export default function DesktopHome() {
     startTrackFromGesture,
     togglePlaybackFromGesture,
   } = useAudioPlayer();
+  const pipedSearch = usePipedSearch(searchQuery, {
+    enabled: searchSource === "youtube",
+  });
+  const pipedTracks = pipedSearch.results
+    .filter((result) => {
+      const duration = result.duration ?? 0;
+      return (
+        result.type === "stream" &&
+        duration >= 120 &&
+        duration <= 420 &&
+        !YOUTUBE_NOISE_PATTERN.test(result.title ?? "") &&
+        Boolean(getPipedVideoId(result))
+      );
+    })
+    .map((result): Track => {
+      const videoId = getPipedVideoId(result)!;
+      return {
+        id: `youtube-${videoId}`,
+        youtubeVideoId: videoId,
+        title: result.title || "YouTube track",
+        artist: result.uploaderName || "YouTube artist",
+        album: "YouTube Music",
+        duration: result.duration ?? 0,
+        bpm: 0,
+        streamUrl: "",
+        coverUrl: result.thumbnail || FALLBACK_COVER,
+        dominantColors: ["#FF2A85", "#00F0FF"],
+      };
+    });
   const visibleTracks =
     searchSource === "library"
       ? playlistSearch.searchByPrefix(searchQuery)
       : searchQuery.trim()
-        ? onlineTracks
+        ? searchSource === "youtube"
+          ? pipedTracks
+          : onlineTracks
         : [];
   const activeSearchKey = `${searchSource}:${searchQuery.trim()}`;
-  const isSearchLoading =
-    searchSource !== "library" &&
-    Boolean(searchQuery.trim()) &&
-    searchStatus.key === activeSearchKey &&
-    searchStatus.loading;
+  const isSearchLoading = searchSource === "youtube"
+    ? pipedSearch.isLoading
+    : searchSource !== "library" &&
+      Boolean(searchQuery.trim()) &&
+      searchStatus.key === activeSearchKey &&
+      searchStatus.loading;
   const searchError =
-    searchStatus.key === activeSearchKey ? searchStatus.error : "";
+    searchSource === "youtube"
+      ? pipedSearch.error
+      : searchStatus.key === activeSearchKey
+        ? searchStatus.error
+        : "";
 
   useEffect(() => {
-    if (searchSource === "library") return;
+    if (searchSource === "library" || searchSource === "youtube") return;
 
     const query = searchQuery.trim();
     if (!query) return;
@@ -251,35 +265,6 @@ export default function DesktopHome() {
             coverUrl: track.artwork?.["150x150"] || FALLBACK_COVER,
             dominantColors: ["#8A2BE2", "#00F0FF"],
           }));
-          setOnlineTracks(tracks);
-        } else if (searchSource === "youtube") {
-          const payload = await searchPiped(query, controller.signal);
-          const tracks = (payload.items ?? [])
-            .filter((result) => {
-              const duration = result.duration ?? 0;
-              return (
-                result.type === "stream" &&
-                duration >= 120 &&
-                duration <= 420 &&
-                !YOUTUBE_NOISE_PATTERN.test(result.title ?? "") &&
-                Boolean(getPipedVideoId(result))
-              );
-            })
-            .map((result): Track => {
-              const videoId = getPipedVideoId(result)!;
-              return {
-                id: `youtube-${videoId}`,
-                youtubeVideoId: videoId,
-                title: result.title || "YouTube track",
-                artist: result.uploaderName || "YouTube artist",
-                album: "YouTube Music",
-                duration: result.duration ?? 0,
-                bpm: 0,
-                streamUrl: "",
-                coverUrl: result.thumbnail || FALLBACK_COVER,
-                dominantColors: ["#FF2A85", "#00F0FF"],
-              };
-            });
           setOnlineTracks(tracks);
         } else {
           const response = await fetch(
@@ -424,7 +409,7 @@ export default function DesktopHome() {
 
     try {
       const query = `${track.artist} ${track.title} Official Audio`;
-      const payload = await searchPiped(query);
+      const payload = await pipedClient.search(query);
       const result = chooseOfficialResult(payload.items ?? [], track);
       const videoId = result ? getPipedVideoId(result) : null;
       if (!result || !videoId) throw new Error("No clean official audio result was found.");
@@ -698,10 +683,21 @@ export default function DesktopHome() {
         {isSearchLoading && (
           <p role="status" className="mb-4 flex items-center gap-2 text-xs text-zinc-400">
             <LoaderCircle className="h-3.5 w-3.5 animate-spin text-neon-cyan" />
-            Đang tìm kiếm...
+            {pipedSearch.isRetrying
+              ? `Piped chậm, đang thử instance dự phòng${pipedSearch.attempts ? ` (${pipedSearch.attempts + 1}/4)` : "..."}`
+              : "Đang tìm kiếm..."}
           </p>
         )}
         {searchError && <p role="alert" className="mb-4 text-xs text-rose-400">{searchError}</p>}
+        {searchError && searchSource === "youtube" && (
+          <button
+            type="button"
+            onClick={pipedSearch.retry}
+            className="mb-4 rounded-lg border border-white/10 px-3 py-2 text-xs text-zinc-300 transition hover:border-neon-cyan/40 hover:text-neon-cyan"
+          >
+            Retry Piped search{pipedSearch.attempts ? ` (${pipedSearch.attempts} instances tried)` : ""}
+          </button>
+        )}
         {playbackError && <p role="alert" className="mb-4 text-xs text-amber-300">{playbackError}</p>}
         {officialTrackUrl && (
           <a
