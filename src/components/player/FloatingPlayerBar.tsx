@@ -1,4 +1,4 @@
-
+// src/components/player/FloatingPlayerBar.tsx
 "use client";
 
 import { usePlayerStore } from "@/store/usePlayerStore";
@@ -6,23 +6,13 @@ import { useAudioPlayer } from "@/hooks/useAudioPlayer";
 import { AudioEngine } from "@/core/audio/AudioEngine";
 import { MagneticSeekbar } from "./MagneticSeekbar";
 import { SpectrumVisualizer } from "./SpectrumVisualizer";
-import {
-  Play,
-  Pause,
-  SkipBack,
-  SkipForward,
-  Volume2,
-  ListMusic,
-} from "lucide-react";
+import { Play, Pause, SkipBack, SkipForward, Volume2, ListMusic } from "lucide-react";
 
-export function FloatingPlayerBar({
-  onToggleQueue,
-}: {
-  onToggleQueue: () => void;
-}) {
+export function FloatingPlayerBar({ onToggleQueue }: { onToggleQueue: () => void }) {
   const {
     currentTrack,
     isPlaying,
+    setPlaying,
     advanceNext,
     advancePrev,
     volume,
@@ -30,33 +20,13 @@ export function FloatingPlayerBar({
     queueItems,
   } = usePlayerStore();
 
-  const {
-    progressMV,
-    currentTimeMV,
-    seekTo,
-    togglePlaybackFromGesture,
-  } = useAudioPlayer();
+  const { progressMV, seekTo } = useAudioPlayer();
 
   if (!currentTrack) return null;
 
-  const trackDuration =
-    Number.isFinite(currentTrack.duration) && currentTrack.duration > 0
-      ? currentTrack.duration
-      : 180;
-
   const handleSeek = (targetSeconds: number) => {
-    const engineDuration = AudioEngine.getInstance().getDuration();
-
-    const realDuration =
-      Number.isFinite(engineDuration) && engineDuration > 0
-        ? engineDuration
-        : trackDuration;
-
-    const ratio = Math.max(
-      0,
-      Math.min(targetSeconds / trackDuration, 1),
-    );
-
+    const realDuration = AudioEngine.getInstance().getDuration() || currentTrack.duration || 180;
+    const ratio = targetSeconds / (currentTrack.duration || 180);
     seekTo(ratio * realDuration);
   };
 
@@ -68,33 +38,19 @@ export function FloatingPlayerBar({
           alt={currentTrack.title}
           className="h-12 w-12 shrink-0 rounded-xl object-cover shadow-md"
         />
-
-        <div className="min-w-0 truncate">
-          <p className="truncate text-sm font-semibold text-white">
-            {currentTrack.title}
-          </p>
-
-          <p className="truncate text-xs text-zinc-400">
-            {currentTrack.artist}
-          </p>
+        <div className="truncate">
+          <p className="truncate text-sm font-semibold text-white">{currentTrack.title}</p>
+          <p className="truncate text-xs text-zinc-400">{currentTrack.artist}</p>
         </div>
       </div>
 
       <div className="flex w-2/4 flex-col items-center gap-1.5">
         <div className="flex items-center gap-5">
-          <button
-            type="button"
-            onClick={advancePrev}
-            aria-label="Previous track"
-            className="text-zinc-400 transition hover:text-white"
-          >
+          <button onClick={advancePrev} className="text-zinc-400 transition hover:text-white">
             <SkipBack className="h-5 w-5" />
           </button>
-
           <button
-            type="button"
-            onClick={togglePlaybackFromGesture}
-            aria-label={isPlaying ? "Pause" : "Play"}
+            onClick={() => setPlaying(!isPlaying)}
             className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-black shadow-neon-cyan transition hover:scale-105"
           >
             {isPlaying ? (
@@ -103,13 +59,7 @@ export function FloatingPlayerBar({
               <Play className="ml-0.5 h-5 w-5 fill-black" />
             )}
           </button>
-
-          <button
-            type="button"
-            onClick={advanceNext}
-            aria-label="Next track"
-            className="text-zinc-400 transition hover:text-white"
-          >
+          <button onClick={advanceNext} className="text-zinc-400 transition hover:text-white">
             <SkipForward className="h-5 w-5" />
           </button>
         </div>
@@ -117,8 +67,7 @@ export function FloatingPlayerBar({
         <div className="w-full max-w-md">
           <MagneticSeekbar
             progressMV={progressMV}
-            currentTimeMV={currentTimeMV}
-            duration={trackDuration}
+            duration={currentTrack.duration || 180}
             onSeek={handleSeek}
           />
         </div>
@@ -126,34 +75,25 @@ export function FloatingPlayerBar({
 
       <div className="flex w-1/4 items-center justify-end gap-4">
         <SpectrumVisualizer />
-
         <div className="flex items-center gap-2">
           <Volume2 className="h-4 w-4 text-zinc-400" />
-
           <input
             type="range"
-            min={0}
-            max={1}
-            step={0.01}
+            min="0"
+            max="1"
+            step="0.01"
             value={volume}
-            onChange={(event) =>
-              setVolume(Number(event.target.value))
-            }
-            aria-label="Volume"
+            onChange={(e) => setVolume(parseFloat(e.target.value))}
             className="h-1 w-20 cursor-pointer accent-neon-cyan"
           />
         </div>
-
         <button
-          type="button"
           onClick={onToggleQueue}
-          aria-label="Toggle queue"
           className="relative rounded-lg p-2 text-zinc-400 transition hover:bg-white/10 hover:text-white"
         >
           <ListMusic className="h-5 w-5" />
-
           {queueItems.length > 0 && (
-            <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-neon-cyan text-[10px] font-bold text-black">
+            <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-neon-cyan text-[10px] font-bold text-black">
               {queueItems.length}
             </span>
           )}
