@@ -1,4 +1,4 @@
-// src/app/layout.tsx
+﻿// src/app/layout.tsx
 import type { Metadata } from "next";
 import { Inter, Plus_Jakarta_Sans, Roboto_Mono } from "next/font/google";
 import "./globals.css";
@@ -23,7 +23,7 @@ const robotoMono = Roboto_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "AuraSound — Hi-Fi Lossless Social Audio Workspace",
+  title: "AuraSound â€” Hi-Fi Lossless Social Audio Workspace",
   description: "A Hi-Fi lossless social audio workspace for music listeners.",
   icons: {
     icon: "/favicon.ico",
@@ -36,10 +36,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="vi" className={`${inter.variable} ${jakarta.variable} ${robotoMono.variable} dark`}>
-      <body className="font-sans h-screen w-screen overflow-hidden bg-[#050508]">
+    <html suppressHydrationWarning lang="vi" className={`${inter.variable} ${jakarta.variable} ${robotoMono.variable} dark`}>
+      <body suppressHydrationWarning className="font-sans h-screen w-screen overflow-hidden bg-[#050508]">
         {children}
       </body>
     </html>
   );
 }
+

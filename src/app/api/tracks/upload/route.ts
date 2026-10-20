@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
             'Content-Type': file.type || 'audio/mpeg',
             'Content-Length': String(buffer.byteLength),
           },
-          body: buffer,
+          body: new Uint8Array(buffer),
         });
 
         if (upRes.ok) {
@@ -124,3 +124,4 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Lỗi tải file lên hệ thống' }, { status: 500 });
   }
 }
+

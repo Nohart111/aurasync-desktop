@@ -438,7 +438,7 @@ async function uploadToGitHubCDN(
         'Content-Type': mime,
         'Content-Length': buffer.length.toString(),
       },
-      body: buffer,
+      body: new Uint8Array(buffer),
     });
 
     if (!upRes.ok) return null;
@@ -529,3 +529,4 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: error.message || 'Lỗi máy chủ.' }, { status: 500 });
   }
 }
+

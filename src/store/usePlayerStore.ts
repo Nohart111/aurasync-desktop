@@ -1,188 +1,228 @@
 ﻿import { create } from 'zustand';
+import { DoublyLinkedQueue, Track } from '@/core/algorithms/DoublyLinkedQueue';
 
-export interface Track {
-  id: string;
-  title: string;
-  artist?: string;
-  album?: string;
-  duration?: number;
-  bpm?: number;
-  streamUrl?: string;
-  url?: string;
-  r2Key?: string;
-  coverUrl?: string;
-  dominantColors?: [string, string];
+const internalQueue = new DoublyLinkedQueue();
+
+function syncInternalQueue(tracks: Track[], currentId?: string | null) {
+  try {
+    const existing = internalQueue.toArray();
+    for (const t of existing) {
+      internalQueue.removeById(t.id);
+    }
+    for (const t of tracks) {
+      internalQueue.enqueue(t);
+    }
+    if (currentId) {
+      internalQueue.jumpTo(currentId);
+    }
+  } catch {}
 }
 
-interface PlayerState {
+export interface PlayerState {
   currentTrack: Track | null;
-  currentDuration: number;
-  duration: number;
+  nextTrackPreview: Track | null;
   queue: Track[];
   queueItems: Track[];
+  playingPlaylistName: string;
   isPlaying: boolean;
   volume: number;
   isSidebarCollapsed: boolean;
-
-  setIsPlaying: (isPlaying: boolean) => void;
-  setPlaying: (isPlaying: boolean) => void;
+  setPlaying: (playing: boolean) => void;
+  setIsPlaying: (playing: boolean) => void;
   togglePlay: () => void;
-  setVolume: (volume: number) => void;
+  setVolume: (vol: number) => void;
   toggleSidebar: () => void;
-  playTrackNow: (track: Track, newQueue?: Track[]) => void;
+  setSidebarCollapsed: (collapsed: boolean) => void;
+  setPlayingPlaylistName: (name: string) => void;
+  setQueue: (tracks: Track[], playlistName?: string) => void;
+  playTrackNow: (track: Track, contextTracks?: Track[], playlistName?: string) => void;
   enqueueTrack: (track: Track) => void;
+  playNextInQueue: (track: Track) => void;
   removeTrackFromQueue: (trackId: string) => void;
   jumpToTrack: (trackId: string) => void;
   advanceNext: () => Track | null;
   advancePrev: () => Track | null;
-  setQueue: (tracks: Track[]) => void;
 }
 
 export const usePlayerStore = create<PlayerState>((set, get) => ({
   currentTrack: null,
-  currentDuration: 180,
-  duration: 180,
+  nextTrackPreview: null,
   queue: [],
   queueItems: [],
+  playingPlaylistName: 'Thư viện chung',
   isPlaying: false,
   volume: 0.85,
   isSidebarCollapsed: false,
 
-  setIsPlaying: (isPlaying) => set({ isPlaying }),
   setPlaying: (isPlaying) => set({ isPlaying }),
-  
+  setIsPlaying: (isPlaying) => set({ isPlaying }),
   togglePlay: () => set((state) => ({ isPlaying: !state.isPlaying })),
-
   setVolume: (volume) => set({ volume }),
 
   toggleSidebar: () => set((state) => ({ isSidebarCollapsed: !state.isSidebarCollapsed })),
+  setSidebarCollapsed: (isSidebarCollapsed) => set({ isSidebarCollapsed }),
+  setPlayingPlaylistName: (playingPlaylistName) => set({ playingPlaylistName }),
 
-  playTrackNow: (track, newQueue) => {
-    const { queue } = get();
-    let finalQueue = queue;
-    if (newQueue && newQueue.length > 0) {
-      finalQueue = newQueue;
-    } else if (!queue.some((t) => String(t.id) === String(track.id))) {
-      finalQueue = [...queue, track];
+  setQueue: (tracks, playlistName) => {
+    const state = get();
+    const cleanTracks = Array.isArray(tracks) ? tracks : [];
+    syncInternalQueue(cleanTracks, state.currentTrack?.id);
+
+    const currIdx = state.currentTrack
+      ? cleanTracks.findIndex((t) => t.id === state.currentTrack?.id)
+      : -1;
+    const nextPreview =
+      currIdx >= 0 && cleanTracks.length > 1
+        ? cleanTracks[(currIdx + 1) % cleanTracks.length]
+        : cleanTracks[0] || null;
+
+    set({
+      queue: cleanTracks,
+      queueItems: cleanTracks,
+      nextTrackPreview: nextPreview,
+      ...(playlistName ? { playingPlaylistName: playlistName } : {}),
+    });
+  },
+
+  playTrackNow: (track, contextTracks, playlistName) => {
+    const state = get();
+    let list = Array.isArray(contextTracks) && contextTracks.length > 0 ? [...contextTracks] : [...state.queue];
+    if (!list.some((t) => t.id === track.id)) {
+      list = [track, ...list];
     }
+
+    syncInternalQueue(list, track.id);
+    const idx = list.findIndex((t) => t.id === track.id);
+    const nextPreview = list.length > 1 ? list[(idx + 1) % list.length] : null;
+
     set({
       currentTrack: track,
-      currentDuration: track.duration || 180,
-      duration: track.duration || 180,
-      queue: finalQueue,
-      queueItems: finalQueue,
+      nextTrackPreview: nextPreview,
+      queue: list,
+      queueItems: list,
       isPlaying: true,
+      ...(playlistName ? { playingPlaylistName: playlistName } : {}),
     });
   },
 
   enqueueTrack: (track) => {
-    set((state) => {
-      const exists = state.queue.some((t) => String(t.id) === String(track.id));
-      if (exists) return state;
-      const updated = [...state.queue, track];
-      return {
-        queue: updated,
-        queueItems: updated,
-        currentTrack: state.currentTrack || track,
-      };
+    const state = get();
+    if (state.queue.some((t) => t.id === track.id)) return;
+    const updated = [...state.queue, track];
+    syncInternalQueue(updated, state.currentTrack?.id || track.id);
+
+    const curr = state.currentTrack || track;
+    const idx = updated.findIndex((t) => t.id === curr.id);
+    const nextPreview = updated.length > 1 ? updated[(idx + 1) % updated.length] : null;
+
+    set({
+      currentTrack: curr,
+      nextTrackPreview: nextPreview,
+      queue: updated,
+      queueItems: updated,
+    });
+  },
+
+  playNextInQueue: (track) => {
+    const state = get();
+    const filtered = state.queue.filter((t) => t.id !== track.id);
+    const currIdx = state.currentTrack
+      ? filtered.findIndex((t) => t.id === state.currentTrack?.id)
+      : -1;
+
+    const updated = [...filtered];
+    if (currIdx >= 0) {
+      updated.splice(currIdx + 1, 0, track);
+    } else {
+      updated.push(track);
+    }
+
+    syncInternalQueue(updated, state.currentTrack?.id);
+    set({
+      nextTrackPreview: track,
+      queue: updated,
+      queueItems: updated,
     });
   },
 
   removeTrackFromQueue: (trackId) => {
-    set((state) => {
-      const updated = state.queue.filter((t) => String(t.id) !== String(trackId));
-      const isCurrent = state.currentTrack && String(state.currentTrack.id) === String(trackId);
-      return {
-        queue: updated,
-        queueItems: updated,
-        currentTrack: isCurrent ? (updated[0] || null) : state.currentTrack,
-        isPlaying: isCurrent && updated.length === 0 ? false : state.isPlaying,
-      };
+    const state = get();
+    const updated = state.queue.filter((t) => t.id !== trackId);
+    let nextCurr = state.currentTrack;
+    if (state.currentTrack?.id === trackId) {
+      nextCurr = updated[0] || null;
+    }
+    syncInternalQueue(updated, nextCurr?.id);
+
+    const idx = nextCurr ? updated.findIndex((t) => t.id === nextCurr?.id) : -1;
+    const nextPreview = idx >= 0 && updated.length > 1 ? updated[(idx + 1) % updated.length] : null;
+
+    set({
+      currentTrack: nextCurr,
+      nextTrackPreview: nextPreview,
+      queue: updated,
+      queueItems: updated,
+      isPlaying: nextCurr ? state.isPlaying : false,
     });
   },
 
   jumpToTrack: (trackId) => {
-    const { queue } = get();
-    const track = queue.find((t) => String(t.id) === String(trackId));
-    if (track) {
-      set({ 
-        currentTrack: track, 
-        currentDuration: track.duration || 180,
-        duration: track.duration || 180,
-        isPlaying: true 
-      });
-    }
+    const state = get();
+    const idx = state.queue.findIndex((t) => t.id === trackId);
+    if (idx === -1) return;
+
+    const target = state.queue[idx];
+    const nextPreview = state.queue.length > 1 ? state.queue[(idx + 1) % state.queue.length] : null;
+    syncInternalQueue(state.queue, target.id);
+
+    set({
+      currentTrack: target,
+      nextTrackPreview: nextPreview,
+      isPlaying: true,
+    });
   },
 
   advanceNext: () => {
-    const { queue, currentTrack } = get();
-    if (!queue || queue.length === 0) return null;
+    const state = get();
+    const list = state.queue;
+    if (!list || list.length === 0) return null;
 
-    if (queue.length === 1) {
-      set({ currentTrack: queue[0], isPlaying: true });
-      return queue[0];
-    }
+    const currIdx = state.currentTrack
+      ? list.findIndex((t) => t.id === state.currentTrack?.id)
+      : -1;
+    const nextIdx = currIdx >= 0 ? (currIdx + 1) % list.length : 0;
+    const nextTrack = list[nextIdx];
+    const afterNext = list.length > 1 ? list[(nextIdx + 1) % list.length] : null;
 
-    const currentIndex = queue.findIndex(
-      (t) => String(t.id) === String(currentTrack?.id) || t.title === currentTrack?.title
-    );
-    const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % queue.length;
-    const nextTrack = queue[nextIndex];
+    syncInternalQueue(list, nextTrack.id);
 
     set({
       currentTrack: nextTrack,
-      currentDuration: nextTrack.duration || 180,
-      duration: nextTrack.duration || 180,
+      nextTrackPreview: afterNext,
       isPlaying: true,
     });
     return nextTrack;
   },
 
   advancePrev: () => {
-    const { queue, currentTrack } = get();
-    if (!queue || queue.length === 0) return null;
+    const state = get();
+    const list = state.queue;
+    if (!list || list.length === 0) return null;
 
-    if (queue.length === 1) {
-      set({ currentTrack: queue[0], isPlaying: true });
-      return queue[0];
-    }
+    const currIdx = state.currentTrack
+      ? list.findIndex((t) => t.id === state.currentTrack?.id)
+      : -1;
+    const prevIdx = currIdx > 0 ? currIdx - 1 : list.length - 1;
+    const prevTrack = list[prevIdx];
+    const nextPreview = list.length > 1 ? list[(prevIdx + 1) % list.length] : null;
 
-    const currentIndex = queue.findIndex(
-      (t) => String(t.id) === String(currentTrack?.id) || t.title === currentTrack?.title
-    );
-    const prevIndex = currentIndex === -1 ? 0 : (currentIndex - 1 + queue.length) % queue.length;
-    const prevTrack = queue[prevIndex];
+    syncInternalQueue(list, prevTrack.id);
 
     set({
       currentTrack: prevTrack,
-      currentDuration: prevTrack.duration || 180,
-      duration: prevTrack.duration || 180,
+      nextTrackPreview: nextPreview,
       isPlaying: true,
     });
     return prevTrack;
   },
-
-  setQueue: (tracks) => set({ queue: tracks, queueItems: tracks }),
 }));
-
-if (typeof window !== 'undefined') {
-  fetch('/api/tracks/search')
-    .then((res) => res.json())
-    .then((data) => {
-      const tracks = Array.isArray(data) ? data : (data.tracks || []);
-      if (Array.isArray(tracks) && tracks.length > 0) {
-        const store = usePlayerStore.getState();
-        if (!store.queue || store.queue.length === 0) {
-          store.setQueue(tracks);
-          if (!store.currentTrack) {
-            usePlayerStore.setState({ 
-              currentTrack: tracks[0],
-              currentDuration: tracks[0].duration || 180,
-              duration: tracks[0].duration || 180,
-            });
-          }
-        }
-      }
-    })
-    .catch(() => {});
-}
