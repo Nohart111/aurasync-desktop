@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -13,10 +13,9 @@ import {
   ListMusic,
   X,
   Trash2,
-  FolderPlus,
-  Plus,
-  Check,
-  Disc,
+  Compass,
+  Library,
+  CloudDownload,
 } from 'lucide-react';
 import { usePlayerStore } from '@/store/usePlayerStore';
 import { useAudioPlayer } from '@/hooks/useAudioPlayer';
@@ -27,13 +26,10 @@ const MagneticSeekbar =
   (MagneticSeekbarModule as any).default ||
   MagneticSeekbarModule;
 
-interface CustomPlaylist {
-  id: string;
-  name: string;
-  trackIds: string[];
-  createdAt: string;
-}
-
+// ========================================================
+// 🌊 BIỂU ĐỒ SÓNG NHẠC 60FPS REAL-TIME CANVAS (TÍM -> CYAN)
+// Tự động ngắt vòng lặp RAF khi màn hình tắt (document.hidden) để tiết kiệm pin
+// ========================================================
 function DynamicSpectrumCanvas({ isPlaying }: { isPlaying: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef<number | null>(null);
@@ -49,6 +45,11 @@ function DynamicSpectrumCanvas({ isPlaying }: { isPlaying: boolean }) {
     let phase = 0;
 
     const render = () => {
+      if (typeof document !== 'undefined' && document.hidden) {
+        rafRef.current = null;
+        return;
+      }
+
       phase += 0.08;
       let hasData = false;
 
@@ -101,8 +102,8 @@ function DynamicSpectrumCanvas({ isPlaying }: { isPlaying: boolean }) {
 
         ctx.fillStyle = grad;
         ctx.beginPath();
-        if (ctx.roundRect) {
-          ctx.roundRect(x, y, barWidth, h, [1.5, 1.5, 0, 0]);
+        if (typeof ctx.roundRect === 'function') {
+          ctx.roundRect(x, y, barWidth, h, 1.5);
         } else {
           ctx.rect(x, y, barWidth, h);
         }
@@ -112,28 +113,41 @@ function DynamicSpectrumCanvas({ isPlaying }: { isPlaying: boolean }) {
       rafRef.current = requestAnimationFrame(render);
     };
 
-    rafRef.current = requestAnimationFrame(render);
+    const handleVisibility = () => {
+      if (typeof document !== 'undefined' && document.hidden) {
+        if (rafRef.current) {
+          cancelAnimationFrame(rafRef.current);
+          rafRef.current = null;
+        }
+      } else if (!rafRef.current) {
+        rafRef.current = requestAnimationFrame(render);
+      }
+    };
+
+    handleVisibility();
+    document.addEventListener('visibilitychange', handleVisibility);
+
     return () => {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
     };
   }, [isPlaying]);
 
   return (
     <canvas
       ref={canvasRef}
-      width={16 * 6}
-      height={22}
-      className="shrink-0 select-none pointer-events-none"
+      width={94}
+      height={26}
+      className="opacity-95 pointer-events-none select-none shrink-0"
     />
   );
 }
 
 export function FloatingPlayerBar() {
   const [isQueueOpen, setIsQueueOpen] = useState(false);
-  const [isPlaylistMenuOpen, setIsPlaylistMenuOpen] = useState(false);
-  const [playlists, setPlaylists] = useState<CustomPlaylist[]>([]);
-  const [newPlName, setNewPlName] = useState('');
-  const [justToggledPlId, setJustToggledPlId] = useState<string | null>(null);
 
   const {
     currentTrack,
@@ -141,78 +155,11 @@ export function FloatingPlayerBar() {
     volume,
     queue,
     queueItems,
-    playingPlaylistName,
     isSidebarCollapsed,
     setVolume,
-  } = usePlayerStore() as any;
+  } = usePlayerStore();
 
   const { progressMV, currentTimeMV, actualDuration, seekTo } = useAudioPlayer();
-
-  useEffect(() => {
-    const loadPlaylists = () => {
-      try {
-        const raw = localStorage.getItem('aurasound_playlists_v1');
-        if (raw) setPlaylists(JSON.parse(raw));
-      } catch {}
-    };
-    loadPlaylists();
-    window.addEventListener('aurasound:playlists-updated', loadPlaylists);
-    return () => window.removeEventListener('aurasound:playlists-updated', loadPlaylists);
-  }, []);
-
-  const savePlaylistsAndNotify = (updated: CustomPlaylist[], toastMessage?: string) => {
-    setPlaylists(updated);
-    try {
-      localStorage.setItem('aurasound_playlists_v1', JSON.stringify(updated));
-      window.dispatchEvent(new CustomEvent('aurasound:playlists-updated'));
-      if (toastMessage) {
-        window.dispatchEvent(
-          new CustomEvent('aurasound:toast', {
-            detail: { message: toastMessage },
-          })
-        );
-      }
-    } catch {}
-  };
-
-  const handleToggleTrackInPlaylist = (pl: CustomPlaylist) => {
-    if (!currentTrack) return;
-    const exists = pl.trackIds.includes(currentTrack.id);
-    const updated = playlists.map((item) => {
-      if (item.id !== pl.id) return item;
-      return {
-        ...item,
-        trackIds: exists
-          ? item.trackIds.filter((id) => id !== currentTrack.id)
-          : [...item.trackIds, currentTrack.id],
-      };
-    });
-
-    setJustToggledPlId(pl.id);
-    setTimeout(() => setJustToggledPlId(null), 900);
-
-    const msg = exists
-      ? `Đã gỡ "${currentTrack.title}" khỏi playlist "${pl.name}"`
-      : `Đã thêm "${currentTrack.title}" vào playlist "${pl.name}"`;
-    savePlaylistsAndNotify(updated, msg);
-  };
-
-  const handleCreatePlaylistWithCurrentTrack = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!currentTrack || !newPlName.trim()) return;
-    const trimmed = newPlName.trim();
-    const newPl: CustomPlaylist = {
-      id: `pl-${Date.now()}`,
-      name: trimmed,
-      trackIds: [currentTrack.id],
-      createdAt: new Date().toISOString(),
-    };
-    const updated = [newPl, ...playlists];
-    setNewPlName('');
-    setJustToggledPlId(newPl.id);
-    setTimeout(() => setJustToggledPlId(null), 900);
-    savePlaylistsAndNotify(updated, `Đã tạo playlist "${trimmed}" và thêm "${currentTrack.title}"`);
-  };
 
   const handleTogglePlay = () => {
     const store = usePlayerStore.getState() as any;
@@ -220,6 +167,8 @@ export function FloatingPlayerBar() {
       store.togglePlay();
     } else if (typeof store.setPlaying === 'function') {
       store.setPlaying(!isPlaying);
+    } else if (typeof store.setIsPlaying === 'function') {
+      store.setIsPlaying(!isPlaying);
     }
   };
 
@@ -231,14 +180,48 @@ export function FloatingPlayerBar() {
     usePlayerStore.getState().advancePrev();
   };
 
-  if (!currentTrack) return null;
-
   const queueList = queue || queueItems || [];
   const queueCount = queueList.length;
-  const inPlaylistsCount = playlists.filter((p) => p.trackIds.includes(currentTrack.id)).length;
 
   return (
     <>
+      {/* 1. THANH ĐIỀU HƯỚNG ĐÁY DÀNH RIÊNG CHO MOBILE (< 768px) */}
+      <nav className="fixed bottom-0 left-0 right-0 z-40 flex md:hidden h-14 items-center justify-around border-t border-white/[0.08] bg-[#080811]/95 px-2 backdrop-blur-2xl select-none font-sans">
+        <button
+          onClick={() => {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
+          className="flex flex-col items-center justify-center gap-1 px-3 py-1 text-neon-cyan transition active:scale-95"
+        >
+          <Compass className="h-4 w-4" />
+          <span className="text-[10px] font-medium">Đầu Deck</span>
+        </button>
+
+        <button
+          onClick={() => {
+            const el = document.getElementById('catalog-section');
+            if (el) {
+              el.scrollIntoView({ behavior: 'smooth' });
+            }
+          }}
+          className="flex flex-col items-center justify-center gap-1 px-3 py-1 text-zinc-400 transition hover:text-white active:scale-95"
+        >
+          <Library className="h-4 w-4" />
+          <span className="text-[10px] font-medium">Kho nhạc</span>
+        </button>
+
+        <button
+          onClick={() => {
+            window.dispatchEvent(new CustomEvent('aurasound:open-ingest-modal'));
+          }}
+          className="flex flex-col items-center justify-center gap-1 px-3 py-1 text-zinc-300 transition hover:text-neon-cyan active:scale-95"
+        >
+          <CloudDownload className="h-4 w-4 text-neon-cyan" />
+          <span className="text-[10px] font-semibold text-white">Nạp nhạc</span>
+        </button>
+      </nav>
+
+      {/* 2. NGĂN KÉO QUEUE TRƯỢT TỪ CẠNH PHẢI KHI BẤM NÚT */}
       <AnimatePresence>
         {isQueueOpen && (
           <motion.aside
@@ -246,19 +229,14 @@ export function FloatingPlayerBar() {
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: '100%', opacity: 0 }}
             transition={{ type: 'spring', stiffness: 380, damping: 32 }}
-            className="fixed right-4 top-4 bottom-28 z-50 flex w-80 sm:w-96 flex-col rounded-2xl border border-white/10 bg-[#0c0c16]/95 p-5 shadow-2xl backdrop-blur-2xl"
+            className="fixed left-3 right-3 sm:left-auto sm:right-4 top-4 bottom-36 md:bottom-28 z-50 flex w-auto sm:w-96 flex-col rounded-2xl border border-white/10 bg-[#0c0c16]/95 p-4 sm:p-5 shadow-2xl backdrop-blur-2xl"
           >
             <div className="flex items-center justify-between border-b border-white/10 pb-3">
-              <div>
-                <div className="flex items-center gap-2">
-                  <ListMusic className="h-4 w-4 text-neon-cyan" />
-                  <h3 className="font-mono text-xs font-bold text-white tracking-wide">
-                    HÀNG ĐỢI PHÁT ({queueCount})
-                  </h3>
-                </div>
-                <p className="text-[11px] text-zinc-400 mt-0.5">
-                  Nguồn: <span className="text-zinc-200 font-medium">{playingPlaylistName || 'Thư viện chung'}</span>
-                </p>
+              <div className="flex items-center gap-2.5">
+                <ListMusic className="h-5 w-5 text-neon-cyan" />
+                <h3 className="font-mono text-xs sm:text-sm font-bold text-white tracking-wide">
+                  HÀNG ĐỢI PHÁT ({queueCount})
+                </h3>
               </div>
               <button
                 onClick={() => setIsQueueOpen(false)}
@@ -271,15 +249,17 @@ export function FloatingPlayerBar() {
 
             <div className="mt-3 flex-1 space-y-1.5 overflow-y-auto pr-1">
               {queueList.length === 0 ? (
-                <p className="mt-12 text-center text-xs font-mono text-zinc-500">Hàng đợi trống</p>
+                <p className="mt-12 text-center text-xs font-mono text-zinc-500">
+                  Hàng đợi trống
+                </p>
               ) : (
-                queueList.map((track: any, i: number) => {
+                queueList.map((track, i) => {
                   const isCurrent = currentTrack?.id === track.id;
                   return (
                     <div
                       key={track.id || i}
                       onClick={() => {
-                        usePlayerStore.getState().jumpToTrack(track.id);
+                        usePlayerStore.getState().playTrackNow(track);
                       }}
                       className={`group flex cursor-pointer items-center justify-between rounded-xl p-2.5 transition ${
                         isCurrent
@@ -316,7 +296,7 @@ export function FloatingPlayerBar() {
                             e.stopPropagation();
                             usePlayerStore.getState().removeTrackFromQueue(track.id);
                           }}
-                          className="p-1 text-zinc-500 opacity-0 group-hover:opacity-100 hover:text-rose-400 transition"
+                          className="p-1 text-zinc-500 opacity-100 md:opacity-0 md:group-hover:opacity-100 hover:text-rose-400 transition"
                           title="Xóa khỏi hàng đợi"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
@@ -331,210 +311,173 @@ export function FloatingPlayerBar() {
         )}
       </AnimatePresence>
 
-      <div
-        className={`fixed bottom-4 right-4 z-40 transition-all duration-300 ease-in-out ${
-          isSidebarCollapsed ? 'left-[5.5rem]' : 'left-[17rem]'
-        }`}
-      >
-        <div className="bg-[#0a0a14]/95 border border-white/[0.08] rounded-2xl p-3 px-5 shadow-2xl backdrop-blur-xl flex items-center justify-between gap-4">
-          {/* Cụm trái: Bìa + Tên bài + Đang phát từ Playlist nào + Nút Thêm vào Playlist */}
-          <div className="flex items-center gap-3 min-w-[240px] max-w-[330px]">
-            <div className="w-12 h-12 rounded-xl border border-white/10 bg-[#0d0d17] flex items-center justify-center shrink-0 shadow-md">
-              <Music className="w-5 h-5 text-white" />
-            </div>
+      {/* 3. THANH DOCK PHÁT NHẠC (RESPONSIVE MOBILE & NGUYÊN BẢN DESKTOP) */}
+      {currentTrack && (
+        <div
+          className={`fixed bottom-[3.75rem] md:bottom-4 left-2.5 right-2.5 z-40 transition-all duration-300 ease-in-out ${
+            isSidebarCollapsed ? 'md:left-[5.5rem] md:right-4' : 'md:left-[17rem] md:right-4'
+          }`}
+        >
+          <div className="bg-[#0a0a14]/95 border border-white/[0.08] rounded-2xl p-2.5 px-3.5 md:p-3 md:px-5 shadow-2xl backdrop-blur-xl flex flex-col md:flex-row md:items-center md:justify-between gap-2 md:gap-4">
+            {/* Hàng trên trên Mobile / Cụm trái + Nút điều khiển */}
+            <div className="flex items-center justify-between gap-2.5 md:contents">
+              {/* Cụm trái: Bìa vuông icon Music & Tên bài hát */}
+              <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1 max-w-[165px] sm:max-w-[220px] md:max-w-[260px] md:min-w-[200px]">
+                <div className="w-10 h-10 md:w-12 md:h-12 rounded-xl border border-white/10 bg-[#0d0d17] flex items-center justify-center shrink-0 shadow-md overflow-hidden">
+                  {currentTrack.coverUrl || currentTrack.thumbnail ? (
+                    <img
+                      src={currentTrack.coverUrl || currentTrack.thumbnail}
+                      alt={currentTrack.title}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <Music className="w-5 h-5 text-white" />
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <h4 className="text-xs sm:text-sm font-semibold text-white truncate">
+                    {currentTrack.title}
+                  </h4>
+                  <p className="text-[11px] sm:text-xs text-zinc-400 truncate mt-0.5">
+                    {currentTrack.artist || 'Nghệ sĩ chưa rõ'}
+                  </p>
+                </div>
+              </div>
 
-            <div className="min-w-0 flex-1">
-              <h4 className="text-sm font-semibold text-white truncate">{currentTrack.title}</h4>
-              <p className="text-xs text-zinc-400 truncate">{currentTrack.artist || 'Nghệ sĩ chưa rõ'}</p>
-              <div className="flex items-center gap-1 mt-0.5 text-[10px] font-mono text-neon-cyan/90 truncate">
-                <Disc className={`w-3 h-3 shrink-0 ${isPlaying ? 'animate-spin' : ''}`} style={{ animationDuration: '4s' }} />
-                <span className="truncate">Đang phát: {playingPlaylistName || 'Thư viện chung'}</span>
+              {/* Nút điều khiển trên Mobile (< 768px) */}
+              <div className="flex md:hidden items-center gap-2.5 shrink-0">
+                <button
+                  onClick={handlePrev}
+                  className="p-1.5 text-zinc-300 hover:text-white transition active:scale-90"
+                  title="Bài trước"
+                >
+                  <SkipBack className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={handleTogglePlay}
+                  className="w-9 h-9 rounded-full bg-white text-black flex items-center justify-center shadow-lg transition active:scale-95"
+                  title={isPlaying ? 'Tạm dừng' : 'Phát'}
+                >
+                  {isPlaying ? (
+                    <Pause className="w-4 h-4 fill-black" />
+                  ) : (
+                    <Play className="w-4 h-4 fill-black ml-0.5" />
+                  )}
+                </button>
+                <button
+                  onClick={handleNext}
+                  className="p-1.5 text-zinc-300 hover:text-white transition active:scale-90"
+                  title="Bài kế tiếp"
+                >
+                  <SkipForward className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setIsQueueOpen(!isQueueOpen)}
+                  className="relative flex items-center p-1.5 text-zinc-400 hover:text-white transition active:scale-95"
+                  title="Danh sách hàng đợi phát"
+                >
+                  <ListMusic
+                    className={`w-4 h-4 transition-colors ${
+                      isQueueOpen ? 'text-neon-cyan' : 'hover:text-white'
+                    }`}
+                  />
+                  {queueCount > 0 && (
+                    <span className="absolute -top-0.5 -right-0.5 text-[9px] font-mono font-bold text-neon-cyan select-none">
+                      {queueCount}
+                    </span>
+                  )}
+                </button>
               </div>
             </div>
 
-            <div className="relative shrink-0">
-              <button
-                onClick={() => setIsPlaylistMenuOpen(!isPlaylistMenuOpen)}
-                className={`relative p-2 rounded-xl border transition-all active:scale-95 ${
-                  inPlaylistsCount > 0 || isPlaylistMenuOpen
-                    ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
-                    : 'border-white/10 bg-white/[0.04] text-zinc-300 hover:text-white hover:bg-white/10'
-                }`}
-                title="Thêm bài đang phát vào Playlist"
+            {/* Cụm giữa: Nút điều khiển (Desktop) & Thanh Seekbar (Cả Mobile & Desktop, có touch-action: none) */}
+            <div className="w-full md:flex-1 flex flex-col items-center justify-center md:max-w-xl md:px-2">
+              <div className="hidden md:flex items-center gap-5 mb-1.5">
+                <button
+                  onClick={handlePrev}
+                  className="text-zinc-400 hover:text-white transition active:scale-90"
+                  title="Bài trước"
+                >
+                  <SkipBack className="w-5 h-5" />
+                </button>
+                <button
+                  onClick={handleTogglePlay}
+                  className="w-10 h-10 rounded-full bg-white text-black flex items-center justify-center shadow-lg transition hover:scale-105 active:scale-95"
+                  title={isPlaying ? 'Tạm dừng' : 'Phát'}
+                >
+                  {isPlaying ? (
+                    <Pause className="w-5 h-5 fill-black" />
+                  ) : (
+                    <Play className="w-5 h-5 fill-black ml-0.5" />
+                  )}
+                </button>
+                <button
+                  onClick={handleNext}
+                  className="text-zinc-400 hover:text-white transition active:scale-90"
+                  title="Bài kế tiếp"
+                >
+                  <SkipForward className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div
+                className="w-full md:max-w-md touch-none"
+                style={{ touchAction: 'none' }}
               >
-                <FolderPlus className="w-4 h-4" />
-                {inPlaylistsCount > 0 && (
-                  <span className="absolute -top-1 -right-1 h-4 min-w-[16px] px-1 rounded-full bg-emerald-500 text-[9px] font-mono font-bold text-black flex items-center justify-center">
-                    {inPlaylistsCount}
+                <MagneticSeekbar
+                  progressMV={progressMV}
+                  currentTimeMV={currentTimeMV}
+                  duration={actualDuration || currentTrack?.duration || 180}
+                  onSeek={seekTo}
+                />
+              </div>
+            </div>
+
+            {/* Cụm phải (Desktop): Biểu đồ sóng nhảy 60fps + Slider âm lượng + Nút mở Queue */}
+            <div className="hidden md:flex items-center gap-4 shrink-0">
+              <div className="hidden lg:flex items-center">
+                <DynamicSpectrumCanvas isPlaying={isPlaying} />
+              </div>
+
+              <div className="hidden md:flex items-center gap-2">
+                <button
+                  onClick={() => setVolume(volume === 0 ? 0.8 : 0)}
+                  className="text-zinc-400 hover:text-white transition"
+                  title={volume === 0 ? 'Bật âm' : 'Tắt âm'}
+                >
+                  {volume === 0 ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+                </button>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.01"
+                  value={volume}
+                  onChange={(e) => setVolume(parseFloat(e.target.value))}
+                  className="w-20 h-1 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                />
+              </div>
+
+              <button
+                onClick={() => setIsQueueOpen(!isQueueOpen)}
+                className="relative flex items-center p-1.5 text-zinc-400 hover:text-white transition active:scale-95 cursor-pointer"
+                title="Danh sách hàng đợi phát"
+              >
+                <ListMusic
+                  className={`w-5 h-5 transition-colors ${
+                    isQueueOpen ? 'text-neon-cyan' : 'hover:text-white'
+                  }`}
+                />
+                {queueCount > 0 && (
+                  <span className="absolute -top-1 -right-1 text-[10px] font-mono font-bold text-neon-cyan select-none">
+                    {queueCount}
                   </span>
                 )}
               </button>
-
-              <AnimatePresence>
-                {isPlaylistMenuOpen && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 10, scale: 0.96 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: 10, scale: 0.96 }}
-                    transition={{ duration: 0.15 }}
-                    className="absolute left-0 bottom-14 z-50 w-64 rounded-2xl border border-zinc-700 bg-[#0d0d16]/98 p-3 shadow-2xl backdrop-blur-xl space-y-2"
-                  >
-                    <div className="flex items-center justify-between border-b border-zinc-800 pb-2">
-                      <span className="text-[11px] font-mono uppercase tracking-wider text-zinc-300">
-                        Thêm vào Playlist
-                      </span>
-                      <button
-                        onClick={() => setIsPlaylistMenuOpen(false)}
-                        className="text-zinc-400 hover:text-white"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-
-                    {playlists.length === 0 ? (
-                      <p className="py-2 text-xs text-zinc-500 text-center">
-                        Chưa có playlist. Tạo mới bên dưới:
-                      </p>
-                    ) : (
-                      <div className="max-h-44 overflow-y-auto space-y-1 pr-0.5">
-                        {playlists.map((pl) => {
-                          const inPl = pl.trackIds.includes(currentTrack.id);
-                          const isFlashing = justToggledPlId === pl.id;
-                          return (
-                            <button
-                              key={pl.id}
-                              onClick={() => handleToggleTrackInPlaylist(pl)}
-                              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs transition-all ${
-                                isFlashing
-                                  ? 'bg-emerald-500/30 border border-emerald-400 text-white scale-[0.99]'
-                                  : inPl
-                                  ? 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-300'
-                                  : 'bg-zinc-900/60 hover:bg-zinc-800 text-zinc-200 border border-transparent'
-                              }`}
-                            >
-                              <span className="truncate pr-2 font-medium">{pl.name}</span>
-                              {inPl ? (
-                                <span className="flex items-center gap-1 text-[10px] font-mono text-emerald-400 shrink-0">
-                                  <Check className="w-3 h-3" /> Đã thêm
-                                </span>
-                              ) : (
-                                <span className="flex items-center gap-0.5 text-[10px] font-mono text-zinc-400 shrink-0">
-                                  <Plus className="w-3 h-3" /> Thêm
-                                </span>
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-
-                    <form
-                      onSubmit={handleCreatePlaylistWithCurrentTrack}
-                      className="pt-2 border-t border-zinc-800 flex items-center gap-1.5"
-                    >
-                      <input
-                        type="text"
-                        value={newPlName}
-                        onChange={(e) => setNewPlName(e.target.value)}
-                        placeholder="Tạo playlist mới..."
-                        className="flex-1 px-2.5 py-1.5 rounded-lg bg-zinc-900 border border-zinc-700 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-500"
-                      />
-                      <button
-                        type="submit"
-                        disabled={!newPlName.trim()}
-                        className="px-2.5 py-1.5 rounded-lg bg-zinc-100 hover:bg-white text-black text-xs font-medium disabled:opacity-40 shrink-0"
-                      >
-                        Tạo
-                      </button>
-                    </form>
-                  </motion.div>
-                )}
-              </AnimatePresence>
             </div>
-          </div>
-
-          {/* Cụm giữa: Nút điều khiển & Thanh Seekbar */}
-          <div className="flex-1 flex flex-col items-center justify-center max-w-xl px-2">
-            <div className="flex items-center gap-5 mb-1.5">
-              <button
-                onClick={handlePrev}
-                className="text-zinc-400 hover:text-white transition active:scale-90"
-                title="Bài trước"
-              >
-                <SkipBack className="w-5 h-5" />
-              </button>
-              <button
-                onClick={handleTogglePlay}
-                className="w-10 h-10 rounded-full bg-white text-black flex items-center justify-center shadow-lg transition hover:scale-105 active:scale-95"
-                title={isPlaying ? 'Tạm dừng' : 'Phát'}
-              >
-                {isPlaying ? (
-                  <Pause className="w-5 h-5 fill-black" />
-                ) : (
-                  <Play className="w-5 h-5 fill-black ml-0.5" />
-                )}
-              </button>
-              <button
-                onClick={handleNext}
-                className="text-zinc-400 hover:text-white transition active:scale-90"
-                title="Bài kế tiếp"
-              >
-                <SkipForward className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="w-full max-w-md">
-              <MagneticSeekbar
-                progressMV={progressMV}
-                currentTimeMV={currentTimeMV}
-                duration={actualDuration || currentTrack?.duration || 180}
-                onSeek={seekTo}
-              />
-            </div>
-          </div>
-
-          {/* Cụm phải: Biểu đồ sóng nhảy 60fps + Slider âm lượng + Nút mở Queue */}
-          <div className="flex items-center gap-4 shrink-0">
-            <DynamicSpectrumCanvas isPlaying={isPlaying} />
-
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setVolume(volume === 0 ? 0.8 : 0)}
-                className="text-zinc-400 hover:text-white transition"
-                title={volume === 0 ? 'Bật âm' : 'Tắt âm'}
-              >
-                {volume === 0 ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-              </button>
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.01"
-                value={volume}
-                onChange={(e) => setVolume(parseFloat(e.target.value))}
-                className="w-20 h-1 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
-              />
-            </div>
-
-            <button
-              onClick={() => setIsQueueOpen(!isQueueOpen)}
-              className="relative flex items-center p-1.5 text-zinc-400 hover:text-white transition active:scale-95 cursor-pointer"
-              title="Danh sách hàng đợi phát"
-            >
-              <ListMusic
-                className={`w-5 h-5 transition-colors ${
-                  isQueueOpen ? 'text-neon-cyan' : 'hover:text-white'
-                }`}
-              />
-              {queueCount > 0 && (
-                <span className="absolute -top-1 -right-1 text-[10px] font-mono font-bold text-neon-cyan select-none">
-                  {queueCount}
-                </span>
-              )}
-            </button>
           </div>
         </div>
-      </div>
+      )}
     </>
   );
 }

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   X,
   Search,
@@ -82,7 +83,6 @@ async function syncConfirmedTrackToStore(confirmedTrack?: Track) {
     Boolean(confirmedTrack.videoId && t.videoId === confirmedTrack.videoId) ||
     Boolean(targetSlug && normalizeTitleSlug(t.title) === targetSlug);
 
-  // Thay thế bản ghi cũ (nếu có) hoặc thêm vào cuối danh sách để không bao giờ ngắt bài đang phát
   const updatedLib = existingLib.some(isSameSong)
     ? existingLib.map((t) => (isSameSong(t) ? confirmedTrack : t))
     : [...existingLib, confirmedTrack];
@@ -123,9 +123,6 @@ async function syncConfirmedTrackToStore(confirmedTrack?: Track) {
 
 // ============================================================================
 // MODULE-LEVEL SINGLETON QUEUE CONTROLLER
-// Đảm bảo tiến trình tải ngầm và hàng đợi nhiều bài luôn chạy xuyên suốt
-// ngay cả khi người dùng thu nhỏ hoặc đóng/mở lại modal, với Concurrency = 1
-// để không bao giờ xung đột Git khi cập nhật catalog.json.
 // ============================================================================
 interface IngestControllerState {
   tasks: IngestQueueTask[];
@@ -235,7 +232,6 @@ export function cancelAllIngestTasks() {
   const activeTask = controllerState.tasks.find(
     (t) => t.status === 'queued' || t.status === 'downloading'
   );
-  // Xóa toàn bộ các bài đang chờ (pending) trước
   controllerState.tasks = controllerState.tasks.filter(
     (t) => t.status === 'queued' || t.status === 'downloading'
   );
@@ -290,7 +286,6 @@ async function runSequentialQueueWorker() {
 
         const data = await res.json().catch(() => ({}));
 
-        // Kiểm tra nếu người dùng đã bấm Hủy trong lúc đang gửi request khởi tạo
         if (
           nextTask.status === ('cancelled' as IngestTaskStatus) ||
           !controllerState.tasks.some((t) => t.key === nextTask.key)
@@ -335,7 +330,7 @@ async function runSequentialQueueWorker() {
         nextTask.startedAt = data.startedAt || nextTask.startedAt || Date.now();
         notifySubscribers();
 
-        const maxAttempts = 60; // 60 * 2s = 120s max wait
+        const maxAttempts = 60;
         let confirmedTrack: Track | null = null;
 
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -459,17 +454,29 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
   const [searching, setSearching] = useState(false);
   const [localError, setLocalError] = useState('');
   const [isMinimized, setIsMinimized] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const [, setTick] = useState(0);
 
+  const effectiveOpen = isOpen || mobileOpen;
+
   useEffect(() => {
+    setMounted(true);
     const onUpdate = () => setTick((n) => n + 1);
     subscribers.add(onUpdate);
+
+    const onOpenFromMobile = () => {
+      setIsMinimized(false);
+      setMobileOpen(true);
+    };
+    window.addEventListener('aurasound:open-ingest-modal', onOpenFromMobile);
+
     return () => {
       subscribers.delete(onUpdate);
+      window.removeEventListener('aurasound:open-ingest-modal', onOpenFromMobile);
     };
   }, []);
 
-  // Khi người dùng mở lại modal từ thanh công cụ bên ngoài, tự động bỏ thu nhỏ
   useEffect(() => {
     if (isOpen) {
       setIsMinimized(false);
@@ -485,446 +492,454 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
   const hasRunningTasks = tasks.length > 0;
   const combinedError = localError || controllerState.lastError;
 
-  // Khi đang ở chế độ thu nhỏ chạy ngầm và toàn bộ hàng đợi đã tải xong -> tự động đóng gọn
+  const closeAll = () => {
+    setMobileOpen(false);
+    onClose();
+  };
+
   useEffect(() => {
-    if (isMinimized && !hasRunningTasks && isOpen) {
+    if (isMinimized && !hasRunningTasks && effectiveOpen) {
       const timer = setTimeout(() => {
         setIsMinimized(false);
-        onClose();
+        closeAll();
       }, 600);
       return () => clearTimeout(timer);
     }
-  }, [isMinimized, hasRunningTasks, isOpen, onClose]);
+  }, [isMinimized, hasRunningTasks, effectiveOpen]);
 
-  // Nếu modal đang đóng và không có tác vụ chạy ngầm nào -> không hiển thị gì
-  if (!isOpen && !hasRunningTasks) return null;
+  if (!effectiveOpen && !hasRunningTasks) return null;
 
-  // ==========================================================================
-  // CHẾ ĐỘ CHẠY NGẦM (FLOATING PILL NHỎ GỌN GÓC DƯỚI PHẢI)
-  // Hiển thị khi người dùng bấm X / "Chạy ngầm" trong lúc đang tải nhạc.
-  // Không có lớp nền đen (backdrop), giúp người dùng nghe nhạc & thao tác tự do!
-  // ==========================================================================
-  if ((!isOpen || isMinimized) && hasRunningTasks && activeTask) {
-    return (
-      <div className="fixed bottom-28 right-6 z-50 w-80 overflow-hidden rounded-2xl border border-neon-cyan/35 bg-[#0b0b16]/95 p-3.5 text-white shadow-[0_16px_50px_rgba(0,0,0,0.85)] backdrop-blur-xl select-none font-sans">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 min-w-0">
-            {activeTask.status === 'completed' ? (
-              <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
-            ) : (
-              <Loader2 className="h-4 w-4 shrink-0 animate-spin text-neon-cyan" />
-            )}
-            <span className="truncate text-xs font-bold text-neon-cyan">
-              {activeTask.status === 'completed'
-                ? 'Đã lưu vào kho!'
-                : `Đang tải ngầm${tasks.length > 1 ? ` (còn ${tasks.length} bài)` : ''}`}
-            </span>
-          </div>
-
-          <div className="flex items-center gap-1 shrink-0">
-            {activeTask.elapsedSec > 0 && activeTask.status !== 'completed' && (
-              <span className="mr-1 font-mono text-[10px] text-zinc-400">
-                {activeTask.elapsedSec}s
+  const renderContent = () => {
+    // CHẾ ĐỘ CHẠY NGẦM (FLOATING PILL NHỎ GỌN GÓC DƯỚI PHẢI)
+    if ((!effectiveOpen || isMinimized) && hasRunningTasks && activeTask) {
+      return (
+        <div className="fixed bottom-36 md:bottom-28 right-3 md:right-6 z-50 w-72 sm:w-80 overflow-hidden rounded-2xl border border-neon-cyan/35 bg-[#0b0b16]/95 p-3.5 text-white shadow-[0_16px_50px_rgba(0,0,0,0.85)] backdrop-blur-xl select-none font-sans">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              {activeTask.status === 'completed' ? (
+                <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
+              ) : (
+                <Loader2 className="h-4 w-4 shrink-0 animate-spin text-neon-cyan" />
+              )}
+              <span className="truncate text-xs font-bold text-neon-cyan">
+                {activeTask.status === 'completed'
+                  ? 'Đã lưu vào kho!'
+                  : `Đang tải ngầm${tasks.length > 1 ? ` (còn ${tasks.length} bài)` : ''}`}
               </span>
-            )}
-            {isOpen && (
+            </div>
+
+            <div className="flex items-center gap-1 shrink-0">
+              {activeTask.elapsedSec > 0 && activeTask.status !== 'completed' && (
+                <span className="mr-1 font-mono text-[10px] text-zinc-400">
+                  {activeTask.elapsedSec}s
+                </span>
+              )}
               <button
-                onClick={() => setIsMinimized(false)}
+                onClick={() => {
+                  setIsMinimized(false);
+                  setMobileOpen(true);
+                }}
                 className="rounded-lg p-1 text-zinc-400 transition hover:bg-white/10 hover:text-white cursor-pointer"
                 title="Mở rộng cửa sổ tải nhạc"
               >
                 <Maximize2 className="h-3.5 w-3.5" />
               </button>
-            )}
-            <button
-              onClick={() => cancelIngestTask(activeTask.key)}
-              className="rounded-lg px-2 py-0.5 text-[11px] font-semibold text-rose-400 transition hover:bg-rose-500/20 hover:text-rose-200 cursor-pointer"
-              title="Hủy tải bài này"
-            >
-              Hủy
-            </button>
-          </div>
-        </div>
-
-        <p className="mt-1 truncate text-xs font-medium text-zinc-200">
-          {activeTask.item.title}
-        </p>
-
-        <div className="mt-2.5 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
-          <div
-            className={`h-full rounded-full bg-gradient-to-r from-neon-cyan via-sky-400 to-emerald-400 transition-all duration-300 ${
-              activeTask.status === 'queued'
-                ? 'w-1/3 animate-pulse'
-                : activeTask.status === 'downloading'
-                ? 'w-3/4 animate-pulse'
-                : 'w-full'
-            }`}
-          />
-        </div>
-      </div>
-    );
-  }
-
-  if (!isOpen) return null;
-
-  const isUrl = (str: string) => {
-    try {
-      const u = new URL(str.trim());
-      return (
-        u.hostname.includes('youtube.com') ||
-        u.hostname.includes('youtu.be') ||
-        u.hostname.includes('soundcloud.com')
-      );
-    } catch {
-      return false;
-    }
-  };
-
-  const handleSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const trimmed = query.trim();
-    if (!trimmed) return;
-
-    setLocalError('');
-    controllerState.lastError = '';
-    setResults([]);
-    setSearching(true);
-
-    try {
-      const res = await fetch('/api/tracks/ingest', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'search', query: trimmed }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Lỗi tìm kiếm nguồn nhạc');
-
-      const items: YouTubeResult[] = data.results || [];
-      setResults(items);
-
-      if (items.length === 0) {
-        setLocalError(
-          'Không tìm thấy kết quả phù hợp. Hãy thử từ khóa khác hoặc dán link YouTube trực tiếp.'
-        );
-      }
-    } catch (err: any) {
-      setLocalError(err.message || 'Không thể kết nối máy chủ tìm kiếm.');
-    } finally {
-      setSearching(false);
-    }
-  };
-
-  const handleCloseButton = () => {
-    // Nếu đang có bài tải dở, nút X sẽ thu nhỏ xuống góc phải để chạy ngầm thay vì làm đứt tiến trình!
-    if (hasRunningTasks) {
-      setIsMinimized(true);
-    } else {
-      onClose();
-    }
-  };
-
-  const formatTime = (sec: number) => {
-    if (!sec) return '00:00';
-    const m = Math.floor(sec / 60);
-    const s = Math.floor(sec % 60);
-    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-  };
-
-  const unqueuedResults = results.filter((r) => {
-    const k = r.videoId || r.id;
-    return !tasks.some((t) => t.key === k) && !controllerState.completedKeys.has(k);
-  });
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xl p-4 select-none font-sans">
-      <div className="relative w-full max-w-2xl overflow-hidden rounded-3xl border border-white/[0.08] bg-gradient-to-b from-[#141424]/95 via-[#0b0b14]/98 to-[#06060b] p-6 text-white shadow-[0_24px_80px_rgba(0,0,0,0.9)]">
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(0,240,255,0.08),transparent_60%)]" />
-
-        {/* Header */}
-        <div className="relative z-10 flex items-center justify-between border-b border-white/[0.08] pb-4">
-          <div className="flex items-center gap-3.5">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] text-neon-cyan shadow-inner">
-              <CloudDownload className="h-5 w-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-base font-bold tracking-tight text-white">
-                  Nạp nhạc từ Cloud
-                </h2>
-                <span className="rounded-full border border-neon-cyan/30 bg-neon-cyan/10 px-2 py-0.5 font-mono text-[10px] font-semibold text-neon-cyan">
-                  GITHUB CDN
-                </span>
-              </div>
-              <p className="mt-0.5 text-xs text-zinc-400">
-                Hỗ trợ chọn tải nhiều bài vào hàng đợi & thu nhỏ chạy ngầm khi đang nghe nhạc
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-1.5">
-            {hasRunningTasks && (
               <button
-                onClick={() => setIsMinimized(true)}
-                className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-medium text-zinc-300 transition hover:border-neon-cyan/40 hover:bg-neon-cyan/10 hover:text-neon-cyan cursor-pointer"
-                title="Thu nhỏ xuống góc màn hình để vừa tải ngầm vừa nghe nhạc"
+                onClick={() => cancelIngestTask(activeTask.key)}
+                className="rounded-lg px-2 py-0.5 text-[11px] font-semibold text-rose-400 transition hover:bg-rose-500/20 hover:text-rose-200 cursor-pointer"
+                title="Hủy tải bài này"
               >
-                <Minimize2 className="h-3.5 w-3.5" />
-                <span>Chạy ngầm</span>
+                Hủy
               </button>
-            )}
-            <button
-              onClick={handleCloseButton}
-              className="rounded-xl border border-transparent p-2 text-zinc-400 transition hover:border-white/10 hover:bg-white/[0.06] hover:text-white cursor-pointer"
-              title={hasRunningTasks ? 'Thu nhỏ chạy ngầm' : 'Đóng'}
-            >
-              <X className="h-5 w-5" />
-            </button>
+            </div>
           </div>
-        </div>
 
-        {/* Search Input Bar (Luôn mở khóa để tìm bài mới ngay cả khi đang tải ngầm) */}
-        <form onSubmit={handleSearch} className="relative z-10 mt-5 flex items-center gap-2.5">
-          <div className="relative flex-1">
-            {isUrl(query) ? (
-              <Globe className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-neon-cyan" />
-            ) : (
-              <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
-            )}
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Nhập tên bài hát, nghệ sĩ hoặc dán link YouTube..."
-              className="w-full rounded-2xl border border-white/10 bg-white/[0.04] pl-11 pr-4 py-3 text-sm text-white placeholder-zinc-500 transition focus:border-neon-cyan/50 focus:bg-white/[0.06] focus:outline-none"
+          <p className="mt-1 truncate text-xs font-medium text-zinc-200">
+            {activeTask.item.title}
+          </p>
+
+          <div className="mt-2.5 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+            <div
+              className={`h-full rounded-full bg-gradient-to-r from-neon-cyan via-sky-400 to-emerald-400 transition-all duration-300 ${
+                activeTask.status === 'queued'
+                  ? 'w-1/3 animate-pulse'
+                  : activeTask.status === 'downloading'
+                  ? 'w-3/4 animate-pulse'
+                  : 'w-full'
+              }`}
             />
           </div>
-          <button
-            type="submit"
-            disabled={searching}
-            className="flex items-center gap-2 rounded-2xl bg-white px-6 py-3 text-xs font-bold text-black shadow-lg transition hover:bg-zinc-200 active:scale-95 disabled:opacity-50 cursor-pointer shrink-0"
-          >
-            {searching ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin text-black" />
-                <span>Đang tìm...</span>
-              </>
-            ) : (
-              <span>{isUrl(query) ? 'Kiểm tra' : 'Tìm'}</span>
-            )}
-          </button>
-        </form>
+        </div>
+      );
+    }
 
-        {/* Active Task & Queue Progress Tracker */}
-        {activeTask && (
-          <div className="relative z-10 mt-4 overflow-hidden rounded-2xl border border-neon-cyan/30 bg-[#09151d]/90 p-4 shadow-inner">
-            <div className="flex items-center justify-between gap-2 text-xs">
-              <div className="flex items-center gap-2.5 font-semibold text-neon-cyan min-w-0">
-                {activeTask.status === 'completed' ? (
-                  <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
-                ) : (
-                  <Loader2 className="h-4 w-4 animate-spin text-neon-cyan shrink-0" />
-                )}
-                <span className="truncate">
-                  {activeTask.status === 'queued' && 'ĐANG KHỞI TẠO (QUEUED)'}
-                  {activeTask.status === 'downloading' && 'ĐANG TẢI & CHUẨN HÓA MP3'}
-                  {activeTask.status === 'completed' && 'THÀNH CÔNG (COMPLETED)'}
-                  {activeTask.status === 'pending' && 'ĐANG CHỜ TRONG HÀNG ĐỢI'}
-                  {pendingCount > 0 && ` • Còn ${pendingCount} bài chờ kế tiếp`}
-                </span>
+    if (!effectiveOpen) return null;
+
+    const isUrl = (str: string) => {
+      try {
+        const u = new URL(str.trim());
+        return (
+          u.hostname.includes('youtube.com') ||
+          u.hostname.includes('youtu.be') ||
+          u.hostname.includes('soundcloud.com')
+        );
+      } catch {
+        return false;
+      }
+    };
+
+    const handleSearch = async (e: React.FormEvent) => {
+      e.preventDefault();
+      const trimmed = query.trim();
+      if (!trimmed) return;
+
+      setLocalError('');
+      controllerState.lastError = '';
+      setResults([]);
+      setSearching(true);
+
+      try {
+        const res = await fetch('/api/tracks/ingest', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'search', query: trimmed }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Lỗi tìm kiếm nguồn nhạc');
+
+        const items: YouTubeResult[] = data.results || [];
+        setResults(items);
+
+        if (items.length === 0) {
+          setLocalError(
+            'Không tìm thấy kết quả phù hợp. Hãy thử từ khóa khác hoặc dán link YouTube trực tiếp.'
+          );
+        }
+      } catch (err: any) {
+        setLocalError(err.message || 'Không thể kết nối máy chủ tìm kiếm.');
+      } finally {
+        setSearching(false);
+      }
+    };
+
+    const handleCloseButton = () => {
+      if (hasRunningTasks) {
+        setIsMinimized(true);
+      } else {
+        closeAll();
+      }
+    };
+
+    const formatTime = (sec: number) => {
+      if (!sec) return '00:00';
+      const m = Math.floor(sec / 60);
+      const s = Math.floor(sec % 60);
+      return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    };
+
+    const unqueuedResults = results.filter((r) => {
+      const k = r.videoId || r.id;
+      return !tasks.some((t) => t.key === k) && !controllerState.completedKeys.has(k);
+    });
+
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xl p-3 sm:p-4 select-none font-sans">
+        <div className="relative w-full max-w-2xl overflow-hidden rounded-3xl border border-white/[0.08] bg-gradient-to-b from-[#141424]/95 via-[#0b0b14]/98 to-[#06060b] p-4 sm:p-6 text-white shadow-[0_24px_80px_rgba(0,0,0,0.9)]">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(0,240,255,0.08),transparent_60%)]" />
+
+          {/* Header */}
+          <div className="relative z-10 flex items-center justify-between border-b border-white/[0.08] pb-3.5 sm:pb-4">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="flex h-10 w-10 sm:h-11 sm:w-11 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] text-neon-cyan shadow-inner">
+                <CloudDownload className="h-5 w-5" />
               </div>
-
-              <div className="flex items-center gap-2 shrink-0">
-                {activeTask.elapsedSec > 0 && activeTask.status !== 'completed' && (
-                  <span className="font-mono text-[11px] text-zinc-400">
-                    {activeTask.elapsedSec}s
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <h2 className="truncate text-sm sm:text-base font-bold tracking-tight text-white">
+                    Nạp nhạc từ Cloud
+                  </h2>
+                  <span className="shrink-0 rounded-full border border-neon-cyan/30 bg-neon-cyan/10 px-2 py-0.5 font-mono text-[10px] font-semibold text-neon-cyan">
+                    GITHUB CDN
                   </span>
-                )}
-                {activeTask.status !== 'completed' && (
-                  <button
-                    onClick={() => cancelIngestTask(activeTask.key)}
-                    className="flex items-center gap-1 rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-[11px] font-semibold text-rose-300 transition hover:bg-rose-500/25 hover:text-white cursor-pointer"
-                    title="Hủy tải bài đang chạy"
-                  >
-                    <Ban className="h-3 w-3" />
-                    <span>Hủy bài này</span>
-                  </button>
-                )}
-                {tasks.length > 1 && (
-                  <button
-                    onClick={cancelAllIngestTasks}
-                    className="rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[11px] font-medium text-zinc-400 transition hover:bg-rose-500/20 hover:text-rose-200 cursor-pointer"
-                    title="Hủy toàn bộ hàng đợi tải"
-                  >
-                    Hủy tất cả ({tasks.length})
-                  </button>
-                )}
+                </div>
+                <p className="mt-0.5 truncate text-[11px] sm:text-xs text-zinc-400">
+                  Hỗ trợ chọn tải nhiều bài vào hàng đợi & thu nhỏ chạy ngầm
+                </p>
               </div>
             </div>
 
-            <p className="mt-1.5 truncate text-xs text-zinc-200">
-              <span className="font-semibold text-white">{activeTask.item.title}</span> —{' '}
-              <span className="text-zinc-400">{activeTask.statusText}</span>
-            </p>
+            <div className="flex items-center gap-1.5 shrink-0">
+              {hasRunningTasks && (
+                <button
+                  onClick={() => setIsMinimized(true)}
+                  className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.04] px-2.5 sm:px-3 py-2 text-xs font-medium text-zinc-300 transition hover:border-neon-cyan/40 hover:bg-neon-cyan/10 hover:text-neon-cyan cursor-pointer"
+                  title="Thu nhỏ xuống góc màn hình để vừa tải ngầm vừa nghe nhạc"
+                >
+                  <Minimize2 className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Chạy ngầm</span>
+                </button>
+              )}
+              <button
+                onClick={handleCloseButton}
+                className="rounded-xl border border-transparent p-2 text-zinc-400 transition hover:border-white/10 hover:bg-white/[0.06] hover:text-white cursor-pointer"
+                title={hasRunningTasks ? 'Thu nhỏ chạy ngầm' : 'Đóng'}
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+          </div>
 
-            <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
-              <div
-                className={`h-full rounded-full bg-gradient-to-r from-neon-cyan via-sky-400 to-emerald-400 transition-all duration-300 ${
-                  activeTask.status === 'queued'
-                    ? 'w-1/3 animate-pulse'
-                    : activeTask.status === 'downloading'
-                    ? 'w-3/4 animate-pulse'
-                    : 'w-full'
-                }`}
+          {/* Search Input Bar */}
+          <form onSubmit={handleSearch} className="relative z-10 mt-4 sm:mt-5 flex items-center gap-2">
+            <div className="relative flex-1">
+              {isUrl(query) ? (
+                <Globe className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-neon-cyan" />
+              ) : (
+                <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
+              )}
+              <input
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Nhập tên bài hát, nghệ sĩ hoặc dán link YouTube..."
+                className="w-full rounded-2xl border border-white/10 bg-white/[0.04] pl-10 pr-3 py-2.5 sm:py-3 text-xs sm:text-sm text-white placeholder-zinc-500 transition focus:border-neon-cyan/50 focus:bg-white/[0.06] focus:outline-none"
               />
             </div>
-          </div>
-        )}
-
-        {/* Error Notification */}
-        {combinedError && (
-          <div className="relative z-10 mt-4 flex items-center justify-between gap-3 rounded-2xl border border-rose-500/30 bg-rose-950/40 px-4 py-3 text-xs text-rose-200">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <AlertCircle className="h-4 w-4 shrink-0 text-rose-400" />
-              <span className="truncate">{combinedError}</span>
-            </div>
             <button
-              onClick={() => {
-                setLocalError('');
-                controllerState.lastError = '';
-                notifySubscribers();
-              }}
-              className="text-rose-300 hover:text-white text-[11px] shrink-0 cursor-pointer"
+              type="submit"
+              disabled={searching}
+              className="flex items-center gap-1.5 rounded-2xl bg-white px-4 sm:px-6 py-2.5 sm:py-3 text-xs font-bold text-black shadow-lg transition hover:bg-zinc-200 active:scale-95 disabled:opacity-50 cursor-pointer shrink-0"
             >
-              Đóng
+              {searching ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin text-black" />
+                  <span>Đang tìm...</span>
+                </>
+              ) : (
+                <span>{isUrl(query) ? 'Kiểm tra' : 'Tìm'}</span>
+              )}
             </button>
-          </div>
-        )}
+          </form>
 
-        {/* Batch Action Bar (Khi có nhiều kết quả tìm kiếm) */}
-        {results.length > 1 && unqueuedResults.length > 1 && (
-          <div className="relative z-10 mt-4 flex items-center justify-between px-1">
-            <span className="text-[11px] text-zinc-400">
-              Bạn có thể bấm chọn tải nhiều bài liên tiếp vào hàng đợi
-            </span>
-            <button
-              onClick={() => enqueueBatchIngestTasks(unqueuedResults)}
-              className="flex items-center gap-1.5 rounded-xl border border-neon-cyan/30 bg-neon-cyan/10 px-3 py-1.5 text-[11px] font-semibold text-neon-cyan transition hover:bg-neon-cyan hover:text-black cursor-pointer"
-            >
-              <ListPlus className="h-3.5 w-3.5" />
-              <span>Tải tất cả ({unqueuedResults.length} bài)</span>
-            </button>
-          </div>
-        )}
+          {/* Active Task & Queue Progress Tracker */}
+          {activeTask && (
+            <div className="relative z-10 mt-3.5 sm:mt-4 overflow-hidden rounded-2xl border border-neon-cyan/30 bg-[#09151d]/90 p-3.5 sm:p-4 shadow-inner">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                <div className="flex items-center gap-2 font-semibold text-neon-cyan min-w-0">
+                  {activeTask.status === 'completed' ? (
+                    <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+                  ) : (
+                    <Loader2 className="h-4 w-4 animate-spin text-neon-cyan shrink-0" />
+                  )}
+                  <span className="truncate">
+                    {activeTask.status === 'queued' && 'ĐANG KHỞI TẠO (QUEUED)'}
+                    {activeTask.status === 'downloading' && 'ĐANG TẢI & CHUẨN HÓA MP3'}
+                    {activeTask.status === 'completed' && 'THÀNH CÔNG (COMPLETED)'}
+                    {activeTask.status === 'pending' && 'ĐANG CHỜ TRONG HÀNG ĐỢI'}
+                    {pendingCount > 0 && ` • Còn ${pendingCount} bài chờ`}
+                  </span>
+                </div>
 
-        {/* Search Results */}
-        <div className="relative z-10 mt-3 max-h-[340px] space-y-2.5 overflow-y-auto pr-1">
-          {results.length === 0 && !searching && !combinedError && (
-            <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-white/[0.06] bg-white/[0.01] py-10 text-center">
-              <Music className="h-8 w-8 text-zinc-600 mb-2" />
-              <p className="text-xs font-medium text-zinc-400">
-                Nhập tên bài hát hoặc dán link YouTube để tìm kiếm
+                <div className="flex items-center gap-2 shrink-0">
+                  {activeTask.elapsedSec > 0 && activeTask.status !== 'completed' && (
+                    <span className="font-mono text-[11px] text-zinc-400">
+                      {activeTask.elapsedSec}s
+                    </span>
+                  )}
+                  {activeTask.status !== 'completed' && (
+                    <button
+                      onClick={() => cancelIngestTask(activeTask.key)}
+                      className="flex items-center gap-1 rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-[11px] font-semibold text-rose-300 transition hover:bg-rose-500/25 hover:text-white cursor-pointer"
+                    >
+                      <Ban className="h-3 w-3" />
+                      <span>Hủy bài này</span>
+                    </button>
+                  )}
+                  {tasks.length > 1 && (
+                    <button
+                      onClick={cancelAllIngestTasks}
+                      className="rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[11px] font-medium text-zinc-400 transition hover:bg-rose-500/20 hover:text-rose-200 cursor-pointer"
+                    >
+                      Hủy tất cả ({tasks.length})
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <p className="mt-1.5 truncate text-xs text-zinc-200">
+                <span className="font-semibold text-white">{activeTask.item.title}</span> —{' '}
+                <span className="text-zinc-400">{activeTask.statusText}</span>
               </p>
-              <p className="mt-1 text-[11px] text-zinc-600">
-                Có thể chọn tải nhiều bài cùng lúc hoặc thu nhỏ cửa sổ để vừa tải ngầm vừa nghe nhạc
-              </p>
+
+              <div className="mt-2.5 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+                <div
+                  className={`h-full rounded-full bg-gradient-to-r from-neon-cyan via-sky-400 to-emerald-400 transition-all duration-300 ${
+                    activeTask.status === 'queued'
+                      ? 'w-1/3 animate-pulse'
+                      : activeTask.status === 'downloading'
+                      ? 'w-3/4 animate-pulse'
+                      : 'w-full'
+                  }`}
+                />
+              </div>
             </div>
           )}
 
-          {results.map((item) => {
-            const itemKey = item.videoId || item.id;
-            const queuedTask = tasks.find((t) => t.key === itemKey);
-            const queuePosition = tasks.findIndex((t) => t.key === itemKey) + 1;
-            const isIngesting =
-              queuedTask?.status === 'queued' || queuedTask?.status === 'downloading';
-            const isPending = queuedTask?.status === 'pending';
-            const isDone =
-              queuedTask?.status === 'completed' || controllerState.completedKeys.has(itemKey);
-
-            return (
-              <div
-                key={itemKey}
-                className={`group flex items-center justify-between gap-4 rounded-2xl border p-3 transition-all ${
-                  isIngesting
-                    ? 'border-neon-cyan/40 bg-neon-cyan/[0.06]'
-                    : isPending
-                    ? 'border-amber-400/30 bg-amber-400/[0.05]'
-                    : isDone
-                    ? 'border-emerald-500/40 bg-emerald-500/[0.08]'
-                    : 'border-white/[0.06] bg-white/[0.02] hover:border-white/15 hover:bg-white/[0.05]'
-                }`}
+          {/* Error Notification */}
+          {combinedError && (
+            <div className="relative z-10 mt-3.5 flex items-center justify-between gap-3 rounded-2xl border border-rose-500/30 bg-rose-950/40 px-4 py-3 text-xs text-rose-200">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <AlertCircle className="h-4 w-4 shrink-0 text-rose-400" />
+                <span className="truncate">{combinedError}</span>
+              </div>
+              <button
+                onClick={() => {
+                  setLocalError('');
+                  controllerState.lastError = '';
+                  notifySubscribers();
+                }}
+                className="text-rose-300 hover:text-white text-[11px] shrink-0 cursor-pointer"
               >
-                <div className="flex items-center gap-3.5 min-w-0">
-                  <div className="relative h-14 w-24 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-zinc-900">
-                    <img
-                      src={item.thumbnail}
-                      alt={item.title}
-                      className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
-                    />
-                    <span className="absolute bottom-1 right-1 flex items-center gap-1 rounded bg-black/80 px-1.5 py-0.5 font-mono text-[10px] font-medium text-zinc-200 backdrop-blur-sm">
-                      <Clock className="h-2.5 w-2.5 text-neon-cyan" />
-                      {item.durationFormatted || formatTime(item.duration)}
-                    </span>
+                Đóng
+              </button>
+            </div>
+          )}
+
+          {/* Batch Action Bar */}
+          {results.length > 1 && unqueuedResults.length > 1 && (
+            <div className="relative z-10 mt-3.5 flex items-center justify-between px-1">
+              <span className="text-[11px] text-zinc-400 truncate pr-2">
+                Có thể chọn tải nhiều bài liên tiếp vào hàng đợi
+              </span>
+              <button
+                onClick={() => enqueueBatchIngestTasks(unqueuedResults)}
+                className="flex items-center gap-1.5 shrink-0 rounded-xl border border-neon-cyan/30 bg-neon-cyan/10 px-3 py-1.5 text-[11px] font-semibold text-neon-cyan transition hover:bg-neon-cyan hover:text-black cursor-pointer"
+              >
+                <ListPlus className="h-3.5 w-3.5" />
+                <span>Tải tất cả ({unqueuedResults.length})</span>
+              </button>
+            </div>
+          )}
+
+          {/* Search Results */}
+          <div className="relative z-10 mt-3 max-h-[55vh] sm:max-h-[340px] space-y-2.5 overflow-y-auto pr-1">
+            {results.length === 0 && !searching && !combinedError && (
+              <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-white/[0.06] bg-white/[0.01] py-8 sm:py-10 text-center">
+                <Music className="h-8 w-8 text-zinc-600 mb-2" />
+                <p className="text-xs font-medium text-zinc-400">
+                  Nhập tên bài hát hoặc dán link YouTube để tìm kiếm
+                </p>
+                <p className="mt-1 text-[11px] text-zinc-600 px-4">
+                  Có thể chọn tải nhiều bài cùng lúc hoặc thu nhỏ cửa sổ để vừa tải ngầm vừa nghe nhạc
+                </p>
+              </div>
+            )}
+
+            {results.map((item) => {
+              const itemKey = item.videoId || item.id;
+              const queuedTask = tasks.find((t) => t.key === itemKey);
+              const queuePosition = tasks.findIndex((t) => t.key === itemKey) + 1;
+              const isIngesting =
+                queuedTask?.status === 'queued' || queuedTask?.status === 'downloading';
+              const isPending = queuedTask?.status === 'pending';
+              const isDone =
+                queuedTask?.status === 'completed' || controllerState.completedKeys.has(itemKey);
+
+              return (
+                <div
+                  key={itemKey}
+                  className={`group flex items-center justify-between gap-2.5 sm:gap-4 rounded-2xl border p-2.5 sm:p-3 transition-all ${
+                    isIngesting
+                      ? 'border-neon-cyan/40 bg-neon-cyan/[0.06]'
+                      : isPending
+                      ? 'border-amber-400/30 bg-amber-400/[0.05]'
+                      : isDone
+                      ? 'border-emerald-500/40 bg-emerald-500/[0.08]'
+                      : 'border-white/[0.06] bg-white/[0.02] hover:border-white/15 hover:bg-white/[0.05]'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5 sm:gap-3.5 min-w-0">
+                    <div className="relative h-12 w-20 sm:h-14 sm:w-24 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-zinc-900">
+                      <img
+                        src={item.thumbnail}
+                        alt={item.title}
+                        className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+                      />
+                      <span className="absolute bottom-1 right-1 flex items-center gap-1 rounded bg-black/80 px-1.5 py-0.5 font-mono text-[9px] sm:text-[10px] font-medium text-zinc-200 backdrop-blur-sm">
+                        <Clock className="h-2.5 w-2.5 text-neon-cyan" />
+                        {item.durationFormatted || formatTime(item.duration)}
+                      </span>
+                    </div>
+
+                    <div className="min-w-0">
+                      <h4 className="truncate text-xs sm:text-sm font-semibold text-white group-hover:text-neon-cyan transition-colors">
+                        {item.title}
+                      </h4>
+                      <p className="mt-0.5 truncate text-[11px] sm:text-xs text-zinc-400">
+                        {item.artist || 'Nghệ sĩ chưa rõ'}
+                      </p>
+                    </div>
                   </div>
 
-                  <div className="min-w-0">
-                    <h4 className="truncate text-sm font-semibold text-white group-hover:text-neon-cyan transition-colors">
-                      {item.title}
-                    </h4>
-                    <p className="mt-0.5 truncate text-xs text-zinc-400">
-                      {item.artist || 'Nghệ sĩ chưa rõ'}
-                    </p>
-                  </div>
-                </div>
-
-                {isIngesting || isPending ? (
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span
-                      className={`flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold ${
-                        isIngesting
-                          ? 'border border-neon-cyan/40 bg-neon-cyan/15 text-neon-cyan'
-                          : 'border border-amber-400/30 bg-amber-400/10 text-amber-300'
+                  {isIngesting || isPending ? (
+                    <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                      <span
+                        className={`flex items-center gap-1.5 rounded-xl px-2.5 sm:px-3 py-2 text-[11px] sm:text-xs font-semibold ${
+                          isIngesting
+                            ? 'border border-neon-cyan/40 bg-neon-cyan/15 text-neon-cyan'
+                            : 'border border-amber-400/30 bg-amber-400/10 text-amber-300'
+                        }`}
+                      >
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        <span>{isIngesting ? 'Đang tải...' : `Chờ #${queuePosition}`}</span>
+                      </span>
+                      <button
+                        onClick={() => cancelIngestTask(itemKey)}
+                        className="rounded-xl border border-rose-500/30 bg-rose-500/15 px-2.5 sm:px-3 py-2 text-[11px] sm:text-xs font-semibold text-rose-300 transition hover:bg-rose-500 hover:text-white cursor-pointer"
+                        title="Hủy tải bài này"
+                      >
+                        Hủy
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => enqueueIngestTask(item)}
+                      className={`shrink-0 flex items-center gap-1.5 sm:gap-2 rounded-xl px-3 sm:px-4 py-2 sm:py-2.5 text-[11px] sm:text-xs font-semibold transition-all cursor-pointer ${
+                        isDone
+                          ? 'bg-emerald-500 text-black font-bold shadow-[0_0_20px_rgba(16,185,129,0.4)]'
+                          : 'border border-white/10 bg-white/[0.07] text-white hover:bg-white hover:text-black active:scale-95'
                       }`}
                     >
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      <span>{isIngesting ? 'Đang tải...' : `Chờ #${queuePosition}`}</span>
-                    </span>
-                    <button
-                      onClick={() => cancelIngestTask(itemKey)}
-                      className="rounded-xl border border-rose-500/30 bg-rose-500/15 px-3 py-2 text-xs font-semibold text-rose-300 transition hover:bg-rose-500 hover:text-white cursor-pointer"
-                      title="Hủy tải bài này"
-                    >
-                      Hủy
+                      {isDone ? (
+                        <>
+                          <Check className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                          <span>Đã lưu</span>
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="h-3.5 w-3.5 text-neon-cyan group-hover:text-black transition-colors" />
+                          <span>{hasRunningTasks ? 'Thêm hàng đợi' : 'Tải về Kho'}</span>
+                        </>
+                      )}
                     </button>
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => enqueueIngestTask(item)}
-                    className={`shrink-0 flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-semibold transition-all cursor-pointer ${
-                      isDone
-                        ? 'bg-emerald-500 text-black font-bold shadow-[0_0_20px_rgba(16,185,129,0.4)]'
-                        : 'border border-white/10 bg-white/[0.07] text-white hover:bg-white hover:text-black active:scale-95'
-                    }`}
-                  >
-                    {isDone ? (
-                      <>
-                        <Check className="h-4 w-4" />
-                        <span>Đã lưu</span>
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles className="h-3.5 w-3.5 text-neon-cyan group-hover:text-black transition-colors" />
-                        <span>{hasRunningTasks ? 'Thêm vào Hàng đợi' : 'Tải về Kho'}</span>
-                      </>
-                    )}
-                  </button>
-                )}
-              </div>
-            );
-          })}
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
+
+  const content = renderContent();
+  if (!content) return null;
+
+  if (mounted && typeof document !== 'undefined') {
+    return createPortal(content, document.body);
+  }
+
+  return content;
 }
 
 export default SmartIngestModal;

@@ -8,7 +8,10 @@ import { AudioEngine, audioEngine } from '@/core/audio/AudioEngine';
 let consecutiveErrorCount = 0;
 let initialCatalogSynced = false;
 
-function resolveStreamUrl(rawUrl?: string): string {
+const FALLBACK_ARTWORK_URL =
+  'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=512&auto=format&fit=crop&q=80';
+
+export function resolveStreamUrl(rawUrl?: string): string {
   if (!rawUrl) return '';
   if (rawUrl.startsWith('/api/tracks/stream')) return rawUrl;
   if (rawUrl.startsWith('http://') || rawUrl.startsWith('https://')) {
@@ -22,6 +25,52 @@ function resolveStreamUrl(rawUrl?: string): string {
     return `/api/tracks/stream?url=${encodeURIComponent(rawUrl)}`;
   }
   return `/api/tracks/stream?file=${encodeURIComponent(rawUrl)}`;
+}
+
+function resolveAbsoluteArtworkUrl(rawCover?: string): string {
+  if (!rawCover || typeof window === 'undefined') {
+    return FALLBACK_ARTWORK_URL;
+  }
+  try {
+    return new URL(rawCover, window.location.origin).href;
+  } catch {
+    return FALLBACK_ARTWORK_URL;
+  }
+}
+
+function updateMediaSessionPosition(positionSec: number, durationSec: number) {
+  if (
+    typeof navigator === 'undefined' ||
+    !('mediaSession' in navigator) ||
+    typeof navigator.mediaSession.setPositionState !== 'function'
+  ) {
+    return;
+  }
+  if (!durationSec || !isFinite(durationSec) || durationSec <= 0) return;
+  const safePos = Math.max(0, Math.min(positionSec || 0, durationSec));
+  try {
+    navigator.mediaSession.setPositionState({
+      duration: durationSec,
+      playbackRate: 1,
+      position: safePos,
+    });
+  } catch {}
+}
+
+/**
+ * Kích hoạt phát bài hát kế tiếp NGAY LẬP TỨC trong cùng nhịp đồng bộ (synchronous event tick)
+ * để iOS Safari không đóng băng Audio Session khi màn hình đang khóa!
+ */
+function triggerImmediateSyncPlaybackFromStore() {
+  const nextState = usePlayerStore.getState();
+  const nextTrack = nextState.currentTrack;
+  if (nextTrack && nextState.isPlaying) {
+    const rawUrl = nextTrack.streamUrl || nextTrack.cdnUrl || '';
+    const streamUrl = resolveStreamUrl(rawUrl);
+    if (streamUrl) {
+      void audioEngine.loadAndPlay(streamUrl, nextState.playNonce);
+    }
+  }
 }
 
 export function useAudioPlayer() {
@@ -40,13 +89,11 @@ export function useAudioPlayer() {
     playPrevious,
   } = usePlayerStore();
 
-  // Real Framer Motion MotionValues required by MagneticSeekbar (0 -> 1 for progressMV, seconds for currentTimeMV)
   const progressMV = useMotionValue(0);
   const currentTimeMV = useMotionValue(0);
   const rafIdRef = useRef<number | null>(null);
 
   // Sync catalog into usePlayerStore on initial load and when new tracks are added
-  // so the queue always contains the full playlist for auto-advance and end-of-playlist shuffle
   useEffect(() => {
     const syncCatalogToStore = async () => {
       try {
@@ -73,8 +120,13 @@ export function useAudioPlayer() {
     return () => window.removeEventListener('aurasound:track-added', onTrackAdded);
   }, []);
 
-  // 60fps loop updating MotionValues for MagneticSeekbar without triggering React re-renders
+  // 60fps loop updating MotionValues for MagneticSeekbar — tự động tạm dừng khi màn hình tắt (document.hidden)
   const syncFrame = useCallback(() => {
+    if (typeof document !== 'undefined' && document.hidden) {
+      rafIdRef.current = null;
+      return;
+    }
+
     const current = audioEngine.getCurrentTime();
     const storeState = usePlayerStore.getState();
     const total =
@@ -90,13 +142,23 @@ export function useAudioPlayer() {
   }, [currentTimeMV, progressMV]);
 
   useEffect(() => {
-    if (isPlaying) {
-      rafIdRef.current = requestAnimationFrame(syncFrame);
-    } else if (rafIdRef.current) {
-      cancelAnimationFrame(rafIdRef.current);
-      rafIdRef.current = null;
-    }
+    const startOrStopRaf = () => {
+      const isHidden = typeof document !== 'undefined' && document.hidden;
+      if (isPlaying && !isHidden) {
+        if (!rafIdRef.current) {
+          rafIdRef.current = requestAnimationFrame(syncFrame);
+        }
+      } else if (rafIdRef.current) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
+      }
+    };
+
+    startOrStopRaf();
+    document.addEventListener('visibilitychange', startOrStopRaf);
+
     return () => {
+      document.removeEventListener('visibilitychange', startOrStopRaf);
       if (rafIdRef.current) {
         cancelAnimationFrame(rafIdRef.current);
         rafIdRef.current = null;
@@ -111,21 +173,40 @@ export function useAudioPlayer() {
     progressMV.set(total > 0 ? Math.min(1, Math.max(0, progress / total)) : 0);
   }, [progress, duration, currentTrack, currentTimeMV, progressMV]);
 
-  // Register singleton AudioEngine callbacks
+  // Register singleton AudioEngine callbacks + synchronous background track hand-off
   useEffect(() => {
     audioEngine.onTimeUpdate((time) => {
-      usePlayerStore.getState().setProgress(time);
+      const state = usePlayerStore.getState();
+      state.setProgress(time);
+      const total = audioEngine.getDuration() || state.duration || state.currentTrack?.duration || 0;
+      updateMediaSessionPosition(time, total);
     });
 
     audioEngine.onDurationChange((dur) => {
       if (dur && !isNaN(dur) && isFinite(dur)) {
         usePlayerStore.getState().setDuration(dur);
+        updateMediaSessionPosition(audioEngine.getCurrentTime(), dur);
       }
     });
 
+    // Đồng bộ ngược trạng thái Play/Pause khi bấm từ Màn hình khóa hoặc tai nghe AirPods
+    audioEngine.onPlayStateChange((playing) => {
+      const state = usePlayerStore.getState();
+      if (state.isPlaying !== playing) {
+        state.setIsPlaying(playing);
+      }
+      if (typeof navigator !== 'undefined' && 'mediaSession' in navigator) {
+        try {
+          navigator.mediaSession.playbackState = playing ? 'playing' : 'paused';
+        } catch {}
+      }
+    });
+
+    // Chuyển bài đồng bộ ngay lập tức trong cùng event tick để không bị iOS ngắt khi khóa máy
     audioEngine.onEnded(() => {
       consecutiveErrorCount = 0;
       usePlayerStore.getState().advanceNext('ended');
+      triggerImmediateSyncPlaybackFromStore();
     });
 
     audioEngine.onError(() => {
@@ -134,6 +215,7 @@ export function useAudioPlayer() {
       consecutiveErrorCount += 1;
       if (totalTracks > 1 && consecutiveErrorCount < Math.min(totalTracks, 3)) {
         state.advanceNext('error');
+        triggerImmediateSyncPlaybackFromStore();
       } else {
         consecutiveErrorCount = 0;
         state.setIsPlaying(false);
@@ -141,7 +223,92 @@ export function useAudioPlayer() {
     });
   }, []);
 
-  // Unified single playback synchronization effect (eliminates race condition between separate track & play effects)
+  // Tích hợp chuẩn Media Session API cho Màn hình khóa iOS/iPadOS/Android, Dynamic Island & Tai nghe Bluetooth
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof navigator === 'undefined' || !('mediaSession' in navigator)) {
+      return;
+    }
+
+    if (currentTrack && typeof MediaMetadata !== 'undefined') {
+      const artworkUrl = resolveAbsoluteArtworkUrl(currentTrack.coverUrl || currentTrack.thumbnail);
+      try {
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: currentTrack.title || 'AuraSound Track',
+          artist: currentTrack.artist || 'Nghệ sĩ chưa rõ',
+          album: currentTrack.album || 'AuraSound Vault',
+          artwork: [
+            { src: artworkUrl, sizes: '96x96', type: 'image/jpeg' },
+            { src: artworkUrl, sizes: '192x192', type: 'image/jpeg' },
+            { src: artworkUrl, sizes: '512x512', type: 'image/jpeg' },
+            { src: artworkUrl, sizes: '512x512', type: 'image/png' },
+          ],
+        });
+      } catch {}
+    }
+
+    try {
+      navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
+    } catch {}
+
+    const safeSetHandler = (action: MediaSessionAction, handler: MediaSessionActionHandler | null) => {
+      try {
+        navigator.mediaSession.setActionHandler(action, handler);
+      } catch {}
+    };
+
+    safeSetHandler('play', () => {
+      const state = usePlayerStore.getState();
+      state.setIsPlaying(true);
+      const rawUrl = state.currentTrack?.streamUrl || state.currentTrack?.cdnUrl || '';
+      const streamUrl = resolveStreamUrl(rawUrl);
+      void audioEngine.play(streamUrl, state.playNonce);
+    });
+
+    safeSetHandler('pause', () => {
+      usePlayerStore.getState().setIsPlaying(false);
+      audioEngine.pause();
+    });
+
+    safeSetHandler('previoustrack', () => {
+      usePlayerStore.getState().playPrevious();
+      triggerImmediateSyncPlaybackFromStore();
+    });
+
+    safeSetHandler('nexttrack', () => {
+      usePlayerStore.getState().playNext();
+      triggerImmediateSyncPlaybackFromStore();
+    });
+
+    safeSetHandler('seekto', (details) => {
+      if (typeof details.seekTime === 'number' && !isNaN(details.seekTime)) {
+        audioEngine.seek(details.seekTime);
+        usePlayerStore.getState().setProgress(details.seekTime);
+        const total =
+          audioEngine.getDuration() ||
+          usePlayerStore.getState().duration ||
+          usePlayerStore.getState().currentTrack?.duration ||
+          0;
+        updateMediaSessionPosition(details.seekTime, total);
+      }
+    });
+
+    safeSetHandler('seekbackward', (details) => {
+      const offset = details.seekOffset || 10;
+      const target = Math.max(0, audioEngine.getCurrentTime() - offset);
+      audioEngine.seek(target);
+      usePlayerStore.getState().setProgress(target);
+    });
+
+    safeSetHandler('seekforward', (details) => {
+      const offset = details.seekOffset || 10;
+      const total = audioEngine.getDuration() || usePlayerStore.getState().duration || 0;
+      const target = total > 0 ? Math.min(total, audioEngine.getCurrentTime() + offset) : audioEngine.getCurrentTime() + offset;
+      audioEngine.seek(target);
+      usePlayerStore.getState().setProgress(target);
+    });
+  }, [currentTrack, isPlaying]);
+
+  // Unified single playback synchronization effect
   useEffect(() => {
     if (!currentTrack) {
       audioEngine.pause();
@@ -157,7 +324,7 @@ export function useAudioPlayer() {
     }
 
     if (isPlaying) {
-      audioEngine.loadAndPlay(streamUrl, playNonce);
+      void audioEngine.loadAndPlay(streamUrl, playNonce);
     } else {
       audioEngine.pause();
     }
@@ -195,6 +362,7 @@ export function useAudioPlayer() {
         0;
       currentTimeMV.set(targetSec);
       progressMV.set(total > 0 ? Math.min(1, Math.max(0, targetSec / total)) : 0);
+      updateMediaSessionPosition(targetSec, total);
     },
     [setProgress, currentTimeMV, progressMV]
   );

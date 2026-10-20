@@ -152,7 +152,7 @@ export function SidebarNav({ onViewChange, onFileUpload }: SidebarNavProps) {
       <aside
         className={`${
           isSidebarCollapsed ? 'w-20 px-3' : 'w-64 px-4'
-        } shrink-0 border-r border-zinc-800/80 bg-[#050508] py-5 flex flex-col justify-between select-none transition-all duration-300 ease-in-out z-30`}
+        } shrink-0 border-r border-zinc-800/80 bg-[#050508] py-5 hidden md:flex flex-col justify-between select-none transition-all duration-300 ease-in-out z-30`}
       >
         <div className="space-y-5 overflow-y-auto overflow-x-hidden pr-0.5">
           <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center' : 'justify-between px-1'}`}>

@@ -2,9 +2,10 @@
  * Singleton Web Audio & HTML5 Audio Engine
  * - Guarantees a single active ended/timeupdate listener even when multiple components call useAudioPlayer()
  * - Prevents duplicate loadAndPlay restarts when multiple hook instances run in the same render pass
- * - Unlocks AudioContext synchronously on user gesture (click, pointerdown, touchstart)
- * - Exposes window.__AURASOUND_ANALYSER__ for 60fps Canvas Spectrum & 24-LED Studio VU Meter
- * - Preserves crossOrigin = "anonymous" on same-origin /api/tracks/stream so MediaElementAudioSourceNode never outputs silence
+ * - Unlocks AudioContext synchronously on user gesture (click, pointerdown, touchstart) when page is visible
+ * - Avoids routing <audio> through createMediaElementSource on mobileOS (iOS/iPadOS/Android) so Lock Screen
+ *   background playback never gets muted when the OS suspends AudioContext in deep sleep
+ * - Preloads next track at 70% progress so track transitions while screen is locked happen in 0ms
  */
 export class AudioEngine {
   private static instance: AudioEngine;
@@ -22,16 +23,21 @@ export class AudioEngine {
   private activeLoadId: number = 0;
   private endedFiredForLoad: boolean = false;
 
+  private nextPreloadUrl: string = '';
+  private hasTriggered70PercentPreload: boolean = false;
+
   private timeUpdateCallback: ((time: number) => void) | null = null;
   private durationChangeCallback: ((duration: number) => void) | null = null;
   private endedCallback: (() => void) | null = null;
   private errorCallback: ((err: string) => void) | null = null;
+  private playStateCallback: ((isPlaying: boolean) => void) | null = null;
 
   private constructor() {
     if (typeof window !== 'undefined') {
       this.primaryAudio = new Audio();
       this.primaryAudio.crossOrigin = 'anonymous';
       this.primaryAudio.preload = 'auto';
+      (this.primaryAudio as any).playsInline = true;
 
       this.preloadAudio = new Audio();
       this.preloadAudio.crossOrigin = 'anonymous';
@@ -40,7 +46,9 @@ export class AudioEngine {
       this.bindNativeEvents();
 
       const unlock = () => {
-        this.resumeContext();
+        if (typeof document !== 'undefined' && !document.hidden) {
+          this.resumeContext();
+        }
       };
       window.addEventListener('click', unlock, { capture: true, passive: true });
       window.addEventListener('pointerdown', unlock, { capture: true, passive: true });
@@ -56,7 +64,17 @@ export class AudioEngine {
     return AudioEngine.instance;
   }
 
+  private isMobileDevice(): boolean {
+    if (typeof navigator === 'undefined') return false;
+    const ua = navigator.userAgent || '';
+    if (/iPhone|iPad|iPod|Android|Mobile/i.test(ua)) return true;
+    // iPadOS 13+ reports as MacIntel with multi-touch points
+    if (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) return true;
+    return false;
+  }
+
   public resumeContext(): void {
+    if (typeof document !== 'undefined' && document.hidden) return;
     if (this.audioCtx && this.audioCtx.state === 'suspended') {
       this.audioCtx.resume().catch(() => {});
     }
@@ -66,9 +84,28 @@ export class AudioEngine {
     if (!this.primaryAudio) return;
 
     this.primaryAudio.addEventListener('timeupdate', () => {
-      this.resumeContext();
-      if (this.primaryAudio && this.timeUpdateCallback) {
-        this.timeUpdateCallback(this.primaryAudio.currentTime || 0);
+      if (typeof document !== 'undefined' && !document.hidden) {
+        this.resumeContext();
+      }
+      if (!this.primaryAudio) return;
+
+      const curr = this.primaryAudio.currentTime || 0;
+      const dur = this.primaryAudio.duration || 0;
+
+      // Preload luồng âm thanh bài tiếp theo khi bài hiện tại đạt 70% để chống ngắt quãng trên iOS Lock Screen
+      if (
+        !this.hasTriggered70PercentPreload &&
+        this.nextPreloadUrl &&
+        dur > 0 &&
+        isFinite(dur) &&
+        curr / dur >= 0.7
+      ) {
+        this.hasTriggered70PercentPreload = true;
+        this.triggerPreloadFetch(this.nextPreloadUrl);
+      }
+
+      if (this.timeUpdateCallback) {
+        this.timeUpdateCallback(curr);
       }
     });
 
@@ -90,6 +127,21 @@ export class AudioEngine {
       }
     });
 
+    // Đồng bộ 2 chiều khi người dùng bấm Play/Pause từ Màn hình khóa hoặc tai nghe AirPods
+    this.primaryAudio.addEventListener('play', () => {
+      if (this.playStateCallback) {
+        this.playStateCallback(true);
+      }
+    });
+
+    this.primaryAudio.addEventListener('pause', () => {
+      // Không bắn pause giả khi bài hát vừa kết thúc tự nhiên (ended) hoặc đang nạp bài mới (isLoading)
+      if (!this.primaryAudio || this.primaryAudio.ended || this.isLoading) return;
+      if (this.playStateCallback) {
+        this.playStateCallback(false);
+      }
+    });
+
     this.primaryAudio.addEventListener('ended', () => {
       if (this.endedFiredForLoad) return;
       this.endedFiredForLoad = true;
@@ -102,10 +154,17 @@ export class AudioEngine {
 
   private ensureAudioContext(): void {
     if (typeof window === 'undefined' || !this.primaryAudio) return;
+    // QUAN TRỌNG: Trên iOS / iPadOS / Android, KHÔNG gắn createMediaElementSource vào thẻ <audio>
+    // vì khi khóa màn hình, hệ điều hành sẽ cưỡng chế suspend AudioContext làm mất tiếng hoàn toàn.
+    // Để thẻ <audio> chạy trực tiếp qua phần cứng OS giúp phát ngầm liên tục hàng giờ với 0% CPU.
+    if (this.isMobileDevice()) return;
+    if (typeof document !== 'undefined' && document.hidden) return;
+
     try {
       if (!this.audioCtx) {
         const AudioContextClass =
-          window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+          window.AudioContext ||
+          (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
         this.audioCtx = new AudioContextClass();
         this.analyser = this.audioCtx.createAnalyser();
         this.analyser.fftSize = 128;
@@ -152,10 +211,10 @@ export class AudioEngine {
 
     const loadId = ++this.activeLoadId;
     this.endedFiredForLoad = false;
+    this.hasTriggered70PercentPreload = false;
     this.isLoading = true;
 
     try {
-      // Luôn giữ crossOrigin = 'anonymous' để MediaElementAudioSourceNode không bị khóa tiếng (CORS taint)
       if (this.primaryAudio.crossOrigin !== 'anonymous') {
         this.primaryAudio.crossOrigin = 'anonymous';
       }
@@ -195,13 +254,28 @@ export class AudioEngine {
     }
   }
 
-  public preloadNextTrack(nextUrl: string | null): void {
+  private triggerPreloadFetch(nextUrl: string): void {
     if (!this.preloadAudio || !nextUrl) return;
     try {
       if (this.preloadAudio.src !== nextUrl) {
         this.preloadAudio.src = nextUrl;
+        this.preloadAudio.load();
       }
     } catch {}
+  }
+
+  public preloadNextTrack(nextUrl: string | null): void {
+    if (!nextUrl) {
+      this.nextPreloadUrl = '';
+      return;
+    }
+    this.nextPreloadUrl = nextUrl;
+    const dur = this.getDuration();
+    const curr = this.getCurrentTime();
+    if (dur > 0 && curr / dur >= 0.7) {
+      this.hasTriggered70PercentPreload = true;
+      this.triggerPreloadFetch(nextUrl);
+    }
   }
 
   public async play(fallbackUrl?: string, nonce?: number): Promise<void> {
@@ -266,6 +340,9 @@ export class AudioEngine {
   }
 
   public getFrequencyData(): Uint8Array {
+    if (typeof document !== 'undefined' && document.hidden) {
+      return this.frequencyData;
+    }
     if (this.analyser) {
       this.analyser.getByteFrequencyData(this.frequencyData as any);
     }
@@ -301,6 +378,13 @@ export class AudioEngine {
     this.errorCallback = cb;
     return () => {
       if (this.errorCallback === cb) this.errorCallback = null;
+    };
+  }
+
+  public onPlayStateChange(cb: (isPlaying: boolean) => void): () => void {
+    this.playStateCallback = cb;
+    return () => {
+      if (this.playStateCallback === cb) this.playStateCallback = null;
     };
   }
 }
