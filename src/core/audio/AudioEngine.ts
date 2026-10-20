@@ -2,8 +2,9 @@
  * Singleton Web Audio & HTML5 Audio Engine
  * - Guarantees a single active ended/timeupdate listener even when multiple components call useAudioPlayer()
  * - Prevents duplicate loadAndPlay restarts when multiple hook instances run in the same render pass
+ * - Unlocks AudioContext synchronously on user gesture (click, pointerdown, touchstart)
  * - Exposes window.__AURASOUND_ANALYSER__ for 60fps Canvas Spectrum & 24-LED Studio VU Meter
- * - Supports instant replay on 1-track playlists via playNonce
+ * - Automatic CORS fallback: if crossOrigin fails, removes attribute and plays natively
  */
 export class AudioEngine {
   private static instance: AudioEngine;
@@ -21,7 +22,6 @@ export class AudioEngine {
   private activeLoadId: number = 0;
   private endedFiredForLoad: boolean = false;
 
-  // Single replaceable callbacks to prevent duplicate event listener stacking across multiple hook instances
   private timeUpdateCallback: ((time: number) => void) | null = null;
   private durationChangeCallback: ((duration: number) => void) | null = null;
   private endedCallback: (() => void) | null = null;
@@ -39,14 +39,14 @@ export class AudioEngine {
 
       this.bindNativeEvents();
 
-      // Unlock AudioContext on any user interaction
+      // Mở khóa AudioContext ngay tại sự kiện bấm chuột/chạm của người dùng
       const unlock = () => {
-        if (this.audioCtx && this.audioCtx.state === 'suspended') {
-          this.audioCtx.resume().catch(() => {});
-        }
+        this.resumeContext();
       };
-      window.addEventListener('pointerdown', unlock, { passive: true });
-      window.addEventListener('keydown', unlock, { passive: true });
+      window.addEventListener('click', unlock, { capture: true, passive: true });
+      window.addEventListener('pointerdown', unlock, { capture: true, passive: true });
+      window.addEventListener('touchstart', unlock, { capture: true, passive: true });
+      window.addEventListener('keydown', unlock, { capture: true, passive: true });
     }
   }
 
@@ -57,13 +57,17 @@ export class AudioEngine {
     return AudioEngine.instance;
   }
 
+  public resumeContext(): void {
+    if (this.audioCtx && this.audioCtx.state === 'suspended') {
+      this.audioCtx.resume().catch(() => {});
+    }
+  }
+
   private bindNativeEvents(): void {
     if (!this.primaryAudio) return;
 
     this.primaryAudio.addEventListener('timeupdate', () => {
-      if (this.audioCtx && this.audioCtx.state === 'suspended' && !this.primaryAudio?.paused) {
-        this.audioCtx.resume().catch(() => {});
-      }
+      this.resumeContext();
       if (this.primaryAudio && this.timeUpdateCallback) {
         this.timeUpdateCallback(this.primaryAudio.currentTime || 0);
       }
@@ -119,11 +123,9 @@ export class AudioEngine {
         (window as any).__AURASOUND_ANALYSER__ = this.analyser;
       }
 
-      if (this.audioCtx.state === 'suspended') {
-        this.audioCtx.resume().catch(() => {});
-      }
+      this.resumeContext();
     } catch {
-      // Fallback gracefully to standard HTML5 Audio playback if WebAudio fails
+      // Fallback tự nhiên qua native audio nếu Web Audio bị chặn
     }
   }
 
@@ -133,14 +135,13 @@ export class AudioEngine {
     const isSameUrl = this.currentUrl === url && Boolean(this.primaryAudio.src);
     const isNewNonce = typeof nonce === 'number' && nonce !== this.currentNonce;
 
-    // Prevent duplicate loadAndPlay calls from multiple mounted useAudioPlayer() hooks
+    // Chống gọi lặp khi cả trang và thanh điều khiển cùng kích hoạt hook
     if (isSameUrl && !isNewNonce) {
       if (this.isLoading || (!this.primaryAudio.paused && !this.primaryAudio.ended)) {
         return;
       }
-      // Same track was paused -> simply resume from current position
       this.endedFiredForLoad = false;
-      this.ensureAudioContext();
+      this.resumeContext();
       try {
         await this.primaryAudio.play();
       } catch (err: any) {
@@ -162,7 +163,6 @@ export class AudioEngine {
         this.currentUrl = url;
         this.primaryAudio.load();
       } else {
-        // Same URL but new playNonce (e.g., 1-track playlist replay, Repeat One, or Previous > 3s)
         this.primaryAudio.currentTime = 0;
       }
 
@@ -175,11 +175,9 @@ export class AudioEngine {
       if (loadId !== this.activeLoadId) return;
 
       await this.primaryAudio.play();
-      if (loadId === this.activeLoadId) {
-        this.isLoading = false;
-      }
     } catch (err: any) {
       if (loadId !== this.activeLoadId) return;
+      // Fallback: nếu lỗi CORS do crossOrigin = anonymous, gỡ thuộc tính và phát trực tiếp
       if (this.primaryAudio && this.primaryAudio.hasAttribute('crossorigin')) {
         try {
           this.primaryAudio.removeAttribute('crossorigin');
@@ -220,13 +218,9 @@ export class AudioEngine {
       return this.loadAndPlay(targetUrl, nonce);
     }
 
-    if (!this.primaryAudio.paused && !this.primaryAudio.ended) {
-      return;
-    }
-
     try {
       this.endedFiredForLoad = false;
-      this.ensureAudioContext();
+      this.resumeContext();
       if (this.primaryAudio.ended) {
         this.primaryAudio.currentTime = 0;
       }

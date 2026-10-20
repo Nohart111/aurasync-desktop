@@ -55,20 +55,28 @@ export async function GET(req: NextRequest) {
 
   try {
     const rangeHeader = req.headers.get('range');
-    const fetchHeaders: Record<string, string> = {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-    };
-    if (rangeHeader) {
-      fetchHeaders['Range'] = rangeHeader;
-    }
 
-    // Xử lý chuyển hướng thủ công để bảo toàn header Range khi chuyển từ github.com sang S3 (objects.githubusercontent.com)
+    // BƯỚC 1: Xử lý chuyển hướng 302 thủ công
+    // QUAN TRỌNG: Không gửi Range header lên github.com (endpoint chuyển hướng) vì proxy GitHub sẽ trả về lỗi 400.
+    // Chỉ gửi Range header lên endpoint lưu trữ thực tế (AWS S3: objects.githubusercontent.com).
     let upstream: Response | null = null;
     let currentFetchUrl = targetUrl;
 
     for (let redirectCount = 0; redirectCount < 4; redirectCount++) {
+      const isStorageEndpoint =
+        currentFetchUrl.includes('githubusercontent.com') ||
+        currentFetchUrl.includes('amazonaws.com') ||
+        currentFetchUrl.includes('s3');
+
+      const stepHeaders: Record<string, string> = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      };
+      if (rangeHeader && isStorageEndpoint) {
+        stepHeaders['Range'] = rangeHeader;
+      }
+
       const resp = await fetch(currentFetchUrl, {
-        headers: fetchHeaders,
+        headers: stepHeaders,
         redirect: 'manual',
         cache: 'no-store',
       });
@@ -85,8 +93,8 @@ export async function GET(req: NextRequest) {
       break;
     }
 
-    // Nếu tải trực tiếp thất bại (ví dụ: kho private hoặc tên file trên CDN có ký tự đặc biệt),
-    // truy vấn trực tiếp GitHub Release API để lấy binary asset bằng Accept: application/octet-stream
+    // BƯỚC 2: Nếu tải trực tiếp không thành công (ví dụ: kho private hoặc tên file có sai khác),
+    // truy vấn trực tiếp GitHub Release API để lấy asset nhị phân qua Accept: application/octet-stream
     if ((!upstream || (!upstream.ok && upstream.status !== 206)) && inferredFile) {
       try {
         const apiHeaders: Record<string, string> = {
@@ -113,7 +121,6 @@ export async function GET(req: NextRequest) {
           );
 
           if (matchedAsset && matchedAsset.url) {
-            // Tải binary asset chính thức qua API của GitHub
             const assetHeaders: Record<string, string> = {
               Accept: 'application/octet-stream',
               'User-Agent': 'Mozilla/5.0',
@@ -122,7 +129,7 @@ export async function GET(req: NextRequest) {
               assetHeaders['Authorization'] = `Bearer ${GITHUB_TOKEN}`;
             }
 
-            // GitHub trả về 302 redirect sang S3 signed URL
+            // GitHub API trả về 302 chuyển hướng sang S3 ký sẵn
             const assetResp = await fetch(matchedAsset.url, {
               headers: assetHeaders,
               redirect: 'manual',
@@ -132,8 +139,14 @@ export async function GET(req: NextRequest) {
             if (assetResp.status === 302 || assetResp.status === 301) {
               const signedS3Url = assetResp.headers.get('location');
               if (signedS3Url) {
+                const s3Headers: Record<string, string> = {
+                  'User-Agent': 'Mozilla/5.0',
+                };
+                if (rangeHeader) {
+                  s3Headers['Range'] = rangeHeader;
+                }
                 upstream = await fetch(signedS3Url, {
-                  headers: fetchHeaders,
+                  headers: s3Headers,
                   redirect: 'follow',
                   cache: 'no-store',
                 });
@@ -148,7 +161,11 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    // BƯỚC 3: Nếu cả 2 cách trên không lấy được stream server-side, chuyển hướng 307 cho trình duyệt tự tải
     if (!upstream || (!upstream.ok && upstream.status !== 206)) {
+      if (targetUrl && targetUrl.startsWith('https://')) {
+        return NextResponse.redirect(targetUrl, 307);
+      }
       return NextResponse.json(
         { error: 'Không tìm thấy file nhạc trên CDN hoặc Release storage.' },
         { status: upstream ? upstream.status : 404 }
@@ -178,6 +195,9 @@ export async function GET(req: NextRequest) {
   } catch (err: any) {
     if (err?.digest) throw err;
     console.error('Lỗi Stream API:', err);
+    if (targetUrl && targetUrl.startsWith('https://')) {
+      return NextResponse.redirect(targetUrl, 307);
+    }
     return NextResponse.json({ error: 'Lỗi truyền tải âm thanh.' }, { status: 500 });
   }
 }
