@@ -1,10 +1,19 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { X, Search, Globe, Disc, Check, AlertCircle, Loader2, Sparkles, Youtube } from 'lucide-react';
-import { usePlayerStore, Track } from '@/store/usePlayerStore';
+import { X, Search, Globe, Disc, Check, AlertCircle, Loader2, Sparkles } from 'lucide-react';
+import { usePlayerStore } from '@/store/usePlayerStore';
+import type { Track } from '@/core/types/audio';
 
-interface YouTubeResult {
+function YoutubeIcon({ className = 'h-4 w-4' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
+    </svg>
+  );
+}
+
+export interface YouTubeResult {
   id: string;
   url: string;
   title: string;
@@ -13,9 +22,14 @@ interface YouTubeResult {
   duration: number;
 }
 
-type IngestTaskStatus = 'idle' | 'queued' | 'downloading' | 'completed' | 'failed';
+export type IngestTaskStatus = 'idle' | 'queued' | 'downloading' | 'completed' | 'failed';
 
-export function SmartIngestModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+export interface SmartIngestModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+}
+
+export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<YouTubeResult[]>([]);
   const [searching, setSearching] = useState(false);
@@ -163,7 +177,6 @@ export function SmartIngestModal({ isOpen, onClose }: { isOpen: boolean; onClose
       }
 
       // Case 2: Dispatched to GitHub Actions (HTTP 202 Accepted)
-      // Poll status until the audio file is genuinely saved and confirmed in catalog.json
       const requestId = data.requestId || '';
       const videoId = data.videoId || item.id;
       const startedAt = data.startedAt || new Date().toISOString();
@@ -316,7 +329,7 @@ export function SmartIngestModal({ isOpen, onClose }: { isOpen: boolean; onClose
             disabled={searching || !!ingestingId}
             className="flex items-center gap-2 rounded-lg bg-amber-500 px-5 py-3 text-xs font-bold uppercase tracking-wider text-black hover:bg-amber-400 disabled:opacity-50 transition font-mono"
           >
-            {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Youtube className="h-4 w-4" />}
+            {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : <YoutubeIcon className="h-4 w-4" />}
             {isUrl(query) ? 'Kiểm tra Link' : 'Tìm kiếm'}
           </button>
         </form>
@@ -402,3 +415,6 @@ export function SmartIngestModal({ isOpen, onClose }: { isOpen: boolean; onClose
     </div>
   );
 }
+
+// Export both named and default to satisfy both `import SmartIngestModal from ...` and `import { SmartIngestModal } from ...`
+export default SmartIngestModal;
