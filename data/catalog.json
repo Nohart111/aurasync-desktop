@@ -1,5 +1,19 @@
 [
   {
+    "id": "trk-1792478436698",
+    "title": "SON TUNG M-TP x TYGA | COME MY WAY | OFFICIAL MUSIC VIDEO",
+    "artist": "Sơn Tùng M-TP Official",
+    "duration": 235,
+    "album": "Cloud Vault",
+    "genre": "Stereo",
+    "bitrate": "256 kbps",
+    "format": "m4a",
+    "coverUrl": "https://i.ytimg.com/vi/SlQR9iu09bQ/hqdefault.jpg",
+    "streamUrl": "/api/tracks/stream?file=son-tung-m-tp-x-tyga-come-my-way-official-music-video-1792478434818.m4a",
+    "cdnUrl": "https://github.com/Nohart111/aurasound-music-data/releases/download/tracks-v1/son-tung-m-tp-x-tyga-come-my-way-official-music-video-1792478434818.m4a",
+    "dateAdded": "2026-10-20T06:40:36.698Z"
+  },
+  {
     "id": "trk-1792476676426",
     "title": "Ngọt - Cho Tôi Đi Theo",
     "artist": "Ngọt",

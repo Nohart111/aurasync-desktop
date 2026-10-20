@@ -13,6 +13,49 @@ const GITHUB_RELEASE_TAG = process.env.GITHUB_RELEASE_TAG || 'tracks-v1';
 const CATALOG_PATH = path.join(process.cwd(), 'data', 'catalog.json');
 const YTDLP_BIN_PATH = path.join(os.tmpdir(), process.platform === 'win32' ? 'aurasound-yt-dlp.exe' : 'aurasound-yt-dlp');
 
+function cleanTrackMetadata(rawTitle: string, rawArtist?: string): { title: string; artist: string } {
+  let title = rawTitle.replace(/\.[a-zA-Z0-9]{2,4}$/, '').trim();
+
+  title = title
+    .replace(/\[\s*(?:OFFICIAL\s*)?(?:MUSIC\s*)?(?:VIDEO\vert{}MV\vert{}AUDIO\vert{}LYRIC\vert{}HD\vert{}4K\vert{}VISUALIZER)\s*\]/gi, '')
+    .replace(/\(\s*(?:OFFICIAL\s*)?(?:MUSIC\s*)?(?:VIDEO\vert{}MV\vert{}AUDIO\vert{}LYRICS?\vert{}HD\vert{}4K\vert{}VISUALIZER)\s*\)/gi, '')
+    .replace(/\|\s*(?:OFFICIAL\s*)?(?:MUSIC\s*)?(?:VIDEO|MV|AUDIO|LYRICS?)\s*$/gi, '')
+    .replace(/-\s*(?:OFFICIAL\s*)?(?:MUSIC\s*)?(?:VIDEO|MV|AUDIO|LYRICS?)\s*$/gi, '')
+    .replace(/\b(?:OFFICIAL\s+MV|OFFICIAL\s+MUSIC\s+VIDEO|OFFICIAL\s+VIDEO)\b/gi, '')
+    .trim();
+
+  let artist = rawArtist || 'Nghệ sĩ chưa rõ';
+
+  if (title.includes(' - ')) {
+    const parts = title.split(' - ');
+    if (parts.length >= 2) {
+      artist = parts[0].trim();
+      title = parts.slice(1).join(' - ').trim();
+    }
+  } else if (title.includes(' | ')) {
+    const parts = title.split(' | ');
+    if (parts.length >= 2) {
+      artist = parts[0].trim();
+      title = parts.slice(1).join(' | ').trim();
+    }
+  }
+
+  title = title.replace(/[-_.\s]+$/, '').trim();
+  artist = artist.replace(/[-_.\s]+$/, '').trim();
+
+  if (/^[a-z0-9]+(-[a-z0-9]+)+$/i.test(title)) {
+    title = title
+      .split('-')
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(' ');
+  }
+
+  return {
+    title: title || 'Track',
+    artist: artist || 'Nghệ sĩ chưa rõ',
+  };
+}
+
 function slugify(text: string): string {
   return (
     text
@@ -24,7 +67,7 @@ function slugify(text: string): string {
       .replace(/[^a-z0-9]/g, '-')
       .replace(/-+/g, '-')
       .replace(/^-|-$/g, '')
-      .slice(0, 60) || 'track'
+      .slice(0, 50) || 'track'
   );
 }
 
@@ -102,12 +145,16 @@ async function searchYouTube(query: string) {
       const lenMatch = html.match(/"lengthSeconds":"(\d+)"/);
       const durationSec = lenMatch ? parseInt(lenMatch[1], 10) : 240;
 
+      const rawTitle = titleMatch ? titleMatch[1].replace(/&quot;/g, '"').replace(/&#39;/g, "'") : `YouTube (${directId})`;
+      const rawAuthor = authorMatch ? authorMatch[1] : 'YouTube';
+      const clean = cleanTrackMetadata(rawTitle, rawAuthor);
+
       return [
         {
           id: directId,
           videoId: directId,
-          title: titleMatch ? titleMatch[1].replace(/&quot;/g, '"').replace(/&#39;/g, "'") : `YouTube (${directId})`,
-          artist: authorMatch ? authorMatch[1] : 'YouTube',
+          title: clean.title,
+          artist: clean.artist,
           duration: durationSec,
           durationFormatted: formatSeconds(durationSec),
           thumbnail: `https://i.ytimg.com/vi/${directId}/hqdefault.jpg`,
@@ -177,20 +224,22 @@ async function searchYouTube(query: string) {
           if (durationSec < 45 || durationSec > 1800) continue;
 
           seen.add(v.videoId);
-          const title =
+          const rawTitle =
             v.title?.runs?.map((r: any) => r.text).join('') ||
             v.title?.simpleText ||
             'Không có tiêu đề';
-          const artist =
+          const rawArtist =
             v.ownerText?.runs?.[0]?.text ||
             v.longBylineText?.runs?.[0]?.text ||
             'Nghệ sĩ chưa rõ';
 
+          const clean = cleanTrackMetadata(rawTitle, rawArtist);
+
           results.push({
             id: v.videoId,
             videoId: v.videoId,
-            title,
-            artist,
+            title: clean.title,
+            artist: clean.artist,
             duration: durationSec,
             durationFormatted: formatSeconds(durationSec),
             thumbnail: `https://i.ytimg.com/vi/${v.videoId}/hqdefault.jpg`,
@@ -264,132 +313,6 @@ async function extractViaYtDlpRamPipe(ytUrl: string): Promise<Buffer | null> {
   });
 }
 
-async function extractViaInnerTube(videoId: string): Promise<Buffer | null> {
-  try {
-    const playerRes = await fetch('https://www.youtube.com/youtubei/v1/player?prettyPrint=false', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'User-Agent':
-          'com.google.android.apps.youtube.vr.oculus/1.60.19 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip',
-        'X-YouTube-Client-Name': '28',
-        'X-YouTube-Client-Version': '1.60.19',
-      },
-      body: JSON.stringify({
-        context: {
-          client: {
-            clientName: 'ANDROID_VR',
-            clientVersion: '1.60.19',
-            androidSdkVersion: 32,
-            hl: 'vi',
-            gl: 'VN',
-          },
-        },
-        videoId,
-      }),
-    });
-
-    if (!playerRes.ok) return null;
-    const data = await playerRes.json();
-    const formats: any[] = data?.streamingData?.adaptiveFormats || [];
-
-    const audioFormats = formats
-      .filter((f) => f.url && f.mimeType && f.mimeType.startsWith('audio/'))
-      .sort((a, b) => {
-        const aIsMp4 = a.mimeType.includes('audio/mp4') ? 1 : 0;
-        const bIsMp4 = b.mimeType.includes('audio/mp4') ? 1 : 0;
-        if (aIsMp4 !== bIsMp4) return bIsMp4 - aIsMp4;
-        return (b.bitrate || 0) - (a.bitrate || 0);
-      });
-
-    if (audioFormats.length === 0) return null;
-    const targetFormat = audioFormats[0];
-    const contentLength = parseInt(targetFormat.contentLength || '0', 10);
-
-    if (contentLength > 0 && contentLength < 50 * 1024 * 1024) {
-      const chunkSize = 2 * 1024 * 1024;
-      const ranges: { start: number; end: number }[] = [];
-      for (let start = 0; start < contentLength; start += chunkSize) {
-        ranges.push({ start, end: Math.min(start + chunkSize - 1, contentLength - 1) });
-      }
-
-      const buffers = await Promise.all(
-        ranges.map(async (r) => {
-          const res = await fetch(`${targetFormat.url}&range=${r.start}-${r.end}`, {
-            headers: {
-              'User-Agent':
-                'com.google.android.apps.youtube.vr.oculus/1.60.19 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip',
-            },
-          });
-          if (!res.ok) throw new Error('Chunk failed');
-          return Buffer.from(await res.arrayBuffer());
-        })
-      );
-
-      const finalBuf = Buffer.concat(buffers);
-      if (finalBuf.length > 100000) return finalBuf;
-    } else {
-      const res = await fetch(targetFormat.url);
-      if (res.ok) {
-        const finalBuf = Buffer.from(await res.arrayBuffer());
-        if (finalBuf.length > 100000) return finalBuf;
-      }
-    }
-  } catch {}
-  return null;
-}
-
-async function extractViaOceansaver(ytUrl: string): Promise<Buffer | null> {
-  try {
-    const initRes = await fetch(
-      `https://p.oceansaver.in/ajax/download.php?format=m4a&url=${encodeURIComponent(
-        ytUrl
-      )}&api=dfcb6d76f2f6a9894gjkege8a4ab232222`,
-      { headers: { 'User-Agent': 'Mozilla/5.0' } }
-    );
-    if (!initRes.ok) return null;
-    const initData = await initRes.json();
-    const jobId = initData.id;
-    if (!jobId) return null;
-
-    const progressUrl = initData.progress_url || `https://p.oceansaver.in/ajax/progress.php?id=${jobId}`;
-
-    for (let i = 0; i < 15; i++) {
-      await new Promise((r) => setTimeout(r, 1500));
-      const progRes = await fetch(progressUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-      if (progRes.ok) {
-        const progData = await progRes.json();
-        if (progData.progress === 1000 && progData.download_url) {
-          const audioRes = await fetch(progData.download_url);
-          if (audioRes.ok) {
-            const buf = Buffer.from(await audioRes.arrayBuffer());
-            if (buf.length > 100000) return buf;
-          }
-          break;
-        }
-      }
-    }
-  } catch {}
-  return null;
-}
-
-async function resolveYouTubeAudioStream(videoId: string, targetUrl: string): Promise<Buffer | null> {
-  const ytUrl = targetUrl || `https://www.youtube.com/watch?v=${videoId}`;
-
-  const ytdlpBuf = await extractViaYtDlpRamPipe(ytUrl);
-  if (ytdlpBuf) return ytdlpBuf;
-
-  if (videoId) {
-    const innerTubeBuf = await extractViaInnerTube(videoId);
-    if (innerTubeBuf) return innerTubeBuf;
-  }
-
-  const oceanBuf = await extractViaOceansaver(ytUrl);
-  if (oceanBuf) return oceanBuf;
-
-  return null;
-}
-
 function detectAudioFormat(buf: Buffer): { ext: string; mime: string } {
   if (buf.length > 12 && buf.subarray(4, 8).toString('ascii') === 'ftyp') {
     return { ext: 'm4a', mime: 'audio/mp4' };
@@ -455,6 +378,43 @@ async function uploadToGitHubCDN(
   }
 }
 
+async function dispatchGitHubActionsIngest(
+  videoUrl: string,
+  title: string,
+  artist: string,
+  thumbnail: string,
+  duration: number
+): Promise<boolean> {
+  if (!GITHUB_TOKEN) return false;
+
+  try {
+    const workflowUrl = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/actions/workflows/ingest.yml/dispatches`;
+    const res = await fetch(workflowUrl, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${GITHUB_TOKEN}`,
+        Accept: 'application/vnd.github+json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        ref: 'main',
+        inputs: {
+          video_url: videoUrl,
+          title,
+          artist,
+          thumbnail: thumbnail || '',
+          duration: (duration || 240).toString(),
+        },
+      }),
+    });
+
+    return res.status === 204 || res.ok;
+  } catch (err) {
+    console.error('Lỗi gọi GitHub Actions Dispatch:', err);
+    return false;
+  }
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
@@ -473,17 +433,74 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: 'Thiếu thông tin bài hát.' }, { status: 400 });
       }
 
-      const videoId = track.videoId || extractYouTubeVideoId(track.url || '') || '';
-      const audioBuffer = await resolveYouTubeAudioStream(videoId, track.url);
+      const clean = cleanTrackMetadata(track.title || 'Track', track.artist);
+      const ytUrl = track.url || `https://www.youtube.com/watch?v=${track.videoId}`;
 
+      const isVercel = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
+
+      if (isVercel) {
+        const dispatched = await dispatchGitHubActionsIngest(
+          ytUrl,
+          clean.title,
+          clean.artist,
+          track.thumbnail,
+          track.duration
+        );
+
+        if (dispatched) {
+          const cloudTrack = {
+            id: `trk-cloud-${Date.now()}`,
+            title: clean.title,
+            artist: clean.artist,
+            duration: track.duration || 240,
+            album: 'Cloud Vault',
+            genre: 'Stereo',
+            bitrate: '256 kbps',
+            format: 'm4a',
+            coverUrl: track.thumbnail || `https://i.ytimg.com/vi/${track.videoId}/hqdefault.jpg`,
+            streamUrl: '',
+            dateAdded: new Date().toISOString(),
+          };
+
+          return NextResponse.json({
+            success: true,
+            isCloudQueued: true,
+            message: `Đang kích hoạt máy ảo GitHub nạp bài "${clean.title}"... Bài hát sẽ xuất hiện trong giây lát!`,
+            track: cloudTrack,
+          });
+        }
+      }
+
+      const audioBuffer = await extractViaYtDlpRamPipe(ytUrl);
       if (!audioBuffer) {
+        const dispatched = await dispatchGitHubActionsIngest(
+          ytUrl,
+          clean.title,
+          clean.artist,
+          track.thumbnail,
+          track.duration
+        );
+        if (dispatched) {
+          return NextResponse.json({
+            success: true,
+            isCloudQueued: true,
+            message: `Đang xử lý nạp bài "${clean.title}" qua GitHub Actions...`,
+            track: {
+              id: `trk-cloud-${Date.now()}`,
+              title: clean.title,
+              artist: clean.artist,
+              duration: track.duration || 240,
+              coverUrl: track.thumbnail,
+            },
+          });
+        }
         return NextResponse.json(
-          { error: 'Không thể tải luồng âm thanh của video này. Vui lòng thử một video khác.' },
+          { error: 'Không thể trích xuất luồng âm thanh của video này.' },
           { status: 502 }
         );
       }
 
-      const uploaded = await uploadToGitHubCDN(audioBuffer, track.title || 'track');
+      const uploaded = await uploadToGitHubCDN(audioBuffer, clean.title);
       if (!uploaded) {
         return NextResponse.json(
           { error: 'Không thể đồng bộ lên GitHub CDN. Vui lòng kiểm tra GITHUB_TOKEN.' },
@@ -501,14 +518,14 @@ export async function POST(req: Request) {
 
       const newTrack = {
         id: `trk-${Date.now()}`,
-        title: track.title,
-        artist: track.artist || 'Nghệ sĩ chưa rõ',
+        title: clean.title,
+        artist: clean.artist,
         duration: track.duration || 240,
         album: 'Cloud Vault',
         genre: 'Stereo',
         bitrate: '256 kbps',
         format: uploaded.ext,
-        coverUrl: track.thumbnail || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+        coverUrl: track.thumbnail || `https://i.ytimg.com/vi/${track.videoId}/hqdefault.jpg`,
         streamUrl: `/api/tracks/stream?file=${encodeURIComponent(uploaded.safeName)}`,
         cdnUrl: uploaded.browserDownloadUrl,
         dateAdded: new Date().toISOString(),
@@ -529,4 +546,3 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: error.message || 'Lỗi máy chủ.' }, { status: 500 });
   }
 }
-

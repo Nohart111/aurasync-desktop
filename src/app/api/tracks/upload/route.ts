@@ -1,127 +1,176 @@
-﻿import { NextRequest, NextResponse } from 'next/server';
-import { connection } from 'next/server';
-import fs from 'fs';
-import path from 'path';
+﻿import { NextResponse } from 'next/server';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 
-function toSafeAsciiFileName(rawName: string): string {
-  const extMatch = rawName.match(/\.([a-zA-Z0-9]+)$/);
-  const ext = extMatch ? extMatch[1].toLowerCase() : 'mp3';
-  const base = rawName.replace(/\.[^/.]+$/, '');
-  const cleanBase = base
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/đ/g, 'd')
-    .replace(/Đ/g, 'D')
-    .replace(/[^a-zA-Z0-9\s_-]/g, '')
-    .trim()
-    .replace(/\s+/g, '_');
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
+const GITHUB_OWNER = process.env.GITHUB_OWNER || 'Nohart111';
+const GITHUB_REPO = process.env.GITHUB_REPO || 'aurasound-music-data';
+const GITHUB_RELEASE_TAG = process.env.GITHUB_RELEASE_TAG || 'tracks-v1';
 
-  const finalBase = cleanBase || 'Audio_Track';
-  return `${finalBase}_${Date.now().toString().slice(-5)}.${ext}`;
+const CATALOG_PATH = path.join(process.cwd(), 'data', 'catalog.json');
+
+function cleanTrackMetadata(rawTitle: string): { title: string; artist: string } {
+  let title = rawTitle.replace(/\.[a-zA-Z0-9]{2,4}$/, '').trim();
+
+  title = title
+    .replace(/\[\s*(?:OFFICIAL\s*)?(?:MUSIC\s*)?(?:VIDEO\vert{}MV\vert{}AUDIO\vert{}LYRIC\vert{}HD\vert{}4K\vert{}VISUALIZER)\s*\]/gi, '')
+    .replace(/\(\s*(?:OFFICIAL\s*)?(?:MUSIC\s*)?(?:VIDEO\vert{}MV\vert{}AUDIO\vert{}LYRICS?\vert{}HD\vert{}4K\vert{}VISUALIZER)\s*\)/gi, '')
+    .replace(/\|\s*(?:OFFICIAL\s*)?(?:MUSIC\s*)?(?:VIDEO|MV|AUDIO|LYRICS?)\s*$/gi, '')
+    .replace(/-\s*(?:OFFICIAL\s*)?(?:MUSIC\s*)?(?:VIDEO|MV|AUDIO|LYRICS?)\s*$/gi, '')
+    .replace(/\b(?:OFFICIAL\s+MV|OFFICIAL\s+MUSIC\s+VIDEO|OFFICIAL\s+VIDEO)\b/gi, '')
+    .trim();
+
+  let artist = 'Nghệ sĩ chưa rõ';
+
+  if (title.includes(' - ')) {
+    const parts = title.split(' - ');
+    if (parts.length >= 2) {
+      artist = parts[0].trim();
+      title = parts.slice(1).join(' - ').trim();
+    }
+  } else if (title.includes(' | ')) {
+    const parts = title.split(' | ');
+    if (parts.length >= 2) {
+      artist = parts[0].trim();
+      title = parts.slice(1).join(' | ').trim();
+    }
+  }
+
+  title = title.replace(/[-_.\s]+$/, '').trim();
+  artist = artist.replace(/[-_.\s]+$/, '').trim();
+
+  if (/^[a-z0-9]+(-[a-z0-9]+)+$/i.test(title)) {
+    title = title
+      .split('-')
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(' ');
+  }
+
+  return {
+    title: title || 'Track',
+    artist: artist || 'Nghệ sĩ chưa rõ',
+  };
 }
 
-export async function POST(req: NextRequest) {
-  await connection();
+function slugify(text: string): string {
+  return (
+    text
+      .toString()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/đ/g, 'd')
+      .replace(/[^a-z0-9]/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 50) || 'track'
+  );
+}
 
+function getMimeType(filename: string): string {
+  const lower = filename.toLowerCase();
+  if (lower.endsWith('.m4a') || lower.endsWith('.mp4')) return 'audio/mp4';
+  if (lower.endsWith('.webm')) return 'audio/webm';
+  if (lower.endsWith('.flac')) return 'audio/flac';
+  if (lower.endsWith('.wav')) return 'audio/wav';
+  return 'audio/mpeg';
+}
+
+function getExt(filename: string): string {
+  const m = filename.match(/\.([a-zA-Z0-9]+)$/);
+  return m ? m[1].toLowerCase() : 'mp3';
+}
+
+export async function POST(req: Request) {
   try {
     const formData = await req.formData();
     const file = formData.get('file') as File | null;
-    const durationParam = formData.get('duration');
 
     if (!file) {
-      return NextResponse.json({ error: 'Không tìm thấy file âm thanh' }, { status: 400 });
+      return NextResponse.json({ error: 'Không tìm thấy file tải lên.' }, { status: 400 });
     }
 
-    const owner = process.env.GITHUB_OWNER || 'Nohart111';
-    const repo = process.env.GITHUB_REPO || 'aurasound-music-data';
-    const tag = process.env.GITHUB_RELEASE_TAG || 'tracks-v1';
-    const token = process.env.GITHUB_TOKEN;
-
-    const originalName = file.name.replace(/\.[^/.]+$/, '');
-    const parts = originalName.split(' - ');
-    const artist = parts.length > 1 ? parts[0].trim() : 'Nghệ sĩ chưa rõ';
-    const title = parts.length > 1 ? parts.slice(1).join(' - ').trim() : originalName.trim();
-    const duration = durationParam ? Number(durationParam) || 180 : 180;
-
-    const safeFileName = toSafeAsciiFileName(file.name);
+    const clean = cleanTrackMetadata(file.name);
+    const ext = getExt(file.name);
+    const mime = getMimeType(file.name);
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    let finalStreamUrl = '';
+    const safeName = `${slugify(clean.title)}-${Date.now()}.${ext}`;
 
-    if (token) {
-      const relRes = await fetch(
-        `https://api.github.com/repos/${owner}/${repo}/releases/tags/${tag}`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'User-Agent': 'AuraSound-App',
-            Accept: 'application/vnd.github.v3+json',
-          },
-          cache: 'no-store',
-        }
-      );
-
-      if (relRes.ok) {
-        const relData = await relRes.json();
-        const uploadUrlBase = relData.upload_url.replace(/\{\?name,label\}$/, '');
-        const uploadUrl = `${uploadUrlBase}?name=${encodeURIComponent(safeFileName)}`;
-
-        const upRes = await fetch(uploadUrl, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'User-Agent': 'AuraSound-App',
-            'Content-Type': file.type || 'audio/mpeg',
-            'Content-Length': String(buffer.byteLength),
-          },
-          body: new Uint8Array(buffer),
-        });
-
-        if (upRes.ok) {
-          const upData = await upRes.json();
-          finalStreamUrl = upData.browser_download_url || '';
-        }
-      }
+    if (!GITHUB_TOKEN) {
+      return NextResponse.json({ error: 'Chưa cấu hình GITHUB_TOKEN.' }, { status: 500 });
     }
 
-    if (!finalStreamUrl) {
-      return NextResponse.json({ error: 'Không thể tải lên GitHub Release CDN' }, { status: 500 });
+    const releaseRes = await fetch(
+      `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/tags/${GITHUB_RELEASE_TAG}`,
+      {
+        headers: {
+          Authorization: `Bearer ${GITHUB_TOKEN}`,
+          Accept: 'application/vnd.github+json',
+        },
+      }
+    );
+
+    if (!releaseRes.ok) {
+      return NextResponse.json({ error: 'Không tìm thấy Release tracks-v1 trên GitHub.' }, { status: 502 });
+    }
+
+    const releaseData = await releaseRes.json();
+    const releaseId = releaseData.id;
+
+    const uploadUrl = `https://uploads.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/${releaseId}/assets?name=${encodeURIComponent(
+      safeName
+    )}`;
+
+    const upRes = await fetch(uploadUrl, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${GITHUB_TOKEN}`,
+        'Content-Type': mime,
+        'Content-Length': buffer.length.toString(),
+      },
+      body: new Uint8Array(buffer),
+    });
+
+    if (!upRes.ok) {
+      return NextResponse.json({ error: 'Không thể upload file lên GitHub Release.' }, { status: 502 });
+    }
+
+    const upData = await upRes.json();
+
+    let catalog: any[] = [];
+    try {
+      const raw = await fs.readFile(CATALOG_PATH, 'utf-8');
+      catalog = JSON.parse(raw);
+    } catch {
+      catalog = [];
     }
 
     const newTrack = {
-      id: `upload-${Date.now()}`,
-      title,
-      artist,
-      album: 'Lossless Personal Vault',
-      duration,
-      bpm: 120,
-      fileName: safeFileName,
-      streamUrl: finalStreamUrl,
-      url: finalStreamUrl,
-      coverUrl: '',
-      dominantColors: ['#00F0FF', '#7000FF'] as [string, string],
+      id: `trk-upload-${Date.now()}`,
+      title: clean.title,
+      artist: clean.artist,
+      duration: 240,
+      album: 'Local Upload',
+      genre: 'Stereo',
+      bitrate: '320 kbps',
+      format: ext,
+      coverUrl: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=600&auto=format&fit=crop&q=80',
+      streamUrl: `/api/tracks/stream?file=${encodeURIComponent(safeName)}`,
+      cdnUrl: upData.browser_download_url,
+      dateAdded: new Date().toISOString(),
     };
 
-    try {
-      const dataDir = path.join(process.cwd(), 'data');
-      const catalogPath = path.join(dataDir, 'catalog.json');
-      if (!fs.existsSync(dataDir)) {
-        fs.mkdirSync(dataDir, { recursive: true });
-      }
-      let catalog: any[] = [];
-      if (fs.existsSync(catalogPath)) {
-        catalog = JSON.parse(fs.readFileSync(catalogPath, 'utf8'));
-        if (!Array.isArray(catalog)) catalog = [];
-      }
-      catalog.unshift(newTrack);
-      fs.writeFileSync(catalogPath, JSON.stringify(catalog, null, 2), 'utf8');
-    } catch {}
+    const updatedCatalog = [newTrack, ...catalog.filter((t: any) => t.id !== newTrack.id)];
+    await fs.writeFile(CATALOG_PATH, JSON.stringify(updatedCatalog, null, 2), 'utf-8');
 
-    return NextResponse.json({ track: newTrack, status: 'uploaded' });
-  } catch (err) {
-    console.error('Upload error:', err);
-    return NextResponse.json({ error: 'Lỗi tải file lên hệ thống' }, { status: 500 });
+    return NextResponse.json({
+      success: true,
+      track: newTrack,
+    });
+  } catch (err: any) {
+    console.error('Lỗi upload file:', err);
+    return NextResponse.json({ error: err.message || 'Lỗi xử lý file.' }, { status: 500 });
   }
 }
-
