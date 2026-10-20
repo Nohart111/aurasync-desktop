@@ -1,89 +1,127 @@
-﻿import { NextRequest, NextResponse } from 'next/server';
-import { connection } from 'next/server';
-import fs from 'fs';
-import path from 'path';
+﻿import { NextResponse } from 'next/server';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 
-export async function POST(req: NextRequest) {
-  await connection();
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
+const GITHUB_OWNER = process.env.GITHUB_OWNER || 'Nohart111';
+const GITHUB_REPO = process.env.GITHUB_REPO || 'aurasound-music-data';
+const GITHUB_RELEASE_TAG = process.env.GITHUB_RELEASE_TAG || 'tracks-v1';
 
+const CATALOG_PATH = path.join(process.cwd(), 'data', 'catalog.json');
+
+async function deleteReleaseAsset(filename: string): Promise<boolean> {
+  if (!GITHUB_TOKEN) return false;
   try {
-    const body = await req.json();
-    const { id, fileName, streamUrl, title } = body;
+    const relRes = await fetch(
+      `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/tags/${GITHUB_RELEASE_TAG}`,
+      {
+        headers: {
+          Authorization: `Bearer ${GITHUB_TOKEN}`,
+          Accept: 'application/vnd.github+json',
+        },
+      }
+    );
+    if (!relRes.ok) return false;
+    const relData = await relRes.json();
+    const assets: any[] = relData.assets || [];
 
-    const owner = process.env.GITHUB_OWNER || 'Nohart111';
-    const repo = process.env.GITHUB_REPO || 'aurasound-music-data';
-    const tag = process.env.GITHUB_RELEASE_TAG || 'tracks-v1';
-    const token = process.env.GITHUB_TOKEN;
+    const clean = filename.toLowerCase();
+    const targetAsset = assets.find((a) => a.name && (a.name.toLowerCase() === clean || clean.includes(a.name.toLowerCase())));
+    if (!targetAsset) return false;
 
-    // 1. Xóa khỏi file data/catalog.json cục bộ
-    const catalogPath = path.join(process.cwd(), 'data', 'catalog.json');
+    const delRes = await fetch(
+      `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/assets/${targetAsset.id}`,
+      {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${GITHUB_TOKEN}`,
+          Accept: 'application/vnd.github+json',
+        },
+      }
+    );
+    return delRes.status === 204 || delRes.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function deleteFromGitHubCatalog(trackId: string): Promise<boolean> {
+  if (!GITHUB_TOKEN) return false;
+  try {
+    const contentUrl = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/data/catalog.json`;
+    const getRes = await fetch(contentUrl, {
+      headers: {
+        Authorization: `Bearer ${GITHUB_TOKEN}`,
+        Accept: 'application/vnd.github+json',
+      },
+    });
+
+    if (!getRes.ok) return false;
+    const data = await getRes.json();
+    const sha = data.sha;
+    const rawJson = Buffer.from(data.content, 'base64').toString('utf-8');
+    const catalog: any[] = JSON.parse(rawJson);
+
+    const updated = catalog.filter((t) => t.id !== trackId);
+    const updatedBase64 = Buffer.from(JSON.stringify(updated, null, 2), 'utf-8').toString('base64');
+
+    const putRes = await fetch(contentUrl, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${GITHUB_TOKEN}`,
+        Accept: 'application/vnd.github+json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        message: `feat: delete track ${trackId} from catalog`,
+        content: updatedBase64,
+        sha,
+      }),
+    });
+
+    return putRes.ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function POST(req: Request) {
+  try {
+    const { id, streamUrl } = await req.json();
+
+    if (!id) {
+      return NextResponse.json({ error: 'Thiếu ID bài hát cần xóa.' }, { status: 400 });
+    }
+
+    let assetFilename = '';
+    if (streamUrl) {
+      const match = streamUrl.match(/file=([^&]+)/);
+      if (match) {
+        assetFilename = decodeURIComponent(match[1]);
+      } else {
+        assetFilename = streamUrl.split('/').pop() || '';
+      }
+    }
+
+    if (assetFilename) {
+      await deleteReleaseAsset(assetFilename);
+    }
+
+    await deleteFromGitHubCatalog(id);
+
     try {
-      if (fs.existsSync(catalogPath)) {
-        const raw = fs.readFileSync(catalogPath, 'utf8');
-        let catalog: any[] = JSON.parse(raw);
-        if (Array.isArray(catalog)) {
-          catalog = catalog.filter((item) => {
-            if (id && String(item.id) === String(id)) return false;
-            if (fileName && item.fileName === fileName) return false;
-            if (title && item.title === title) return false;
-            return true;
-          });
-          fs.writeFileSync(catalogPath, JSON.stringify(catalog, null, 2), 'utf8');
-        }
-      }
-    } catch (err) {
-      console.warn('Local catalog delete notice:', err);
-    }
+      const raw = await fs.readFile(CATALOG_PATH, 'utf-8');
+      const catalog = JSON.parse(raw);
+      const updated = catalog.filter((t: any) => t.id !== id);
+      await fs.writeFile(CATALOG_PATH, JSON.stringify(updated, null, 2), 'utf-8');
+    } catch {}
 
-    // 2. Xóa file vật lý trên GitHub Release CDN (tracks-v1)
-    if (token) {
-      try {
-        const relRes = await fetch(
-          `https://api.github.com/repos/${owner}/${repo}/releases/tags/${tag}`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-              'User-Agent': 'AuraSound-App',
-              Accept: 'application/vnd.github.v3+json',
-            },
-            cache: 'no-store',
-          }
-        );
-
-        if (relRes.ok) {
-          const relData = await relRes.json();
-          const assets: any[] = relData.assets || [];
-
-          const targetAsset = assets.find((a) => {
-            if (id && String(a.id) === String(id)) return true;
-            if (fileName && a.name === fileName) return true;
-            if (streamUrl && (streamUrl.includes(a.name) || streamUrl.includes(encodeURIComponent(a.name)))) {
-              return true;
-            }
-            return false;
-          });
-
-          if (targetAsset && targetAsset.id) {
-            await fetch(
-              `https://api.github.com/repos/${owner}/${repo}/releases/assets/${targetAsset.id}`,
-              {
-                method: 'DELETE',
-                headers: {
-                  Authorization: `Bearer ${token}`,
-                  'User-Agent': 'AuraSound-App',
-                },
-              }
-            );
-          }
-        }
-      } catch (ghErr) {
-        console.warn('GitHub asset delete notice:', ghErr);
-      }
-    }
-
-    return NextResponse.json({ status: 'deleted', id });
-  } catch (err) {
-    console.error('Delete track error:', err);
-    return NextResponse.json({ error: 'Không thể xóa bài hát' }, { status: 500 });
+    return NextResponse.json({
+      success: true,
+      message: 'Đã xóa bài hát khỏi kho lưu trữ thành công.',
+    });
+  } catch (err: any) {
+    console.error('Lỗi Delete API:', err);
+    return NextResponse.json({ error: err.message || 'Lỗi xử lý xóa bài hát.' }, { status: 500 });
   }
 }

@@ -32,6 +32,24 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'Thiếu tham số file.' }, { status: 400 });
     }
 
+    // Phân giải URL redirect 302 để lấy thẳng URL CDN đích, tránh mất Range Header
+    let finalUrl = targetUrl;
+    try {
+      const redirectCheck = await fetch(targetUrl, {
+        method: 'GET',
+        headers: { 'User-Agent': 'AuraSound-Player/2.0' },
+        redirect: 'manual',
+      });
+      if (
+        redirectCheck.status === 302 ||
+        redirectCheck.status === 301 ||
+        redirectCheck.status === 307
+      ) {
+        const loc = redirectCheck.headers.get('location');
+        if (loc) finalUrl = loc;
+      }
+    } catch {}
+
     const rangeHeader = req.headers.get('range');
     const fetchHeaders: Record<string, string> = {
       'User-Agent': 'AuraSound-Player/2.0',
@@ -40,13 +58,15 @@ export async function GET(req: Request) {
       fetchHeaders['Range'] = rangeHeader;
     }
 
-    const upstream = await fetch(targetUrl, {
+    const upstream = await fetch(finalUrl, {
       headers: fetchHeaders,
-      redirect: 'follow',
     });
 
     if (!upstream.ok && upstream.status !== 206) {
-      return NextResponse.json({ error: 'Không tìm thấy luồng âm thanh trên CDN.' }, { status: upstream.status });
+      return NextResponse.json(
+        { error: 'Không tìm thấy file nhạc trên CDN.' },
+        { status: upstream.status }
+      );
     }
 
     const mimeType = getMimeType(file || targetUrl);
