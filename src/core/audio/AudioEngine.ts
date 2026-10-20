@@ -164,7 +164,7 @@ export class AudioEngine {
 
   public getFrequencySnapshot(): Uint8Array {
     if (!this.analyserNode) return this.frequencyData;
-    this.analyserNode.getByteFrequencyData(this.frequencyData);
+    this.analyserNode.getByteFrequencyData(this.frequencyData as any);
     return this.frequencyData;
   }
 
