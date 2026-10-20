@@ -3,7 +3,7 @@
  * Prevents duplicate event listeners when multiple UI components call useAudioPlayer(),
  * supports instant replay on 1-track playlists via playNonce, and cleans up resources safely.
  */
-class AudioEngine {
+export class AudioEngine {
   private static instance: AudioEngine;
   private primaryAudio: HTMLAudioElement | null = null;
   private audioCtx: AudioContext | null = null;
@@ -195,6 +195,13 @@ class AudioEngine {
   }
 
   /**
+   * Frequency snapshot alias for spectrum analyzer / VU meters in page.tsx
+   */
+  public getFrequencySnapshot(): Uint8Array {
+    return this.getFrequencyData();
+  }
+
+  /**
    * Registers the single active timeupdate handler (replaces any previous handler
    * so multiple mounted components calling useAudioPlayer never stack duplicate listeners).
    */
@@ -216,3 +223,4 @@ class AudioEngine {
 }
 
 export const audioEngine = AudioEngine.getInstance();
+export default AudioEngine;
