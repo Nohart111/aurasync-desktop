@@ -1,5 +1,19 @@
 [
   {
+    "id": "trk-1792463553103",
+    "title": "SƠN TÙNG M-TP | ĐỪNG LÀM TRÁI TIM ANH ĐAU | OFFICIAL MUSIC VIDEO",
+    "artist": "Sơn Tùng M-TP Official",
+    "duration": 326,
+    "album": "Cloud Vault",
+    "genre": "Stereo",
+    "bitrate": "256 kbps",
+    "format": "m4a",
+    "coverUrl": "https://i.ytimg.com/vi/abPmZCZZrFA/hqdefault.jpg",
+    "streamUrl": "/api/tracks/stream?file=son-tung-m-tp-dung-lam-trai-tim-anh-dau-official-music-video-1792463549925.m4a",
+    "cdnUrl": "https://github.com/Nohart111/aurasound-music-data/releases/download/tracks-v1/son-tung-m-tp-dung-lam-trai-tim-anh-dau-official-music-video-1792463549925.m4a",
+    "dateAdded": "2026-10-20T02:32:33.103Z"
+  },
+  {
     "id": "656677829",
     "title": "Bầu Trời Mới - Da LAB ft. Minh Tốc & Lam",
     "artist": "Nghệ sĩ chưa rõ",

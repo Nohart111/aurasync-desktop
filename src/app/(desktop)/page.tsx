@@ -6,7 +6,6 @@ import { useAudioPlayer } from "@/hooks/useAudioPlayer";
 import { AudioEngine } from "@/core/audio/AudioEngine";
 import {
   Play,
-  Pause,
   Shuffle,
   Search,
   Heart,
@@ -17,12 +16,23 @@ import {
   Terminal,
   Cpu,
   Clock,
+  CheckCircle2,
+  Trash2,
+  FolderPlus,
+  ListMusic,
+  Plus,
+  X,
+  Check,
 } from "lucide-react";
 import { Track } from "@/core/algorithms/DoublyLinkedQueue";
 
-// ========================================================
-// DÀN ĐÈN VU METER CHUẨN ANALOG RMS: LƯỚT ÊM THEO LỜI BÀI HÁT, CHẬM RÃI THƯ THÁI (8 XANH - 9 VÀNG - 7 ĐỎ)
-// ========================================================
+interface CustomPlaylist {
+  id: string;
+  name: string;
+  trackIds: string[];
+  createdAt: string;
+}
+
 function StudioDynamicVuMeter({ isPlaying }: { isPlaying: boolean }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const dbTextRef = useRef<HTMLSpanElement>(null);
@@ -44,15 +54,15 @@ function StudioDynamicVuMeter({ isPlaying }: { isPlaying: boolean }) {
           try {
             (window as any).__AURASOUND_ANALYSER__.getByteFrequencyData(freqDataRef.current);
             const data = freqDataRef.current;
-            
+
             let vocalSum = 0;
             for (let i = 2; i <= 12; i++) {
               vocalSum += data[i] || 0;
             }
             const vocalEnergy = vocalSum / 11;
             const bassSupport = ((data[0] || 0) + (data[1] || 0)) * 0.5;
-
             musicalEnergy = vocalEnergy * 0.7 + bassSupport * 0.3;
+
             if (musicalEnergy > 8) hasRealAudio = true;
           } catch {}
         }
@@ -80,12 +90,6 @@ function StudioDynamicVuMeter({ isPlaying }: { isPlaying: boolean }) {
       if (isPlaying) {
         if (hasRealAudio) {
           rawEnergyRef.current = rawEnergyRef.current * 0.75 + musicalEnergy * 0.25;
-
-          // ========================================================
-          // 🎛️ NÂNG CAO TRẦN & MỞ RỘNG DẢI XANH (EXPANDED DYNAMIC HEADROOM):
-          // - NOISE_FLOOR = 52: Đoạn đầu nhạc có một ý nhỏ chỉ sáng 1 - 2 bóng xanh
-          // - CEILING = 175, EXPONENT = 1.75: Dải xanh (1 - 7 bóng) co giãn rộng rãi
-          // ========================================================
           const NOISE_FLOOR = 52;
           const CEILING = 175;
           const EXPONENT = 1.75;
@@ -94,13 +98,12 @@ function StudioDynamicVuMeter({ isPlaying }: { isPlaying: boolean }) {
           const normalized = Math.min(1.0, effective / CEILING);
           targetLeds = Math.pow(normalized, EXPONENT) * 24;
         } else {
-          const vocalSwell = (Math.sin(phase * 0.6) * 0.5 + 0.5);
-          const chordWave = (Math.sin(phase * 0.3) * 0.5 + 0.5);
+          const vocalSwell = Math.sin(phase * 0.6) * 0.5 + 0.5;
+          const chordWave = Math.sin(phase * 0.3) * 0.5 + 0.5;
           targetLeds = 1.0 + vocalSwell * 7.0 + chordWave * 4.0;
         }
       }
 
-      // Quán tính giảm xóc dầu thư thái
       if (!isPlaying) {
         smoothedLevelRef.current = Math.max(0, smoothedLevelRef.current * 0.9 - 0.15);
       } else if (targetLeds > smoothedLevelRef.current) {
@@ -118,15 +121,19 @@ function StudioDynamicVuMeter({ isPlaying }: { isPlaying: boolean }) {
           if (!led) continue;
 
           if (i < activeCount && isPlaying) {
-            if (i < 10) {
-              led.className = "flex-1 rounded-sm bg-emerald-400 shadow-[0_0_8px_#10B981] transition-all duration-150 ease-out";
-            } else if (i < 18) {
-              led.className = "flex-1 rounded-sm bg-amber-400 shadow-[0_0_8px_#F59E0B] transition-all duration-150 ease-out";
+            if (i < 8) {
+              led.className =
+                "flex-1 rounded-sm bg-emerald-400 shadow-[0_0_8px_#10B981] transition-all duration-150 ease-out";
+            } else if (i < 17) {
+              led.className =
+                "flex-1 rounded-sm bg-amber-400 shadow-[0_0_8px_#F59E0B] transition-all duration-150 ease-out";
             } else {
-              led.className = "flex-1 rounded-sm bg-rose-500 shadow-[0_0_10px_#EF4444] transition-all duration-150 ease-out";
+              led.className =
+                "flex-1 rounded-sm bg-rose-500 shadow-[0_0_10px_#EF4444] transition-all duration-150 ease-out";
             }
           } else {
-            led.className = "flex-1 rounded-sm bg-zinc-800/40 transition-all duration-200 ease-out";
+            led.className =
+              "flex-1 rounded-sm bg-zinc-800/40 transition-all duration-200 ease-out";
           }
         }
       }
@@ -162,7 +169,7 @@ function StudioDynamicVuMeter({ isPlaying }: { isPlaying: boolean }) {
   return (
     <div className="space-y-1.5 rounded-2xl border border-white/[0.08] bg-black/40 p-4 backdrop-blur-md">
       <div className="flex items-center justify-between text-[10px] font-mono text-zinc-500">
-        <span>VU METER (RMS SLOW BALLISTICS) </span>
+        <span>VU METER (RMS SLOW BALLISTICS)</span>
         <span ref={dbTextRef} className="text-zinc-600 font-bold">
           -∞ dB (STANDBY)
         </span>
@@ -176,17 +183,24 @@ function StudioDynamicVuMeter({ isPlaying }: { isPlaying: boolean }) {
   );
 }
 
-// ========================================================
-// TRANG CHỦ PHÒNG THU RETRO HI-FI
-// ========================================================
 export default function RetroCyberDeckPage() {
   const [tracks, setTracks] = useState<Track[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [likedTrackIds, setLikedTrackIds] = useState<Set<string>>(new Set());
+  const [newlyAddedTrack, setNewlyAddedTrack] = useState<Track | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  const { currentTrack, isPlaying, setPlaying, enqueueTrack, jumpToTrack } =
-    usePlayerStore();
+  const [currentView, setCurrentView] = useState<"deck" | "library">("deck");
+  const [playlists, setPlaylists] = useState<CustomPlaylist[]>([]);
+  const [selectedPlaylistId, setSelectedPlaylistId] = useState<string | null>(null);
+  const [newPlaylistName, setNewPlaylistName] = useState("");
+  const [isCreatingPlaylist, setIsCreatingPlaylist] = useState(false);
+  const [openMenuTrackId, setOpenMenuTrackId] = useState<string | null>(null);
+  const [showAddSongsPicker, setShowAddSongsPicker] = useState(false);
+
+  const store = usePlayerStore() as any;
+  const { currentTrack, isPlaying, setPlaying, enqueueTrack, jumpToTrack } = store;
   const { currentTime, actualDuration } = useAudioPlayer();
 
   useEffect(() => {
@@ -207,17 +221,164 @@ export default function RetroCyberDeckPage() {
       }
     }
     loadTracks();
+
+    try {
+      const savedLikes = localStorage.getItem("aurasound_liked_v1");
+      if (savedLikes) setLikedTrackIds(new Set(JSON.parse(savedLikes)));
+      const savedPlaylists = localStorage.getItem("aurasound_playlists_v1");
+      if (savedPlaylists) setPlaylists(JSON.parse(savedPlaylists));
+    } catch {}
+
+    const handleTrackAdded = (e: Event) => {
+      const customEvent = e as CustomEvent<Track>;
+      const added = customEvent.detail;
+      if (added) {
+        setTimeout(() => {
+          setTracks((prev) => [added, ...prev.filter((t) => t.id !== added.id)]);
+          setNewlyAddedTrack(added);
+          setTimeout(() => setNewlyAddedTrack(null), 5000);
+        }, 0);
+      } else {
+        loadTracks();
+      }
+    };
+
+    const handleViewChange = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.view) {
+        setCurrentView(detail.view);
+      }
+      if (detail?.playlistId === "CREATE_NEW") {
+        setSelectedPlaylistId(null);
+        setIsCreatingPlaylist(true);
+      } else if (detail?.playlistId !== undefined) {
+        setSelectedPlaylistId(detail.playlistId);
+        setIsCreatingPlaylist(false);
+      }
+    };
+
+    window.addEventListener("aurasound:track-added", handleTrackAdded);
+    window.addEventListener("aurasound:view-change", handleViewChange);
+    return () => {
+      window.removeEventListener("aurasound:track-added", handleTrackAdded);
+      window.removeEventListener("aurasound:view-change", handleViewChange);
+    };
   }, []);
 
-  const filteredTracks = useMemo(() => {
-    if (!searchQuery.trim()) return tracks;
+  // Đồng bộ Queue tách biệt hoàn toàn khỏi quá trình render để tránh lỗi React setState
+  useEffect(() => {
+    if (tracks.length > 0 && typeof store.setQueue === "function") {
+      const timer = setTimeout(() => {
+        store.setQueue(tracks);
+      }, 0);
+      return () => clearTimeout(timer);
+    }
+  }, [tracks]);
+
+  const savePlaylists = (updated: CustomPlaylist[]) => {
+    setPlaylists(updated);
+    try {
+      localStorage.setItem("aurasound_playlists_v1", JSON.stringify(updated));
+      window.dispatchEvent(new CustomEvent("aurasound:playlists-updated"));
+    } catch {}
+  };
+
+  const handleCreatePlaylist = (e?: React.FormEvent, autoAddTrackId?: string) => {
+    if (e) e.preventDefault();
+    const trimmed = newPlaylistName.trim();
+    if (!trimmed) return;
+
+    const newPl: CustomPlaylist = {
+      id: `pl-${Date.now()}`,
+      name: trimmed,
+      trackIds: autoAddTrackId ? [autoAddTrackId] : [],
+      createdAt: new Date().toISOString(),
+    };
+
+    const updated = [newPl, ...playlists];
+    savePlaylists(updated);
+    setNewPlaylistName("");
+    setIsCreatingPlaylist(false);
+    if (!autoAddTrackId) {
+      setSelectedPlaylistId(newPl.id);
+    }
+  };
+
+  const handleDeletePlaylist = (e: React.MouseEvent, playlistId: string) => {
+    e.stopPropagation();
+    const updated = playlists.filter((p) => p.id !== playlistId);
+    savePlaylists(updated);
+    if (selectedPlaylistId === playlistId) {
+      setSelectedPlaylistId(null);
+    }
+  };
+
+  const toggleTrackInPlaylist = (playlistId: string, trackId: string) => {
+    const updated = playlists.map((pl) => {
+      if (pl.id !== playlistId) return pl;
+      const exists = pl.trackIds.includes(trackId);
+      return {
+        ...pl,
+        trackIds: exists
+          ? pl.trackIds.filter((id) => id !== trackId)
+          : [...pl.trackIds, trackId],
+      };
+    });
+    savePlaylists(updated);
+  };
+
+  const handleDeleteTrack = async (e: React.MouseEvent, track: Track) => {
+    e.stopPropagation();
+    if (deletingId) return;
+
+    setDeletingId(track.id);
+    try {
+      const res = await fetch("/api/tracks/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: track.id, streamUrl: track.streamUrl }),
+      });
+
+      if (res.ok) {
+        setTracks((prev) => prev.filter((t) => t.id !== track.id));
+        const cleanedPlaylists = playlists.map((pl) => ({
+          ...pl,
+          trackIds: pl.trackIds.filter((id) => id !== track.id),
+        }));
+        savePlaylists(cleanedPlaylists);
+      }
+    } catch (err) {
+      console.error("Lỗi xóa bài hát:", err);
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const activePlaylist = useMemo(
+    () => playlists.find((p) => p.id === selectedPlaylistId) || null,
+    [playlists, selectedPlaylistId]
+  );
+
+  const displayedTracks = useMemo(() => {
+    let baseList = tracks;
+
+    if (currentView === "library") {
+      if (selectedPlaylistId === "LIKED") {
+        baseList = tracks.filter((t) => likedTrackIds.has(t.id));
+      } else if (activePlaylist) {
+        const idSet = new Set(activePlaylist.trackIds);
+        baseList = tracks.filter((t) => idSet.has(t.id));
+      }
+    }
+
+    if (!searchQuery.trim()) return baseList;
     const q = searchQuery.toLowerCase();
-    return tracks.filter(
+    return baseList.filter(
       (t) =>
         t.title.toLowerCase().includes(q) ||
         (t.artist && t.artist.toLowerCase().includes(q))
     );
-  }, [tracks, searchQuery]);
+  }, [tracks, currentView, selectedPlaylistId, activePlaylist, likedTrackIds, searchQuery]);
 
   const handlePlayTrack = (track: Track) => {
     if (currentTrack?.id === track.id) {
@@ -229,19 +390,23 @@ export default function RetroCyberDeckPage() {
     }
   };
 
-  const handlePlayAll = () => {
-    if (tracks.length === 0) return;
-    tracks.forEach((t) => enqueueTrack(t));
-    jumpToTrack(tracks[0].id);
+  const handlePlayList = (list: Track[]) => {
+    if (list.length === 0) return;
+    if (typeof store.setQueue === "function") {
+      store.setQueue(list);
+    } else {
+      list.forEach((t) => enqueueTrack(t));
+    }
+    jumpToTrack(list[0].id);
     setPlaying(true);
   };
 
+  const handlePlayAll = () => handlePlayList(displayedTracks);
+
   const handleShuffle = () => {
-    if (tracks.length === 0) return;
-    const shuffled = [...tracks].sort(() => Math.random() - 0.5);
-    shuffled.forEach((t) => enqueueTrack(t));
-    jumpToTrack(shuffled[0].id);
-    setPlaying(true);
+    if (displayedTracks.length === 0) return;
+    const shuffled = [...displayedTracks].sort(() => Math.random() - 0.5);
+    handlePlayList(shuffled);
   };
 
   const toggleLike = (e: React.MouseEvent, trackId: string) => {
@@ -250,6 +415,9 @@ export default function RetroCyberDeckPage() {
       const next = new Set(prev);
       if (next.has(trackId)) next.delete(trackId);
       else next.add(trackId);
+      try {
+        localStorage.setItem("aurasound_liked_v1", JSON.stringify(Array.from(next)));
+      } catch {}
       return next;
     });
   };
@@ -262,13 +430,27 @@ export default function RetroCyberDeckPage() {
   };
 
   return (
-    <div className="space-y-8 pb-16 select-none font-sans">
+    <div
+      className="space-y-8 pb-16 select-none font-sans relative"
+      onClick={() => setOpenMenuTrackId(null)}
+    >
+      {newlyAddedTrack && (
+        <div className="fixed top-5 right-6 z-50 flex items-center gap-3 rounded-2xl border border-zinc-700 bg-zinc-900/95 px-4 py-3 shadow-2xl backdrop-blur-xl">
+          <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+          <div>
+            <p className="text-[10px] font-mono text-emerald-400 uppercase">Đã thêm vào thư viện</p>
+            <p className="text-xs font-medium text-white truncate max-w-[240px]">
+              {newlyAddedTrack.title}
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* KHUNG TAPE DECK TRÊN CÙNG */}
       <section className="relative overflow-hidden rounded-3xl border border-white/[0.08] bg-gradient-to-b from-[#121222]/80 via-[#090912]/90 to-[#050508] p-6 shadow-2xl backdrop-blur-2xl">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(0,240,255,0.06),transparent_60%)]" />
 
         <div className="relative z-10 flex flex-col lg:flex-row items-center justify-between gap-8">
-          {/* Đầu máy băng cassette cơ học */}
           <div className="relative flex w-full max-w-md flex-col items-center rounded-2xl border border-white/[0.08] bg-gradient-to-b from-[#18182c] to-[#0c0c16] p-5 shadow-inner">
             <div className="flex w-full items-center justify-between border-b border-white/[0.08] pb-3 text-[10px] font-mono tracking-widest text-zinc-400 uppercase">
               <span className="flex items-center gap-1.5 text-neon-cyan">
@@ -316,14 +498,13 @@ export default function RetroCyberDeckPage() {
               </div>
             </div>
 
-            {/* Màn hình hiển thị Cassette & Bộ đếm thời gian thực cạnh tên bài hát */}
             <div className="flex w-full items-center justify-between rounded-lg bg-zinc-900/80 border border-white/[0.06] px-3 py-2 text-xs">
               <div className="truncate pr-2">
                 <span className="text-[10px] font-mono text-zinc-500 block uppercase">
                   MASTER CASSETTE
                 </span>
                 <span className="font-mono font-bold text-neon-cyan truncate block">
-                  {currentTrack ? currentTrack.title : "EMPTY DECK (SẴN SÀNG)"}
+                  {currentTrack ? currentTrack.title : "CHƯA CHỌN BÀI"}
                 </span>
               </div>
               <div className="flex items-center gap-1.5 shrink-0 font-mono text-[11px] text-zinc-300 bg-white/[0.06] px-2.5 py-1 rounded border border-white/10 shadow-inner">
@@ -339,43 +520,42 @@ export default function RetroCyberDeckPage() {
             </div>
           </div>
 
-          {/* Bảng điều khiển Studio Controller & Dynamic VU */}
-          <div className="flex flex-1 flex-col justify-between space-y-6">
+          <div className="flex flex-1 flex-col justify-between space-y-6 w-full">
             <div>
               <div className="flex items-center gap-2 text-xs font-mono text-neon-cyan tracking-wider uppercase">
                 <Terminal className="h-4 w-4" />
-                <span>VAULT_CONTROLLER // V2.6</span>
+                <span>STUDIO DECK</span>
               </div>
               <h1 className="mt-1 font-display text-4xl sm:text-5xl font-extrabold tracking-tight text-white">
-                Studio Tape Rack
+                {currentView === "library"
+                  ? activePlaylist
+                    ? activePlaylist.name
+                    : selectedPlaylistId === "LIKED"
+                    ? "Bài hát yêu thích"
+                    : "Thư viện & Playlist"
+                  : "Studio Tape Rack"}
               </h1>
             </div>
 
-            {/* DÀN ĐÈN VU METER TỤT SÂU VỀ XANH & CO GIÃN ĐỘNG */}
             <StudioDynamicVuMeter isPlaying={isPlaying} />
 
-            <div className="flex flex-wrap items-center gap-4">
+            <div className="flex flex-wrap items-center gap-3">
               <button
                 onClick={handlePlayAll}
-                disabled={tracks.length === 0}
-                className="group flex items-center gap-2.5 rounded-xl bg-gradient-to-r from-neon-cyan to-neon-violet px-6 py-3.5 text-xs font-mono font-bold tracking-wider text-black shadow-lg shadow-neon-cyan/20 transition hover:scale-105 active:scale-95 disabled:opacity-40"
+                disabled={displayedTracks.length === 0}
+                className="group flex items-center gap-2 rounded-xl bg-zinc-100 hover:bg-white px-5 py-3 text-xs font-mono font-bold tracking-wider text-black transition active:scale-95 disabled:opacity-40"
               >
-                {isPlaying ? (
-                  <Pause className="h-4 w-4 fill-black" />
-                ) : (
-                  <Play className="h-4 w-4 fill-black" />
-                )}
-                <span>[ TAPE_PLAY_ALL ]</span>
+                <Play className="h-4 w-4 fill-black" />
+                <span>PHÁT TẤT CẢ</span>
               </button>
 
               <button
                 onClick={handleShuffle}
-                disabled={tracks.length === 0}
-                className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-3.5 text-xs font-mono text-zinc-300 transition hover:bg-white/10 hover:text-white disabled:opacity-40"
-                title="Trộn bài"
+                disabled={displayedTracks.length === 0}
+                className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-xs font-mono text-zinc-300 transition hover:bg-white/10 hover:text-white disabled:opacity-40"
               >
                 <Shuffle className="h-4 w-4 text-neon-cyan" />
-                <span>SHUFFLE</span>
+                <span>TRỘN BÀI</span>
               </button>
 
               <div className="relative flex-1 min-w-[200px]">
@@ -384,8 +564,8 @@ export default function RetroCyberDeckPage() {
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="FILTER_TRACK_BY_NAME..."
-                  className="w-full rounded-xl border border-white/[0.08] bg-black/50 pl-9 pr-3 py-3 text-xs font-mono text-neon-cyan placeholder-zinc-600 outline-none transition focus:border-neon-cyan/50 focus:bg-black/80"
+                  placeholder="Tìm bài hát trong danh sách..."
+                  className="w-full rounded-xl border border-white/[0.08] bg-black/50 pl-9 pr-3 py-3 text-xs font-mono text-zinc-200 placeholder-zinc-600 outline-none transition focus:border-zinc-500 focus:bg-black/80"
                 />
               </div>
             </div>
@@ -393,34 +573,191 @@ export default function RetroCyberDeckPage() {
         </div>
       </section>
 
-      {/* DANH SÁCH BÀI HÁT AUDIOPHILE CHUYÊN NGHIỆP */}
+      {/* QUẢN LÝ THƯ VIỆN & PLAYLIST */}
+      {(currentView === "library" || isCreatingPlaylist) && (
+        <section className="rounded-2xl border border-zinc-800/80 bg-[#0a0a10]/90 p-5 space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <ListMusic className="h-4 w-4 text-zinc-300" />
+              <h2 className="text-xs font-mono uppercase tracking-wider text-zinc-300">
+                Danh sách Playlist của bạn
+              </h2>
+            </div>
+
+            <form onSubmit={(e) => handleCreatePlaylist(e)} className="flex items-center gap-2">
+              <input
+                type="text"
+                value={newPlaylistName}
+                onChange={(e) => setNewPlaylistName(e.target.value)}
+                placeholder="Nhập tên playlist mới..."
+                className="px-3 py-1.5 rounded-lg border border-zinc-800 bg-zinc-900/80 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-zinc-600"
+              />
+              <button
+                type="submit"
+                disabled={!newPlaylistName.trim()}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-zinc-200 hover:bg-white text-zinc-950 text-xs font-medium transition disabled:opacity-40"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                <span>Tạo Playlist</span>
+              </button>
+            </form>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">
+            <button
+              onClick={() => {
+                setSelectedPlaylistId(null);
+                setShowAddSongsPicker(false);
+              }}
+              className={`flex flex-col justify-between p-3.5 rounded-xl border text-left transition-all ${
+                selectedPlaylistId === null
+                  ? "border-zinc-500 bg-zinc-800/70 text-white"
+                  : "border-zinc-800/80 bg-zinc-900/40 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/80"
+              }`}
+            >
+              <span className="text-xs font-medium truncate">Tất cả bài hát</span>
+              <span className="text-[11px] font-mono text-zinc-500 mt-1">{tracks.length} bài</span>
+            </button>
+
+            <button
+              onClick={() => {
+                setSelectedPlaylistId("LIKED");
+                setShowAddSongsPicker(false);
+              }}
+              className={`flex flex-col justify-between p-3.5 rounded-xl border text-left transition-all ${
+                selectedPlaylistId === "LIKED"
+                  ? "border-zinc-500 bg-zinc-800/70 text-white"
+                  : "border-zinc-800/80 bg-zinc-900/40 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/80"
+              }`}
+            >
+              <span className="text-xs font-medium truncate flex items-center gap-1.5">
+                <Heart className="h-3.5 w-3.5 text-rose-500 fill-rose-500" />
+                Yêu thích
+              </span>
+              <span className="text-[11px] font-mono text-zinc-500 mt-1">
+                {likedTrackIds.size} bài
+              </span>
+            </button>
+
+            {playlists.map((pl) => {
+              const isSelected = selectedPlaylistId === pl.id;
+              return (
+                <div
+                  key={pl.id}
+                  onClick={() => {
+                    setSelectedPlaylistId(pl.id);
+                    setShowAddSongsPicker(false);
+                  }}
+                  className={`group relative flex flex-col justify-between p-3.5 rounded-xl border text-left cursor-pointer transition-all ${
+                    isSelected
+                      ? "border-zinc-500 bg-zinc-800/70 text-white"
+                      : "border-zinc-800/80 bg-zinc-900/40 text-zinc-300 hover:text-white hover:bg-zinc-900/80"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-medium truncate">{pl.name}</span>
+                    <button
+                      onClick={(e) => handleDeletePlaylist(e, pl.id)}
+                      className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-zinc-700 text-zinc-400 hover:text-rose-400 transition"
+                      title="Xóa playlist"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                  <span className="text-[11px] font-mono text-zinc-500 mt-1">
+                    {pl.trackIds.length} bài
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+
+          {activePlaylist && (
+            <div className="pt-2 border-t border-zinc-800/70 flex flex-col gap-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-zinc-400">
+                  Đang xem playlist <strong className="text-zinc-200">{activePlaylist.name}</strong>
+                </span>
+                <button
+                  onClick={() => setShowAddSongsPicker(!showAddSongsPicker)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-700 bg-zinc-800/80 hover:bg-zinc-700 text-xs text-zinc-200 transition"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  <span>{showAddSongsPicker ? "Đóng danh sách chọn" : "Thêm bài hát vào Playlist"}</span>
+                </button>
+              </div>
+
+              {showAddSongsPicker && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-56 overflow-y-auto p-3 rounded-xl bg-black/50 border border-zinc-800/80">
+                  {tracks.map((t) => {
+                    const inPl = activePlaylist.trackIds.includes(t.id);
+                    return (
+                      <div
+                        key={t.id}
+                        onClick={() => toggleTrackInPlaylist(activePlaylist.id, t.id)}
+                        className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg border border-zinc-800/60 bg-zinc-900/40 hover:bg-zinc-800/60 cursor-pointer text-xs"
+                      >
+                        <div className="truncate pr-2">
+                          <p className="text-zinc-200 truncate font-medium">{t.title}</p>
+                          <p className="text-[11px] text-zinc-500 truncate">{t.artist}</p>
+                        </div>
+                        <span
+                          className={`shrink-0 flex items-center gap-1 px-2 py-1 rounded text-[11px] font-mono ${
+                            inPl
+                              ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
+                              : "bg-zinc-800 text-zinc-300"
+                          }`}
+                        >
+                          {inPl ? (
+                            <>
+                              <Check className="h-3 w-3" /> Đã thêm
+                            </>
+                          ) : (
+                            <>
+                              <Plus className="h-3 w-3" /> Thêm
+                            </>
+                          )}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* DANH SÁCH BÀI HÁT */}
       <section className="space-y-3">
         <div className="flex items-center justify-between border-b border-white/[0.08] pb-2 text-xs font-mono text-zinc-400 uppercase">
           <span className="flex items-center gap-2">
             <Cpu className="h-4 w-4 text-neon-cyan" />
-            CATALOG_CARTRIDGES ({filteredTracks.length} TAPES LOADED)
+            {activePlaylist
+              ? `${activePlaylist.name} (${displayedTracks.length} BÀI)`
+              : selectedPlaylistId === "LIKED"
+              ? `YÊU THÍCH (${displayedTracks.length} BÀI)`
+              : `DANH SÁCH BĂNG (${displayedTracks.length} BÀI)`}
           </span>
-          <span>FORMAT: 44.1kHz / 16-BIT PCM</span>
+          <span>44.1kHz / STEREO</span>
         </div>
 
         {isLoading ? (
           <div className="flex h-48 items-center justify-center font-mono text-xs text-zinc-500">
-            LOADING_DATA_CARTRIDGES...
+            Đang tải danh sách nhạc...
           </div>
-        ) : filteredTracks.length === 0 ? (
-          <div className="flex h-48 flex-col items-center justify-center rounded-2xl border border-dashed border-zinc-800 p-8 text-center font-mono">
-            <Disc className="mb-2 h-8 w-8 text-zinc-600" />
-            <p className="text-sm text-zinc-400">NO CARTRIDGES FOUND</p>
-            <p className="mt-1 text-xs text-zinc-600">
-              Bấm nút &quot;Thêm bài hát mới&quot; ở Sidebar để chèn băng nhạc đầu tiên.
-            </p>
+        ) : displayedTracks.length === 0 ? (
+          <div className="flex h-44 flex-col items-center justify-center rounded-2xl border border-dashed border-zinc-800 p-8 text-center">
+            <Disc className="mb-2 h-7 w-7 text-zinc-600" />
+            <p className="text-xs text-zinc-400">Chưa có bài hát nào trong mục này.</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-            {filteredTracks.map((track, idx) => {
+            {displayedTracks.map((track, idx) => {
               const isThisPlaying = currentTrack?.id === track.id && isPlaying;
               const isThisActive = currentTrack?.id === track.id;
               const isLiked = likedTrackIds.has(track.id);
+              const isMenuOpen = openMenuTrackId === track.id;
 
               return (
                 <div
@@ -432,7 +769,6 @@ export default function RetroCyberDeckPage() {
                       : "border-white/[0.06] bg-[#0c0c16]/70 hover:border-white/15 hover:bg-white/[0.04]"
                   }`}
                 >
-                  {/* CỤM ĐĨA VINYL TÍCH HỢP ĐỒNG TÂM */}
                   <div className="flex items-center gap-4 overflow-hidden pr-2">
                     <div className="relative h-12 w-12 shrink-0 flex items-center justify-center">
                       <div
@@ -455,18 +791,10 @@ export default function RetroCyberDeckPage() {
                           className={`absolute inset-0 m-auto flex h-6 w-6 items-center justify-center rounded-full transition-all duration-200 ${
                             isThisPlaying
                               ? "bg-neon-cyan/20 border border-neon-cyan text-neon-cyan shadow-[0_0_8px_#00F0FF]"
-                              : "bg-zinc-900/90 border border-white/20 text-zinc-300 group-hover:bg-neon-cyan group-hover:text-black group-hover:border-neon-cyan group-hover:shadow-[0_0_10px_#00F0FF]"
+                              : "bg-zinc-900/90 border border-white/20 text-zinc-300 group-hover:bg-neon-cyan group-hover:text-black group-hover:border-neon-cyan"
                           }`}
                         >
-                          {isThisPlaying ? (
-                            <div className="flex items-end gap-0.5 h-3 w-3 justify-center">
-                              <span className="h-full w-0.5 rounded-full bg-neon-cyan animate-pulse" />
-                              <span className="h-2/3 w-0.5 rounded-full bg-neon-cyan animate-pulse delay-75" />
-                              <span className="h-4/5 w-0.5 rounded-full bg-neon-cyan animate-pulse delay-150" />
-                            </div>
-                          ) : (
-                            <Play className="ml-0.5 h-3 w-3 fill-current" />
-                          )}
+                          <Play className="ml-0.5 h-3 w-3 fill-current" />
                         </div>
                       </div>
                     </div>
@@ -478,7 +806,7 @@ export default function RetroCyberDeckPage() {
                         </span>
                         {isThisPlaying && (
                           <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[9px] font-mono text-emerald-400 font-bold border border-emerald-500/30">
-                            NOW_PLAYING
+                            PLAYING
                           </span>
                         )}
                       </div>
@@ -495,7 +823,7 @@ export default function RetroCyberDeckPage() {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-4 shrink-0">
+                  <div className="flex items-center gap-2 shrink-0">
                     <button
                       onClick={(e) => toggleLike(e, track.id)}
                       className={`p-1.5 transition ${
@@ -503,10 +831,79 @@ export default function RetroCyberDeckPage() {
                           ? "text-rose-500"
                           : "text-zinc-500 opacity-0 group-hover:opacity-100 hover:text-white"
                       }`}
-                      title={isLiked ? "Unlike" : "Like"}
+                      title="Yêu thích"
                     >
                       <Heart className={`h-4 w-4 ${isLiked ? "fill-rose-500" : ""}`} />
                     </button>
+
+                    <div className="relative">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setOpenMenuTrackId(isMenuOpen ? null : track.id);
+                        }}
+                        className="p-1.5 text-zinc-500 opacity-0 group-hover:opacity-100 hover:text-white transition"
+                        title="Thêm vào Playlist"
+                      >
+                        <FolderPlus className="h-4 w-4" />
+                      </button>
+
+                      {isMenuOpen && (
+                        <div
+                          onClick={(e) => e.stopPropagation()}
+                          className="absolute right-0 bottom-9 z-40 w-52 rounded-xl border border-zinc-700 bg-[#0e0e16] p-2 shadow-2xl space-y-1.5"
+                        >
+                          <div className="px-2 py-1 text-[10px] font-mono uppercase text-zinc-400 border-b border-zinc-800">
+                            Thêm vào Playlist
+                          </div>
+
+                          {playlists.length === 0 ? (
+                            <p className="px-2 py-1.5 text-[11px] text-zinc-500">
+                              Chưa có playlist nào.
+                            </p>
+                          ) : (
+                            <div className="max-h-36 overflow-y-auto space-y-0.5">
+                              {playlists.map((pl) => {
+                                const inPl = pl.trackIds.includes(track.id);
+                                return (
+                                  <button
+                                    key={pl.id}
+                                    onClick={() => toggleTrackInPlaylist(pl.id, track.id)}
+                                    className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs text-zinc-200 hover:bg-zinc-800 transition"
+                                  >
+                                    <span className="truncate pr-2">{pl.name}</span>
+                                    {inPl && <Check className="h-3.5 w-3.5 text-emerald-400 shrink-0" />}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+
+                          <form
+                            onSubmit={(e) => {
+                              handleCreatePlaylist(e, track.id);
+                              setOpenMenuTrackId(null);
+                            }}
+                            className="pt-1 border-t border-zinc-800 flex items-center gap-1"
+                          >
+                            <input
+                              type="text"
+                              value={newPlaylistName}
+                              onChange={(e) => setNewPlaylistName(e.target.value)}
+                              placeholder="Playlist mới..."
+                              className="w-full px-2 py-1 rounded bg-zinc-900 border border-zinc-800 text-[11px] text-white placeholder-zinc-500 focus:outline-none"
+                            />
+                            <button
+                              type="submit"
+                              disabled={!newPlaylistName.trim()}
+                              className="p-1 rounded bg-zinc-200 text-black hover:bg-white disabled:opacity-40"
+                            >
+                              <Plus className="h-3.5 w-3.5" />
+                            </button>
+                          </form>
+                        </div>
+                      )}
+                    </div>
 
                     <button
                       onClick={(e) => {
@@ -514,12 +911,21 @@ export default function RetroCyberDeckPage() {
                         enqueueTrack(track);
                       }}
                       className="p-1.5 text-zinc-500 opacity-0 group-hover:opacity-100 hover:text-neon-cyan transition"
-                      title="Add to Queue"
+                      title="Thêm vào hàng phát"
                     >
                       <ListPlus className="h-4 w-4" />
                     </button>
 
-                    <span className="font-mono text-xs text-zinc-400 group-hover:text-zinc-200 tabular-nums pr-1">
+                    <button
+                      onClick={(e) => handleDeleteTrack(e, track)}
+                      disabled={deletingId === track.id}
+                      className="p-1.5 text-zinc-500 opacity-0 group-hover:opacity-100 hover:text-rose-400 transition disabled:opacity-30"
+                      title="Xóa bài hát"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+
+                    <span className="font-mono text-xs text-zinc-400 group-hover:text-zinc-200 tabular-nums pl-1">
                       {formatDuration(track.duration)}
                     </span>
                   </div>
