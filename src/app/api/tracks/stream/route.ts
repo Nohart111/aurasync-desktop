@@ -1,4 +1,4 @@
-﻿import { NextResponse } from 'next/server';
+﻿import { NextRequest, NextResponse } from 'next/server';
 
 const GITHUB_OWNER = process.env.GITHUB_OWNER || 'Nohart111';
 const GITHUB_REPO = process.env.GITHUB_REPO || 'aurasound-music-data';
@@ -14,25 +14,27 @@ function getMimeType(filename: string): string {
   return 'audio/mpeg';
 }
 
-export async function GET(req: Request) {
+export async function GET(req: NextRequest) {
+  // Đọc searchParams qua req.nextUrl bên ngoài try-catch để Next.js tự động nhận diện Dynamic route
+  const { searchParams } = req.nextUrl;
+  const file = searchParams.get('file');
+  const directUrl = searchParams.get('url');
+
+  if (!file && !directUrl) {
+    return NextResponse.json({ error: 'Thiếu tham số file.' }, { status: 400 });
+  }
+
+  let targetUrl = '';
+  if (directUrl && directUrl.startsWith('https://')) {
+    targetUrl = directUrl;
+  } else if (file) {
+    const cleanFile = file.replace(/^\/+|\/+$/g, '');
+    targetUrl = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/${GITHUB_RELEASE_TAG}/${encodeURIComponent(
+      cleanFile
+    )}`;
+  }
+
   try {
-    const { searchParams } = new URL(req.url);
-    const file = searchParams.get('file');
-    const directUrl = searchParams.get('url');
-
-    let targetUrl = '';
-    if (directUrl && directUrl.startsWith('https://')) {
-      targetUrl = directUrl;
-    } else if (file) {
-      const cleanFile = file.replace(/^\/+|\/+$/g, '');
-      targetUrl = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/${GITHUB_RELEASE_TAG}/${encodeURIComponent(
-        cleanFile
-      )}`;
-    } else {
-      return NextResponse.json({ error: 'Thiếu tham số file.' }, { status: 400 });
-    }
-
-    // Phân giải URL redirect 302 để lấy thẳng URL CDN đích, tránh mất Range Header
     let finalUrl = targetUrl;
     try {
       const redirectCheck = await fetch(targetUrl, {
@@ -87,6 +89,8 @@ export async function GET(req: Request) {
       headers: responseHeaders,
     });
   } catch (err: any) {
+    // Bắt buộc ném tiếp tín hiệu điều hướng nội bộ của Next.js (prerender bailout)
+    if (err?.digest) throw err;
     console.error('Lỗi Stream API:', err);
     return NextResponse.json({ error: 'Lỗi truyền tải âm thanh.' }, { status: 500 });
   }
