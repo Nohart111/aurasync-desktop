@@ -1,4 +1,4 @@
-﻿import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
@@ -32,6 +32,7 @@ function normalizeTrack(t: any) {
 }
 
 export async function GET(req: NextRequest) {
+  // Đọc searchParams bên ngoài try-catch để Next.js 16 luôn xử lý Dynamic thời gian thực
   const _t = req.nextUrl.searchParams.get('t');
 
   try {
@@ -44,6 +45,7 @@ export async function GET(req: NextRequest) {
       }
     } catch {}
 
+    // Đọc trực tiếp từ GitHub Contents API với cache: 'no-store' (0s độ trễ cache)
     if (GITHUB_TOKEN) {
       try {
         const ghRes = await fetch(
@@ -67,6 +69,7 @@ export async function GET(req: NextRequest) {
                 .filter((t) => t && (t.streamUrl || t.cdnUrl))
                 .map(normalizeTrack);
 
+              // Đồng bộ ngược về file local nếu đang chạy ở localhost
               try {
                 await fs.writeFile(CATALOG_PATH, JSON.stringify(validGhTracks, null, 2), 'utf-8');
               } catch {}
@@ -77,7 +80,9 @@ export async function GET(req: NextRequest) {
             }
           }
         }
-      } catch {}
+      } catch (e) {
+        console.warn('GitHub catalog fetch fallback to local:', e);
+      }
     }
 
     const normalizedLocal = localTracks.map(normalizeTrack);

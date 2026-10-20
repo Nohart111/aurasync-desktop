@@ -1,17 +1,17 @@
 [
   {
-    "id": "trk-1792485457229",
-    "title": "TINH HÀ SAY HI [PERFORMANCE]",
-    "artist": "Dương Domic, buitruonglinh, CONGB, WEAN, Vận Toàn",
-    "duration": 285,
+    "id": "trk-1792488238216",
+    "title": "ĐỪNG LÀM TRÁI TIM ANH ĐAU",
+    "artist": "SƠN TÙNG M-TP",
+    "duration": 326,
     "album": "Cloud Vault",
     "genre": "Stereo",
     "bitrate": "256 kbps",
     "format": "m4a",
-    "coverUrl": "https://i.ytimg.com/vi/l_uzEREOKfo/hqdefault.jpg",
-    "streamUrl": "/api/tracks/stream?file=tinh-ha-say-hi-performance-1792485455164.m4a",
-    "cdnUrl": "https://github.com/Nohart111/aurasound-music-data/releases/download/tracks-v1/tinh-ha-say-hi-performance-1792485455164.m4a",
-    "dateAdded": "2026-10-20T08:37:37.229Z"
+    "coverUrl": "https://i.ytimg.com/vi/abPmZCZZrFA/hqdefault.jpg",
+    "streamUrl": "/api/tracks/stream?file=dung-lam-trai-tim-anh-dau-1792488234518.m4a",
+    "cdnUrl": "https://github.com/Nohart111/aurasound-music-data/releases/download/tracks-v1/dung-lam-trai-tim-anh-dau-1792488234518.m4a",
+    "dateAdded": "2026-10-20T09:23:58.216Z"
   },
   {
     "id": "trk-cloud-1792482236",

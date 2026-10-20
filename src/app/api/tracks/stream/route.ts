@@ -1,4 +1,4 @@
-﻿import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
 const GITHUB_OWNER = process.env.GITHUB_OWNER || 'Nohart111';
@@ -49,6 +49,7 @@ export async function GET(req: NextRequest) {
       cache: 'no-store',
     });
 
+    // Nếu không tìm thấy theo tên chính xác, dò trong danh sách assets của Release tracks-v1
     if (!upstream.ok && upstream.status !== 206 && file && GITHUB_TOKEN) {
       try {
         const relRes = await fetch(

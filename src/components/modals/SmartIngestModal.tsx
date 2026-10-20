@@ -1,317 +1,404 @@
-﻿'use client';
+'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
-import {
-  Search,
-  X,
-  CloudDownload,
-  Play,
-  AlertCircle,
-  Loader2,
-  Clock,
-  Plus,
-  Check,
-  CheckCircle2,
-} from 'lucide-react';
-import { usePlayerStore } from '@/store/usePlayerStore';
+import React, { useState, useRef, useEffect } from 'react';
+import { X, Search, Globe, Disc, Check, AlertCircle, Loader2, Sparkles, Youtube } from 'lucide-react';
+import { usePlayerStore, Track } from '@/store/usePlayerStore';
 
 interface YouTubeResult {
   id: string;
-  videoId: string;
+  url: string;
   title: string;
   artist: string;
-  duration: number;
-  durationFormatted: string;
   thumbnail: string;
-  url: string;
-  source: string;
+  duration: number;
 }
 
-interface SmartIngestModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-}
+type IngestTaskStatus = 'idle' | 'queued' | 'downloading' | 'completed' | 'failed';
 
-export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
+export function SmartIngestModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const [query, setQuery] = useState('');
-  const [isSearching, setIsSearching] = useState(false);
   const [results, setResults] = useState<YouTubeResult[]>([]);
-  const [error, setError] = useState<string | null>(null);
-
+  const [searching, setSearching] = useState(false);
   const [ingestingId, setIngestingId] = useState<string | null>(null);
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const [justAddedTracks, setJustAddedTracks] = useState<Record<string, any>>({});
-  const [successNotice, setSuccessNotice] = useState<string | null>(null);
+  const [taskStatus, setTaskStatus] = useState<IngestTaskStatus>('idle');
+  const [statusText, setStatusText] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
+  const [successId, setSuccessId] = useState<string | null>(null);
 
-  const store = usePlayerStore() as any;
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const { setLibrary, library, setCurrentTrack, setIsPlaying } = usePlayerStore();
+  const abortPollRef = useRef<boolean>(false);
 
   useEffect(() => {
-    if (ingestingId) {
-      setElapsedSeconds(0);
-      timerRef.current = setInterval(() => {
-        setElapsedSeconds((prev) => prev + 1);
-      }, 1000);
-    } else if (timerRef.current) {
-      clearInterval(timerRef.current);
+    if (!isOpen) {
+      abortPollRef.current = true;
+    } else {
+      abortPollRef.current = false;
     }
     return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
+      abortPollRef.current = true;
     };
-  }, [ingestingId]);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
-  const queueList: any[] = Array.isArray(store?.queue)
-    ? store.queue
-    : Array.isArray(store?.queueItems)
-    ? store.queueItems
-    : [];
-
-  const getExistingTrack = (item: YouTubeResult) => {
-    if (justAddedTracks[item.id]) return justAddedTracks[item.id];
-    const clean = item.title.toLowerCase().trim();
-    return queueList.find((t: any) => t?.title && t.title.toLowerCase().trim() === clean);
+  const isUrl = (str: string) => {
+    try {
+      const u = new URL(str.trim());
+      return (
+        u.hostname.includes('youtube.com') ||
+        u.hostname.includes('youtu.be') ||
+        u.hostname.includes('soundcloud.com')
+      );
+    } catch {
+      return false;
+    }
   };
 
-  const triggerPlayTrack = (track: any) => {
-    setTimeout(() => {
-      if (typeof store?.playTrackNow === 'function') {
-        store.playTrackNow(track);
-      } else {
-        if (typeof store?.enqueueTrack === 'function') store.enqueueTrack(track);
-        if (typeof store?.jumpToTrack === 'function') store.jumpToTrack(track.id);
-        if (typeof store?.setPlaying === 'function') store.setPlaying(true);
-      }
-    }, 50);
-  };
+  const handleSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = query.trim();
+    if (!trimmed) return;
 
-  const handleSearch = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (!query.trim() || isSearching || ingestingId) return;
-
-    setIsSearching(true);
-    setError(null);
-    setSuccessNotice(null);
+    setErrorMsg('');
     setResults([]);
+    setSearching(true);
+    setTaskStatus('idle');
 
     try {
       const res = await fetch('/api/tracks/ingest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'search', query: query.trim() }),
+        body: JSON.stringify({ action: 'search', query: trimmed }),
       });
-
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Lỗi tìm kiếm.');
+      if (!res.ok) throw new Error(data.error || 'Lỗi tìm kiếm nguồn nhạc');
 
-      if (data.results && data.results.length > 0) {
-        setResults(data.results);
-      } else {
-        setError('Không tìm thấy kết quả phù hợp.');
+      const items: YouTubeResult[] = data.results || [];
+      setResults(items);
+
+      if (items.length === 0) {
+        setErrorMsg('Không tìm thấy kết quả phù hợp. Hãy thử từ khóa khác hoặc dán link trực tiếp.');
       }
     } catch (err: any) {
-      setError(err.message || 'Không thể kết nối máy chủ.');
+      setErrorMsg(err.message || 'Không thể kết nối máy chủ tìm kiếm.');
     } finally {
-      setIsSearching(false);
+      setSearching(false);
+    }
+  };
+
+  const syncConfirmedTrackToStore = async (confirmedTrack?: Track) => {
+    try {
+      const syncRes = await fetch(`/api/tracks/search?t=${Date.now()}`, { cache: 'no-store' });
+      const syncData = await syncRes.json();
+      if (syncData.tracks && Array.isArray(syncData.tracks) && syncData.tracks.length > 0) {
+        setLibrary(syncData.tracks);
+        if (confirmedTrack) {
+          const found =
+            syncData.tracks.find((t: Track) => t.id === confirmedTrack.id) || confirmedTrack;
+          setCurrentTrack(found);
+          setIsPlaying(true);
+        }
+        return;
+      }
+    } catch {
+      // Fallback to inserting confirmedTrack directly into current store
+    }
+
+    if (confirmedTrack) {
+      const exists = library.some((t) => t.id === confirmedTrack.id);
+      const updated = exists
+        ? library.map((t) => (t.id === confirmedTrack.id ? confirmedTrack : t))
+        : [confirmedTrack, ...library];
+      setLibrary(updated);
+      setCurrentTrack(confirmedTrack);
+      setIsPlaying(true);
     }
   };
 
   const handleIngest = async (item: YouTubeResult) => {
-    if (ingestingId) return;
-
+    if (ingestingId) return; // Prevent concurrent overlapping requests from UI
+    abortPollRef.current = false;
     setIngestingId(item.id);
-    setError(null);
-    setSuccessNotice(null);
+    setErrorMsg('');
+    setSuccessId(null);
+    setTaskStatus('queued');
+    setStatusText('Đang chờ: Gửi yêu cầu tới GitHub Actions...');
 
     try {
       const res = await fetch('/api/tracks/ingest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'ingest', track: item }),
+        body: JSON.stringify({
+          action: 'ingest',
+          url: item.url,
+          title: item.title,
+          artist: item.artist,
+          thumbnail: item.thumbnail,
+          duration: item.duration,
+        }),
       });
-
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Tải bài hát thất bại.');
 
-      setJustAddedTracks((prev) => ({ ...prev, [item.id]: data.track }));
-      setSuccessNotice(`Đã thêm "${data.track.title}" vào thư viện`);
+      if (!res.ok) {
+        throw new Error(data.error || 'Khởi tạo tiến trình tải nhạc thất bại.');
+      }
+
+      // Case 1: Already in catalog (deduplicated immediately with confirmed streamUrl)
+      if (data.status === 'completed' && data.track && data.track.streamUrl) {
+        setTaskStatus('completed');
+        setStatusText(
+          data.duplicate
+            ? 'Bài hát đã tồn tại trong thư viện! Đang mở phát ngay...'
+            : 'Tải thành công! Đã xác nhận file nhạc trong kho lưu trữ.'
+        );
+        setSuccessId(item.id);
+        await syncConfirmedTrackToStore(data.track);
+        setTimeout(() => {
+          setIngestingId(null);
+          setStatusText('');
+          setTaskStatus('idle');
+          onClose();
+        }, 1200);
+        return;
+      }
+
+      // Case 2: Dispatched to GitHub Actions (HTTP 202 Accepted)
+      // Poll status until the audio file is genuinely saved and confirmed in catalog.json
+      const requestId = data.requestId || '';
+      const videoId = data.videoId || item.id;
+      const startedAt = data.startedAt || new Date().toISOString();
+
+      const maxAttempts = 45; // 45 * 4s = 180 seconds max wait
+      let confirmedTrack: Track | null = null;
+
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        if (abortPollRef.current) {
+          throw new Error('Đã hủy theo dõi tác vụ.');
+        }
+
+        await new Promise((r) => setTimeout(r, 4000));
+
+        if (abortPollRef.current) {
+          throw new Error('Đã hủy theo dõi tác vụ.');
+        }
+
+        const statusRes = await fetch('/api/tracks/ingest', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'status',
+            requestId,
+            videoId,
+            title: item.title,
+            startedAt,
+          }),
+          cache: 'no-store',
+        });
+
+        const statusData = await statusRes.json().catch(() => ({}));
+
+        if (!statusRes.ok && statusData.error) {
+          throw new Error(statusData.error);
+        }
+
+        const currentState: IngestTaskStatus = statusData.status || 'queued';
+        setTaskStatus(currentState);
+
+        if (currentState === 'queued') {
+          setStatusText(
+            `${statusData.message || 'Đang chờ GitHub Actions khởi tạo runner...'} (${attempt * 4}s)`
+          );
+        } else if (currentState === 'downloading') {
+          setStatusText(
+            `${statusData.message || 'Đang tải và lưu nhạc vào GitHub Release...'} (${attempt * 4}s)`
+          );
+        } else if (currentState === 'completed' && statusData.track && statusData.track.streamUrl) {
+          confirmedTrack = statusData.track;
+          break;
+        } else if (currentState === 'failed') {
+          throw new Error(
+            statusData.error || 'GitHub Actions workflow thất bại khi tải bài hát này.'
+          );
+        }
+      }
+
+      if (!confirmedTrack) {
+        throw new Error(
+          'Quá thời gian chờ xác nhận từ GitHub Actions (180s). Vui lòng kiểm tra tab Actions trên GitHub hoặc thử lại.'
+        );
+      }
+
+      setTaskStatus('completed');
+      setStatusText('Thành công! File nhạc đã được lưu và xác nhận trên GitHub.');
+      setSuccessId(item.id);
+      await syncConfirmedTrackToStore(confirmedTrack);
 
       setTimeout(() => {
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('aurasound:track-added', { detail: data.track }));
-        }
         setIngestingId(null);
-      }, 50);
+        setStatusText('');
+        setTaskStatus('idle');
+        onClose();
+      }, 1500);
     } catch (err: any) {
-      setError(err.message || 'Không thể tải bài hát này.');
+      setTaskStatus('failed');
+      setErrorMsg(err.message || 'Có lỗi xảy ra trong quá trình tải nhạc.');
       setIngestingId(null);
+      setStatusText('');
+    }
+  };
+
+  const formatTime = (sec: number) => {
+    if (!sec) return '0:00';
+    const m = Math.floor(sec / 60);
+    const s = Math.floor(sec % 60);
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  };
+
+  const getStatusBadgeLabel = (status: IngestTaskStatus) => {
+    switch (status) {
+      case 'queued':
+        return 'ĐANG CHỜ (QUEUED)';
+      case 'downloading':
+        return 'ĐANG TẢI (DOWNLOADING)';
+      case 'completed':
+        return 'THÀNH CÔNG (COMPLETED)';
+      case 'failed':
+        return 'THẤT BẠI (FAILED)';
+      default:
+        return '';
     }
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4"
-      onClick={() => !ingestingId && onClose()}
-    >
-      <div
-        className="w-full max-w-lg rounded-2xl border border-zinc-800 bg-[#0b0b10] shadow-2xl overflow-hidden flex flex-col max-h-[82vh]"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between border-b border-zinc-800/80 px-5 py-4">
-          <div className="flex items-center gap-2.5">
-            <CloudDownload className="h-4 w-4 text-zinc-300" />
-            <h2 className="text-sm font-medium text-zinc-100">Tải nhạc từ YouTube</h2>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
+      <div className="relative w-full max-w-2xl rounded-xl border border-amber-500/30 bg-[#121316] p-6 text-amber-50 shadow-2xl">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-amber-500/20 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400">
+              <Sparkles className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold tracking-wider text-amber-400 uppercase font-mono">
+                Smart Cloud Ingest // GitHub Actions Pipeline
+              </h2>
+              <p className="text-xs text-amber-50/60">
+                Tìm kiếm bài hát hoặc dán URL YouTube — Tải & lưu trữ qua GitHub Actions
+              </p>
+            </div>
           </div>
           <button
             onClick={onClose}
-            disabled={!!ingestingId}
-            className="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800/80 transition-colors disabled:opacity-30"
+            className="rounded-lg p-2 text-amber-50/50 hover:bg-amber-500/10 hover:text-amber-400 transition"
           >
-            <X className="h-4 w-4" />
+            <X className="h-5 w-5" />
           </button>
         </div>
 
-        <div className="p-5 pb-3">
-          <form onSubmit={handleSearch} className="flex items-center gap-2">
-            <div className="relative flex-1">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-500" />
-              <input
-                type="text"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Tìm bài hát, nghệ sĩ hoặc dán link YouTube..."
-                disabled={isSearching || !!ingestingId}
-                className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-zinc-800 bg-zinc-900/60 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-zinc-600 transition-all"
-              />
-            </div>
-            <button
-              type="submit"
-              disabled={isSearching || !query.trim() || !!ingestingId}
-              className="px-4 py-2.5 rounded-xl bg-zinc-100 hover:bg-white text-zinc-950 text-xs font-medium transition-all disabled:opacity-40 flex items-center gap-1.5 shrink-0"
-            >
-              {isSearching ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <span>Tìm</span>}
-            </button>
-          </form>
+        {/* Search Input */}
+        <form onSubmit={handleSearch} className="mt-5 flex gap-2">
+          <div className="relative flex-1">
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Nhập tên bài hát, nghệ sĩ hoặc dán link YouTube (https://...)"
+              className="w-full rounded-lg border border-amber-500/30 bg-black/60 pl-10 pr-4 py-3 text-sm text-amber-50 placeholder-amber-50/30 focus:border-amber-400 focus:outline-none font-mono"
+            />
+            {isUrl(query) ? (
+              <Globe className="absolute left-3.5 top-3.5 h-4 w-4 text-emerald-400" />
+            ) : (
+              <Search className="absolute left-3.5 top-3.5 h-4 w-4 text-amber-400/60" />
+            )}
+          </div>
+          <button
+            type="submit"
+            disabled={searching || !!ingestingId}
+            className="flex items-center gap-2 rounded-lg bg-amber-500 px-5 py-3 text-xs font-bold uppercase tracking-wider text-black hover:bg-amber-400 disabled:opacity-50 transition font-mono"
+          >
+            {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Youtube className="h-4 w-4" />}
+            {isUrl(query) ? 'Kiểm tra Link' : 'Tìm kiếm'}
+          </button>
+        </form>
 
-          {ingestingId && (
-            <div className="mt-3 px-3.5 py-2.5 rounded-xl border border-zinc-800 bg-zinc-900/50">
-              <div className="flex items-center justify-between text-xs text-zinc-300 mb-1.5">
-                <span className="flex items-center gap-2">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin text-zinc-400" />
-                  Đang tải vào thư viện...
-                </span>
-                <span className="font-mono text-[11px] text-zinc-400">{elapsedSeconds}s</span>
-              </div>
-              <div className="w-full h-1 rounded-full bg-zinc-800 overflow-hidden">
-                <div
-                  className="h-full bg-zinc-200 transition-all duration-500 ease-out"
-                  style={{ width: `${Math.min(95, Math.max(12, elapsedSeconds * 8))}%` }}
-                />
-              </div>
-            </div>
-          )}
-
-          {successNotice && !ingestingId && (
-            <div className="mt-3 flex items-center justify-between gap-2 px-3.5 py-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 text-xs">
-              <span className="flex items-center gap-2 truncate">
-                <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
-                <span className="truncate">{successNotice}</span>
+        {/* Status Bar */}
+        {statusText && (
+          <div className="mt-4 flex flex-col gap-1.5 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-300 font-mono">
+            <div className="flex items-center justify-between">
+              <span className="inline-flex items-center gap-2 font-bold text-amber-400">
+                <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+                {getStatusBadgeLabel(taskStatus)}
               </span>
-              <span className="text-[10px] font-mono text-emerald-400/80 shrink-0">Có thể tải tiếp</span>
+              <span className="text-[10px] text-amber-200/70">GitHub Actions Worker</span>
             </div>
-          )}
+            <span className="text-amber-100/90">{statusText}</span>
+          </div>
+        )}
 
-          {error && !ingestingId && (
-            <div className="mt-3 flex items-center gap-2 px-3.5 py-2.5 rounded-xl border border-red-900/40 bg-red-950/20 text-red-300 text-xs">
-              <AlertCircle className="h-4 w-4 shrink-0" />
-              <span>{error}</span>
-            </div>
-          )}
-        </div>
+        {/* Error Bar */}
+        {errorMsg && (
+          <div className="mt-4 flex items-center gap-3 rounded-lg border border-red-500/40 bg-red-500/10 p-3 text-xs text-red-300 font-mono">
+            <AlertCircle className="h-4 w-4 shrink-0 text-red-400" />
+            <span>{errorMsg}</span>
+          </div>
+        )}
 
-        <div className="flex-1 overflow-y-auto px-5 pb-5 space-y-2">
+        {/* Results List */}
+        <div className="mt-5 max-h-80 overflow-y-auto space-y-2 pr-1">
           {results.map((item) => {
-            const existing = getExistingTrack(item);
-            const isCurrentIngesting = ingestingId === item.id;
+            const isIngesting = ingestingId === item.id;
+            const isDone = successId === item.id;
 
             return (
               <div
                 key={item.id}
-                className="flex items-center justify-between gap-3 p-2.5 rounded-xl border border-zinc-800/70 bg-zinc-900/30 hover:bg-zinc-900/70 transition-all"
+                className="flex items-center justify-between gap-3 rounded-lg border border-amber-500/15 bg-black/40 p-2.5 hover:border-amber-500/40 transition"
               >
-                <div className="flex items-center gap-3 min-w-0 flex-1">
+                <div className="flex items-center gap-3 min-w-0">
                   <img
                     src={item.thumbnail}
                     alt={item.title}
-                    className="h-11 w-11 shrink-0 rounded-lg object-cover bg-zinc-800 border border-zinc-800"
-                    crossOrigin="anonymous"
+                    className="h-12 w-16 rounded object-cover border border-amber-500/20 shrink-0"
                   />
-                  <div className="min-w-0 flex-1">
-                    <h3 className="text-xs font-medium text-zinc-100 truncate">{item.title}</h3>
-                    <div className="flex items-center gap-2 text-[11px] text-zinc-400 mt-0.5">
-                      <span className="truncate max-w-[170px]">{item.artist}</span>
-                      <span>•</span>
-                      <span className="flex items-center gap-1 font-mono text-[10px]">
-                        <Clock className="h-2.5 w-2.5" />
-                        {item.durationFormatted}
-                      </span>
-                    </div>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-amber-100">{item.title}</p>
+                    <p className="truncate text-xs text-amber-50/50">
+                      {item.artist} • <span className="font-mono">{formatTime(item.duration)}</span>
+                    </p>
                   </div>
                 </div>
 
-                <div className="shrink-0 flex items-center gap-1.5">
-                  {existing ? (
+                <button
+                  onClick={() => handleIngest(item)}
+                  disabled={!!ingestingId}
+                  className={`shrink-0 flex items-center gap-1.5 rounded-md px-3.5 py-2 text-xs font-mono font-bold uppercase tracking-wider transition ${
+                    isDone
+                      ? 'bg-emerald-500 text-black'
+                      : isIngesting
+                      ? 'bg-amber-500/30 text-amber-300 border border-amber-500/40'
+                      : 'bg-amber-500/15 text-amber-300 border border-amber-500/30 hover:bg-amber-500 hover:text-black'
+                  }`}
+                >
+                  {isDone ? (
                     <>
-                      <span className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-emerald-400 text-[11px] font-medium">
-                        <Check className="h-3 w-3" />
-                        <span>Đã thêm</span>
-                      </span>
-                      <button
-                        onClick={() => {
-                          triggerPlayTrack(existing);
-                          onClose();
-                        }}
-                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-zinc-700 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 hover:text-white text-[11px] transition-all"
-                        title="Phát bài này"
-                      >
-                        <Play className="h-3 w-3 fill-current" />
-                        <span>Phát</span>
-                      </button>
+                      <Check className="h-3.5 w-3.5" /> Đã Lưu
+                    </>
+                  ) : isIngesting ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      {taskStatus === 'queued' ? 'Đang chờ...' : 'Đang tải...'}
                     </>
                   ) : (
-                    <button
-                      onClick={() => handleIngest(item)}
-                      disabled={!!ingestingId}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-700 bg-zinc-800/90 hover:bg-zinc-700 text-zinc-200 hover:text-white text-xs transition-all disabled:opacity-40"
-                    >
-                      {isCurrentIngesting ? (
-                        <>
-                          <Loader2 className="h-3 w-3 animate-spin" />
-                          <span>Đang tải</span>
-                        </>
-                      ) : (
-                        <>
-                          <Plus className="h-3.5 w-3.5" />
-                          <span>Tải lên</span>
-                        </>
-                      )}
-                    </button>
+                    <>
+                      <Disc className="h-3.5 w-3.5" /> Nạp Cloud
+                    </>
                   )}
-                </div>
+                </button>
               </div>
             );
           })}
-
-          {!isSearching && results.length === 0 && !error && (
-            <div className="py-10 text-center text-xs text-zinc-500">
-              Nhập tên bài hát hoặc dán link YouTube để thêm vào thư viện.
-            </div>
-          )}
         </div>
       </div>
     </div>
   );
 }
-
-export default SmartIngestModal;

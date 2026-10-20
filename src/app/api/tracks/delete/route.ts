@@ -1,4 +1,4 @@
-﻿import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
@@ -78,6 +78,7 @@ export async function POST(req: NextRequest) {
 
     const targetFile = extractFilename(streamUrl);
 
+    // 1. Xóa khỏi file local data/catalog.json (nếu đang ở localhost)
     let localRemaining: any[] | null = null;
     try {
       const raw = await fs.readFile(CATALOG_PATH, 'utf-8');
@@ -88,6 +89,7 @@ export async function POST(req: NextRequest) {
       }
     } catch {}
 
+    // 2. Xóa khỏi GitHub Repository data/catalog.json
     if (GITHUB_TOKEN) {
       try {
         const contentUrl = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/data/catalog.json`;
@@ -109,10 +111,9 @@ export async function POST(req: NextRequest) {
             ? ghCatalog.filter((t: any) => !isSameTrack(t, id, title, targetFile))
             : [];
 
-          const finalToSave =
-            localRemaining !== null && ghRemaining.length === 0 && localRemaining.length > 0
-              ? localRemaining
-              : ghRemaining;
+          const finalToSave = localRemaining !== null && ghRemaining.length === 0 && localRemaining.length > 0
+            ? localRemaining
+            : ghRemaining;
 
           const updatedBase64 = Buffer.from(JSON.stringify(finalToSave, null, 2), 'utf-8').toString('base64');
 
@@ -131,6 +132,7 @@ export async function POST(req: NextRequest) {
             cache: 'no-store',
           });
         } else if (getRes.status === 404 && localRemaining !== null) {
+          // Khởi tạo file trên GitHub nếu chưa có
           const updatedBase64 = Buffer.from(JSON.stringify(localRemaining, null, 2), 'utf-8').toString('base64');
           await fetch(contentUrl, {
             method: 'PUT',
@@ -151,6 +153,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // 3. Xóa asset vật lý trên GitHub Release tracks-v1
     if (targetFile) {
       await deleteReleaseAsset(targetFile);
     }
