@@ -95,7 +95,8 @@ jobs:
                       break
 
               if client_id:
-                  q = f"{title} {artist if artist != \"Nghệ sĩ chưa rõ\" else \"\"}".strip()
+                  artist_clean = artist if artist and artist != "Nghệ sĩ chưa rõ" else ""
+                  q = f"{title} {artist_clean}".strip()
                   sc_search = f"https://api-v2.soundcloud.com/search/tracks?q={urllib.parse.quote(q)}&client_id={client_id}&limit=6"
                   sc_data = json.loads(urllib.request.urlopen(sc_search, timeout=10).read().decode("utf-8"))
                   for item in sc_data.get("collection", []):
@@ -103,9 +104,8 @@ jobs:
                           continue
                       for tr in item.get("media", {}).get("transcodings", []):
                           if tr.get("format", {}).get("protocol") == "progressive" and tr.get("url"):
-                              st_res = json.loads(
-                                  urllib.request.urlopen(f"{tr[\"url\"]}?client_id={client_id}", timeout=10).read().decode("utf-8")
-                              )
+                              tr_url = tr.get("url", "")
+                              st_res = json.loads(urllib.request.urlopen(f"{tr_url}?client_id={client_id}", timeout=10).read().decode("utf-8"))
                               if st_res.get("url"):
                                   candidate = os.path.join("output", f"{base_slug}.mp3")
                                   urllib.request.urlretrieve(st_res["url"], candidate)
