@@ -46,7 +46,6 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
   const [errorMsg, setErrorMsg] = useState('');
   const [successId, setSuccessId] = useState<string | null>(null);
 
-  const { setLibrary, library, setCurrentTrack, setIsPlaying } = usePlayerStore();
   const abortPollRef = useRef<boolean>(false);
 
   useEffect(() => {
@@ -109,6 +108,24 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
   };
 
   const syncConfirmedTrackToStore = async (confirmedTrack?: Track) => {
+    if (!confirmedTrack) return;
+
+    // 1. NGAY LẬP TỨC PHÁT BÀI VỪA TẢI XONG (Không để bài cũ đè)
+    const store = usePlayerStore.getState();
+    const existingLib = store.library || [];
+    const existingQueue = store.queue || [];
+    const updatedLib = [confirmedTrack, ...existingLib.filter((t) => t.id !== confirmedTrack.id)];
+    const updatedQueue = [confirmedTrack, ...existingQueue.filter((t) => t.id !== confirmedTrack.id)];
+
+    store.setLibrary(updatedLib);
+    store.setCurrentTrack(confirmedTrack);
+    store.setIsPlaying(true);
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('aurasound:track-added', { detail: confirmedTrack }));
+    }
+
+    // 2. Đồng bộ ngầm danh mục mới nhất từ API mà vẫn giữ bài mới tải đang phát
     try {
       const syncRes = await fetch(`/api/tracks/search?t=${Date.now()}`, { cache: 'no-store' });
       const syncData = await syncRes.json();
@@ -119,34 +136,15 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
         : [];
 
       if (tracksList.length > 0) {
-        setLibrary(tracksList);
-        const target = confirmedTrack
-          ? tracksList.find((t: Track) => t.id === confirmedTrack.id) || confirmedTrack
-          : tracksList[0];
-
-        if (target) {
-          setCurrentTrack(target);
-          setIsPlaying(true);
-          if (typeof window !== 'undefined') {
-            window.dispatchEvent(new CustomEvent('aurasound:track-added', { detail: target }));
-          }
-        }
-        return;
+        const merged = [
+          confirmedTrack,
+          ...tracksList.filter((t: Track) => t.id !== confirmedTrack.id),
+        ];
+        usePlayerStore.getState().setLibrary(merged);
+        usePlayerStore.getState().setCurrentTrack(confirmedTrack);
+        usePlayerStore.getState().setIsPlaying(true);
       }
     } catch {}
-
-    if (confirmedTrack) {
-      const exists = library.some((t) => t.id === confirmedTrack.id);
-      const updated = exists
-        ? library.map((t) => (t.id === confirmedTrack.id ? confirmedTrack : t))
-        : [confirmedTrack, ...library];
-      setLibrary(updated);
-      setCurrentTrack(confirmedTrack);
-      setIsPlaying(true);
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('aurasound:track-added', { detail: confirmedTrack }));
-      }
-    }
   };
 
   const handleIngest = async (item: YouTubeResult) => {
@@ -190,7 +188,7 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
         throw new Error(data.error || 'Khởi tạo tiến trình tải nhạc thất bại.');
       }
 
-      // Case 1: Bài hát đã tồn tại sẵn trong kho
+      // Case 1: Bài hát đã tồn tại sẵn trong kho -> phát ngay lập tức
       if (data.status === 'completed' && data.track && (data.track.streamUrl || data.track.cdnUrl)) {
         setTaskStatus('completed');
         setStatusText(
@@ -214,7 +212,7 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
       const videoId = data.videoId || itemKey;
       const startedAt = data.startedAt || Date.now();
 
-      const maxAttempts = 45; // 45 * 4s = 180s
+      const maxAttempts = 60; // 60 * 2s = 120s max wait (tăng tốc độ kiểm tra gấp đôi)
       let confirmedTrack: Track | null = null;
 
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -222,13 +220,13 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
           throw new Error('Đã hủy theo dõi tác vụ tải nhạc.');
         }
 
-        await new Promise((r) => setTimeout(r, 4000));
+        await new Promise((r) => setTimeout(r, 2000));
 
         if (abortPollRef.current) {
           throw new Error('Đã hủy theo dõi tác vụ tải nhạc.');
         }
 
-        setElapsedSec(attempt * 4);
+        setElapsedSec(attempt * 2);
 
         const statusRes = await fetch('/api/tracks/ingest', {
           method: 'POST',
@@ -273,12 +271,12 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
 
       if (!confirmedTrack) {
         throw new Error(
-          'Quá thời gian chờ xác nhận từ GitHub Actions (180s). Vui lòng kiểm tra tab Actions trên GitHub hoặc thử lại.'
+          'Quá thời gian chờ xác nhận từ GitHub Actions (120s). Vui lòng kiểm tra tab Actions trên GitHub hoặc thử lại.'
         );
       }
 
       setTaskStatus('completed');
-      setStatusText('Hoàn tất! File nhạc đã được lưu vào GitHub Release và đồng bộ về thư viện.');
+      setStatusText('Hoàn tất! Đang mở phát bài hát mới tải...');
       setSuccessId(itemKey);
       await syncConfirmedTrackToStore(confirmedTrack);
 
@@ -287,7 +285,7 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
         setStatusText('');
         setTaskStatus('idle');
         onClose();
-      }, 1400);
+      }, 1200);
     } catch (err: any) {
       setTaskStatus('failed');
       setErrorMsg(err.message || 'Có lỗi xảy ra trong quá trình tải nhạc.');
@@ -331,7 +329,7 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
           </div>
           <button
             onClick={onClose}
-            className="rounded-xl border border-transparent p-2 text-zinc-400 transition hover:border-white/10 hover:bg-white/[0.06] hover:text-white"
+            className="rounded-xl border border-transparent p-2 text-zinc-400 transition hover:border-white/10 hover:bg-white/[0.06] hover:text-white cursor-pointer"
             title="Đóng"
           >
             <X className="h-5 w-5" />
@@ -393,7 +391,7 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
             <p className="mt-1.5 text-xs text-zinc-300">{statusText}</p>
             <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
               <div
-                className={`h-full rounded-full bg-gradient-to-r from-neon-cyan via-sky-400 to-emerald-400 transition-all duration-500 ${
+                className={`h-full rounded-full bg-gradient-to-r from-neon-cyan via-sky-400 to-emerald-400 transition-all duration-300 ${
                   taskStatus === 'queued'
                     ? 'w-1/3 animate-pulse'
                     : taskStatus === 'downloading'

@@ -247,19 +247,26 @@ export const usePlayerStore = create<PlayerState>()(
             nextQueue = [...newTracks, ...syncedExisting];
           }
 
-          const stillHasCurrent = state.currentTrack
-            ? validTracks.find((t) => t.id === state.currentTrack?.id) || null
-            : null;
-          const nextCurrent = stillHasCurrent || validTracks[0] || null;
+          const matchedCurrent = state.currentTrack
+            ? validTracks.find((t) => t.id === state.currentTrack?.id) || state.currentTrack
+            : validTracks[0] || null;
+
+          let finalLibrary = validTracks;
+          if (matchedCurrent && !finalLibrary.some((t) => t.id === matchedCurrent.id)) {
+            finalLibrary = [matchedCurrent, ...finalLibrary];
+          }
+          if (matchedCurrent && !nextQueue.some((t) => t.id === matchedCurrent.id)) {
+            nextQueue = [matchedCurrent, ...nextQueue];
+          }
 
           return {
-            library: validTracks,
+            library: finalLibrary,
             queue: nextQueue,
             queueItems: nextQueue,
             internalQueue: nextQueue,
-            currentTrack: nextCurrent,
-            nextTrackPreview: computeNextPreview(nextQueue, nextCurrent),
-            currentQueueId: nextCurrent ? nextCurrent.id : null,
+            currentTrack: matchedCurrent,
+            nextTrackPreview: computeNextPreview(nextQueue, matchedCurrent),
+            currentQueueId: matchedCurrent ? matchedCurrent.id : null,
           };
         }),
 

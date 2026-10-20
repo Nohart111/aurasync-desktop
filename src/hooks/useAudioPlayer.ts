@@ -66,7 +66,11 @@ export function useAudioPlayer() {
       syncCatalogToStore();
     }
 
-    const onTrackAdded = () => {
+    const onTrackAdded = (e: Event) => {
+      const added = (e as CustomEvent)?.detail;
+      if (added && added.id) {
+        usePlayerStore.getState().setCurrentTrack(added);
+      }
       syncCatalogToStore();
     };
     window.addEventListener('aurasound:track-added', onTrackAdded);

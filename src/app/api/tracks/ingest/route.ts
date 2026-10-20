@@ -307,7 +307,6 @@ async function dispatchGitHubWorkflow(inputs: {
     return { ok: false, error: 'Chưa cấu hình biến môi trường GITHUB_TOKEN trên máy chủ.' };
   }
 
-  const workflowUrl = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/actions/workflows/ingest.yml/dispatches`;
   const headers = {
     Authorization: `Bearer ${GITHUB_TOKEN}`,
     Accept: 'application/vnd.github+json',
@@ -315,11 +314,48 @@ async function dispatchGitHubWorkflow(inputs: {
   };
 
   try {
+    // 1. Dò tìm tên nhánh mặc định & danh sách workflow
+    let targetBranch = 'main';
+    let workflowTarget = 'ingest.yml';
+
+    try {
+      const repoRes = await fetch(`https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}`, {
+        headers,
+        cache: 'no-store',
+      });
+      if (repoRes.ok) {
+        const repoData = await repoRes.json();
+        if (repoData?.default_branch) targetBranch = repoData.default_branch;
+      }
+
+      const wfRes = await fetch(
+        `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/actions/workflows`,
+        { headers, cache: 'no-store' }
+      );
+      if (wfRes.ok) {
+        const wfData = await wfRes.json();
+        const workflows: any[] = wfData?.workflows || [];
+        const found = workflows.find(
+          (w) =>
+            w.path?.endsWith('ingest.yml') ||
+            w.path?.endsWith('ingest.yaml') ||
+            w.name?.toLowerCase().includes('ingest') ||
+            w.name?.toLowerCase().includes('aurasound')
+        );
+        if (found) {
+          workflowTarget = String(found.id || found.path?.split('/').pop() || 'ingest.yml');
+        }
+      }
+    } catch {}
+
+    const workflowUrl = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/actions/workflows/${workflowTarget}/dispatches`;
+
+    // 2. Kích hoạt workflow với nhánh chính
     const res = await fetch(workflowUrl, {
       method: 'POST',
       headers,
       body: JSON.stringify({
-        ref: 'main',
+        ref: targetBranch,
         inputs,
       }),
       cache: 'no-store',
@@ -329,13 +365,39 @@ async function dispatchGitHubWorkflow(inputs: {
       return { ok: true };
     }
 
-    // Nếu ingest.yml trên repo chưa khai báo input request_id/video_id (lỗi 422), tự động fallback về 5 input cơ bản
+    // Nếu trả về lỗi 422
     if (res.status === 422) {
+      const errTxt = await res.text();
+
+      // Nếu lỗi do trigger workflow_dispatch chưa nhận diện trên nhánh hiện tại, thử lại với nhánh đối ứng (master / main)
+      if (errTxt.includes('workflow_dispatch')) {
+        const altBranch = targetBranch === 'main' ? 'master' : 'main';
+        const altRes = await fetch(workflowUrl, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            ref: altBranch,
+            inputs,
+          }),
+          cache: 'no-store',
+        });
+        if (altRes.status === 204 || altRes.ok) {
+          return { ok: true };
+        }
+
+        return {
+          ok: false,
+          error:
+            'GitHub Actions chưa nhận diện được trigger workflow_dispatch trên nhánh chính. Vui lòng kiểm tra lại file .github/workflows/ingest.yml trên nhánh main của repository Nohart111/aurasound-music-data.',
+        };
+      }
+
+      // Thử fallback sang 5 inputs cơ bản nếu là lỗi input mismatch
       const fallbackRes = await fetch(workflowUrl, {
         method: 'POST',
         headers,
         body: JSON.stringify({
-          ref: 'main',
+          ref: targetBranch,
           inputs: {
             video_url: inputs.video_url,
             title: inputs.title,
@@ -349,7 +411,7 @@ async function dispatchGitHubWorkflow(inputs: {
       if (fallbackRes.status === 204 || fallbackRes.ok) {
         return { ok: true };
       }
-      const errTxt = await fallbackRes.text();
+
       return { ok: false, error: `GitHub Actions từ chối yêu cầu (422): ${errTxt}` };
     }
 
@@ -400,7 +462,6 @@ export async function POST(req: NextRequest) {
     }
 
     // 2. KÍCH HOẠT TÁC VỤ TẢI NHẠC QUA GITHUB ACTIONS
-    // Chấp nhận cả payload dạng { action: 'ingest', track: {...} } lẫn { action: 'ingest', url, title, ... }
     if (action === 'ingest') {
       const trackInput = track && typeof track === 'object' ? track : body;
       const rawUrl = String(trackInput.url || trackInput.videoUrl || body.url || body.query || '').trim();
@@ -504,7 +565,6 @@ export async function POST(req: NextRequest) {
 
     // 3. KIỂM TRA TRẠNG THÁI TÁC VỤ (POLLING TỪ FRONTEND)
     if (action === 'status') {
-      // Bước A: Kiểm tra xem bài hát đã thực sự xuất hiện trong catalog.json trên GitHub chưa
       const catalog = await fetchGitHubCatalog();
       const matchedTrack = findMatchingTrackInCatalog(catalog, requestId, pollVideoId, pollTitle);
 
@@ -519,7 +579,6 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      // Bước B: Kiểm tra trạng thái thực tế của GitHub Actions workflow run
       try {
         const headers: Record<string, string> = {
           Accept: 'application/vnd.github+json',
