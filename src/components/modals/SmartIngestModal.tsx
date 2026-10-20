@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { X, Search, Globe, Disc, Check, AlertCircle, Loader2, Sparkles } from 'lucide-react';
 import { usePlayerStore } from '@/store/usePlayerStore';
-import type { Track } from '@/core/types/audio';
+import type { Track } from '@/store/usePlayerStore';
 
 function YoutubeIcon({ className = 'h-4 w-4' }: { className?: string }) {
   return (
@@ -416,5 +416,4 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
   );
 }
 
-// Export both named and default to satisfy both `import SmartIngestModal from ...` and `import { SmartIngestModal } from ...`
 export default SmartIngestModal;

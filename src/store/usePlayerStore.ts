@@ -1,8 +1,21 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { Track } from '@/core/types/audio';
 
 export type { Track };
+export interface Track {
+  id: string;
+  title: string;
+  artist: string;
+  album?: string;
+  duration?: number;
+  bpm?: number;
+  streamUrl: string;
+  cdnUrl?: string;
+  coverUrl?: string;
+  thumbnail?: string;
+  dominantColors?: [string, string];
+  [key: string]: any;
+}
 
 export interface QueueItem {
   queueId: string;
@@ -47,7 +60,7 @@ function makeQueueItems(tracks: Track[], prefix = 'q'): QueueItem[] {
   }));
 }
 
-interface PlayerState {
+export interface PlayerState {
   currentTrack: Track | null;
   currentQueueId: string | null;
   isPlaying: boolean;
@@ -68,6 +81,7 @@ interface PlayerState {
   // Actions
   setCurrentTrack: (track: Track) => void;
   setIsPlaying: (playing: boolean) => void;
+  setPlaying: (playing: boolean) => void; // Alias for useRoomSync.ts and legacy stores
   setVolume: (vol: number) => void;
   setProgress: (prog: number) => void;
   setDuration: (dur: number) => void;
@@ -77,12 +91,17 @@ interface PlayerState {
   setLibrary: (tracks: Track[]) => void;
   setQueue: (tracks: Track[]) => void;
   addToQueue: (track: Track) => void;
+  enqueueTrack: (track: Track) => void; // Alias for DoublyLinkedQueue / useRoomSync
+  playNextInQueue: (track: Track) => void;
   removeFromQueue: (idOrQueueId: string) => void;
+  removeTrackFromQueue: (trackId: string) => void; // Alias
   clearQueue: () => void;
 
   playNext: () => void;
   playPrevious: () => void;
   advanceNext: (reason?: 'ended' | 'manual' | 'error') => void;
+  advancePrev: () => void; // Alias
+  jumpToTrack: (trackId: string) => void; // Required for useRoomSync.ts
   playFromQueueItem: (queueId: string) => void;
 }
 
@@ -131,6 +150,7 @@ export const usePlayerStore = create<PlayerState>()(
         }),
 
       setIsPlaying: (playing) => set({ isPlaying: playing }),
+      setPlaying: (playing) => set({ isPlaying: playing }),
       setVolume: (vol) => set({ volume: Math.max(0, Math.min(1, vol)) }),
       setProgress: (prog) => set({ progress: prog }),
       setDuration: (dur) => set({ duration: dur }),
@@ -144,7 +164,6 @@ export const usePlayerStore = create<PlayerState>()(
       setLibrary: (tracks) =>
         set((state) => {
           const validTracks = tracks.filter((t) => Boolean(t && t.id && t.streamUrl));
-          // Keep current queue if valid, filtering out deleted tracks and syncing updated metadata
           let nextQueue: Track[];
           if (state.queue.length === 0) {
             nextQueue = validTracks;
@@ -210,6 +229,33 @@ export const usePlayerStore = create<PlayerState>()(
           };
         }),
 
+      enqueueTrack: (track) => {
+        get().addToQueue(track);
+      },
+
+      playNextInQueue: (track) => {
+        if (!track || !track.id) return;
+        const { queue, queueItems, currentTrack, currentQueueId, playNonce } = get();
+        const filtered = queue.filter((t) => t.id !== track.id);
+        let insertIdx = 0;
+        if (currentTrack) {
+          const curr = filtered.findIndex((t) => t.id === currentTrack.id);
+          insertIdx = curr >= 0 ? curr + 1 : 0;
+        }
+        filtered.splice(insertIdx, 0, track);
+        const nextItems = makeQueueItems(filtered, 'next');
+        const matchedItem = currentTrack
+          ? nextItems.find((i) => i.track.id === currentTrack.id) || null
+          : null;
+
+        set({
+          queue: filtered,
+          queueItems: nextItems,
+          internalQueue: nextItems,
+          currentQueueId: matchedItem ? matchedItem.queueId : currentQueueId,
+        });
+      },
+
       removeFromQueue: (idOrQueueId) =>
         set((s) => {
           const nextItems = s.queueItems.filter(
@@ -248,6 +294,10 @@ export const usePlayerStore = create<PlayerState>()(
           };
         }),
 
+      removeTrackFromQueue: (trackId) => {
+        get().removeFromQueue(trackId);
+      },
+
       clearQueue: () =>
         set({
           queue: [],
@@ -271,17 +321,22 @@ export const usePlayerStore = create<PlayerState>()(
         }
       },
 
-      /**
-       * Core transition logic for both natural track end ('ended'), manual Next button ('manual'),
-       * and stream error recovery ('error'):
-       * 1. Filters valid playable tracks from the active queue (or falls back to library).
-       * 2. If repeatMode === 'one' and reason === 'ended', replays the current track cleanly via playNonce.
-       * 3. If there are remaining tracks in the current queue order (currIdx < list.length - 1):
-       *    advances sequentially to `list[currIdx + 1]`.
-       * 4. When reaching the end of the playlist/queue (currIdx >= list.length - 1):
-       *    automatically shuffles all valid tracks (avoiding repeating the just-finished track first)
-       *    and restarts playback from index 0 of the newly shuffled queue.
-       */
+      jumpToTrack: (trackId: string) => {
+        const { queue, library, queueItems, playNonce } = get();
+        const list = queue.length > 0 ? queue : library;
+        const target = list.find((t) => t.id === trackId);
+        if (target) {
+          const matchedItem = queueItems.find((i) => i.track.id === target.id) || null;
+          set({
+            currentTrack: target,
+            currentQueueId: matchedItem ? matchedItem.queueId : null,
+            progress: 0,
+            isPlaying: true,
+            playNonce: playNonce + 1,
+          });
+        }
+      },
+
       advanceNext: (reason = 'ended') => {
         const {
           queue,
@@ -331,7 +386,7 @@ export const usePlayerStore = create<PlayerState>()(
           return;
         }
 
-        // Resolve exact current position in queue (checking currentQueueId first, then currentTrack.id)
+        // Resolve exact current position in queue
         let currIdx = -1;
         if (currentQueueId && queueItems.length === validList.length) {
           currIdx = queueItems.findIndex((item) => item.queueId === currentQueueId);
@@ -398,6 +453,10 @@ export const usePlayerStore = create<PlayerState>()(
           isPlaying: true,
           playNonce: playNonce + 1,
         });
+      },
+
+      advancePrev: () => {
+        get().playPrevious();
       },
 
       playNext: () => {
