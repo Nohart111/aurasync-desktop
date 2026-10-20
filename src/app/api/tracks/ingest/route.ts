@@ -23,46 +23,173 @@ function slugifyTitle(text: string): string {
     .slice(0, 50);
 }
 
-function cleanTrackMetadata(rawTitle: string, rawArtist?: string): { title: string; artist: string } {
-  let title = (rawTitle || 'Track').replace(/\.[a-zA-Z0-9]{2,4}$/, '').trim();
+const KNOWN_DISTRIBUTORS = [
+  'pops music',
+  'pops',
+  'pops kids',
+  'warner music',
+  'sony music',
+  'universal music',
+  'metub',
+  'yeah1',
+  'gala nhac viet',
+  'vie channel',
+  'vietalent',
+  'dien quan',
+  'nhacpro',
+  'zing mp3',
+  'nhaccuatui',
+  'nam viet',
+  'bh media',
+  'acv music',
+  'cty',
+  'entertainment',
+];
 
-  title = title
-    .replace(/\[\s*(?:OFFICIAL\s*)?(?:MUSIC\s*)?(?:VIDEO|MV|AUDIO|LYRIC|HD|4K|VISUALIZER|PERFORMANCE)\s*\]/gi, '')
-    .replace(/\(\s*(?:OFFICIAL\s*)?(?:MUSIC\s*)?(?:VIDEO|MV|AUDIO|LYRICS?|HD|4K|VISUALIZER|PERFORMANCE)\s*\)/gi, '')
-    .replace(/\|\s*(?:OFFICIAL\s*)?(?:MUSIC\s*)?(?:VIDEO|MV|AUDIO|LYRICS?)\s*$/gi, '')
-    .replace(/-\s*(?:OFFICIAL\s*)?(?:MUSIC\s*)?(?:VIDEO|MV|AUDIO|LYRICS?)\s*$/gi, '')
-    .replace(/\b(?:OFFICIAL\s+MV|OFFICIAL\s+MUSIC\s+VIDEO|OFFICIAL\s+VIDEO)\b/gi, '')
+function isDistributor(channel: string): boolean {
+  const s = slugifyTitle(channel);
+  return KNOWN_DISTRIBUTORS.some((d) => s.includes(slugifyTitle(d)));
+}
+
+function cleanChannelName(channel: string): string {
+  if (!channel) return '';
+  return channel
+    .replace(
+      /\b(official(?:\s+(?:channel|mv|music|audio|artist))?|vevo|-?\s*topic|entertainment|network|media|music|vietnam|channel|tv)\b/gi,
+      ''
+    )
+    .replace(/[-_.\s|/]+$/, '')
+    .replace(/^[-_.\s|/]+/, '')
     .trim();
+}
 
-  let artist = rawArtist || 'Nghệ sĩ chưa rõ';
-
-  if (title.includes(' - ')) {
-    const parts = title.split(' - ');
-    if (parts.length >= 2) {
-      artist = parts[0].trim();
-      title = parts.slice(1).join(' - ').trim();
-    }
-  } else if (title.includes(' | ')) {
-    const parts = title.split(' | ');
-    if (parts.length >= 2) {
-      artist = parts[0].trim();
-      title = parts.slice(1).join(' | ').trim();
-    }
-  }
-
-  title = title.replace(/[-_.\s]+$/, '').trim();
-  artist = artist.replace(/[-_.\s]+$/, '').trim();
-
-  if (/^[a-z0-9]+(-[a-z0-9]+)+$/i.test(title)) {
-    title = title
-      .split('-')
-      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+function toTitleCaseIfNeeded(str: string): string {
+  if (!str) return '';
+  const letters = str.replace(/[^a-zA-ZÀ-ỹ]/g, '');
+  if (letters.length > 5 && letters === letters.toUpperCase()) {
+    return str
+      .toLowerCase()
+      .split(' ')
+      .map((w) => {
+        if (w.includes('-')) {
+          return w
+            .split('-')
+            .map((part) =>
+              part.length <= 2
+                ? part.toUpperCase()
+                : part.charAt(0).toUpperCase() + part.slice(1).toLowerCase()
+            )
+            .join('-');
+        }
+        return w.charAt(0).toUpperCase() + w.slice(1);
+      })
       .join(' ');
   }
+  return str;
+}
+
+function cleanTrackMetadata(rawTitle: string, rawArtist?: string): { title: string; artist: string } {
+  let text = (rawTitle || 'Track').replace(/\.[a-zA-Z0-9]{2,4}$/, '').trim();
+
+  // 1. Loại bỏ toàn bộ các thẻ chú thích rác phổ biến trên YouTube
+  const junkPatterns = [
+    /\[\s*(?:official\s*)?(?:music\s*)?(?:video|mv|m\/v|audio|lyric|lyrics?|visualizer|performance|teaser|trailer|hd|4k|full\s*hd|audio\s*lyrics?|audio\s*official)\s*\]/gi,
+    /\(\s*(?:official\s*)?(?:music\s*)?(?:video|mv|m\/v|audio|lyric|lyrics?|visualizer|performance|teaser|trailer|hd|4k|full\s*hd|audio\s*lyrics?|audio\s*official)\s*\)/gi,
+    /\[\s*(?:bản\s*(?:gốc|chuẩn|chính\s*thức|đầy\s*đủ|audio|mv|official))\s*\]/gi,
+    /\(\s*(?:bản\s*(?:gốc|chuẩn|chính\s*thức|đầy\s*đủ|audio|mv|official))\s*\)/gi,
+    /\[\s*(?:nhạc\s*(?:trẻ|phim|chế)?\s*(?:hay\s*nhất|mới\s*nhất|hot\s*tiktok)?)\s*\]/gi,
+    /\(\s*(?:nhạc\s*(?:trẻ|phim|chế)?\s*(?:hay\s*nhất|mới\s*nhất|hot\s*tiktok)?)\s*\)/gi,
+    /\[\s*(?:ost|nhạc\s*phim)[^\]]*\]/gi,
+    /\(\s*(?:ost|nhạc\s*phim)[^\)]*\)/gi,
+    /\[\s*(?:prod\.?\s*by|sáng\s*tác:?|nhạc:?|lời:?)[^\]]*\]/gi,
+    /\(\s*(?:prod\.?\s*by|sáng\s*tác:?|nhạc:?|lời:?)[^\)]*\)/gi,
+    /\|\s*(?:official\s*)?(?:music\s*)?(?:video|mv|m\/v|audio|lyrics?|hd|4k)[^|]*$/gi,
+    /-\s*(?:official\s*)?(?:music\s*)?(?:video|mv|m\/v|audio|lyrics?|hd|4k)[^-]*$/gi,
+    /\b(?:official\s+mv|official\s+music\s+video|official\s+video|official\s+audio|lyrics?\s+video)\b/gi,
+  ];
+
+  for (const pat of junkPatterns) {
+    text = text.replace(pat, ' ');
+  }
+  text = text.replace(/\s+/g, ' ').trim();
+
+  const cleanChannel = cleanChannelName(rawArtist || '');
+  const channelSlug = slugifyTitle(cleanChannel);
+  const distributor = isDistributor(rawArtist || '');
+
+  let defaultArtist = distributor ? 'Nghệ sĩ chưa rõ' : cleanChannel || rawArtist || 'Nghệ sĩ chưa rõ';
+  let candidateTitle = text;
+  let candidateArtist = defaultArtist;
+
+  // 2. Tách theo dấu phân cách phổ biến: " - " hoặc " | "
+  let separator = '';
+  if (text.includes(' - ')) separator = ' - ';
+  else if (text.includes(' | ')) separator = ' | ';
+
+  if (separator) {
+    const rawParts = text.split(separator).map((p) => p.trim()).filter(Boolean);
+    const parts = rawParts.filter(
+      (p) => !/^(official\s*(mv|m\/v|video|audio)?|hd|4k|lyrics?)$/i.test(p)
+    );
+
+    if (parts.length >= 2) {
+      const part0 = parts[0];
+      const part1 = parts.slice(1).join(' - ');
+      const slug0 = slugifyTitle(part0);
+      const slug1 = slugifyTitle(part1);
+
+      // Quy tắc A: Vế 0 trùng với tên Channel (ví dụ: "Hà Anh Tuấn - Tháng Tư Là Lời Nói Dối Của Em")
+      if (channelSlug && (slug0 === channelSlug || channelSlug.includes(slug0) || slug0.includes(channelSlug))) {
+        candidateArtist = part0;
+        candidateTitle = part1;
+      }
+      // Quy tắc B: Vế 1 trùng với tên Channel (ví dụ: "Cho Tôi Đi Theo - Ngọt")
+      else if (channelSlug && (slug1 === channelSlug || channelSlug.includes(slug1) || slug1.includes(channelSlug))) {
+        candidateTitle = part0;
+        candidateArtist = part1;
+      }
+      // Quy tắc C: Kênh là Distributor hoặc cả 2 vế không trùng tên kênh
+      else {
+        const hasArtistCollab0 = /\b(ft\.?|feat\.?|x|&)\b/i.test(part0);
+        const hasArtistCollab1 = /\b(ft\.?|feat\.?|x|&)\b/i.test(part1);
+
+        if (hasArtistCollab0 && !hasArtistCollab1) {
+          candidateArtist = part0;
+          candidateTitle = part1;
+        } else if (hasArtistCollab1 && !hasArtistCollab0) {
+          candidateTitle = part0;
+          candidateArtist = part1;
+        } else if (distributor) {
+          if (separator === ' | ') {
+            candidateTitle = part0;
+            candidateArtist = part1;
+          } else {
+            candidateArtist = part0;
+            candidateTitle = part1;
+          }
+        } else {
+          candidateArtist = part0;
+          candidateTitle = part1;
+        }
+      }
+    } else if (parts.length === 1) {
+      candidateTitle = parts[0];
+    }
+  }
+
+  // 3. Dọn dẹp ký tự thừa và chuẩn hóa viết hoa
+  candidateTitle = candidateTitle.replace(/^["'\s\-_|/]+|["'\s\-_|/]+$/g, '').trim();
+  candidateArtist = candidateArtist.replace(/^["'\s\-_|/]+|["'\s\-_|/]+$/g, '').trim();
+
+  candidateTitle = candidateTitle.replace(/\s*[-_|/]\s*(?:official|mv|m\/v|audio|lyric|lyrics?)$/i, '').trim();
+  candidateArtist = candidateArtist.replace(/\s*[-_|/]\s*(?:official|mv|m\/v|audio|lyric|lyrics?)$/i, '').trim();
+
+  candidateTitle = toTitleCaseIfNeeded(candidateTitle);
+  candidateArtist = toTitleCaseIfNeeded(candidateArtist);
 
   return {
-    title: title || 'Track',
-    artist: artist || 'Nghệ sĩ chưa rõ',
+    title: candidateTitle || 'Track',
+    artist: candidateArtist || defaultArtist || 'Nghệ sĩ chưa rõ',
   };
 }
 
