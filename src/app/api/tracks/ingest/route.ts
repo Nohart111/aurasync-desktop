@@ -12,7 +12,7 @@ const CATALOG_PATH = path.join(process.cwd(), 'data', 'catalog.json');
 const recentDispatches = new Map<string, { requestId: string; startedAt: number }>();
 
 function cleanTrackMetadata(rawTitle: string, rawArtist?: string): { title: string; artist: string } {
-  let title = rawTitle.replace(/\.[a-zA-Z0-9]{2,4}$/, '').trim();
+  let title = (rawTitle || 'Track').replace(/\.[a-zA-Z0-9]{2,4}$/, '').trim();
 
   title = title
     .replace(/\[\s*(?:OFFICIAL\s*)?(?:MUSIC\s*)?(?:VIDEO|MV|AUDIO|LYRIC|HD|4K|VISUALIZER|PERFORMANCE)\s*\]/gi, '')
@@ -71,8 +71,11 @@ function formatSeconds(sec: number): string {
 }
 
 function extractYouTubeVideoId(input: string): string | null {
+  if (!input) return null;
   const match = input.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|v\/|shorts\/))([a-zA-Z0-9_-]{11})/);
-  return match ? match[1] : null;
+  if (match) return match[1];
+  if (/^[a-zA-Z0-9_-]{11}$/.test(input.trim())) return input.trim();
+  return null;
 }
 
 function collectVideoRenderers(node: any, out: any[] = []) {
@@ -112,27 +115,48 @@ function normalizeTrackStreamUrl(t: any) {
 }
 
 async function fetchGitHubCatalog(): Promise<any[]> {
-  if (!GITHUB_TOKEN) return [];
-  try {
-    const res = await fetch(
-      `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/data/catalog.json`,
-      {
-        headers: {
-          Authorization: `Bearer ${GITHUB_TOKEN}`,
-          Accept: 'application/vnd.github+json',
-        },
-        cache: 'no-store',
-      }
-    );
-    if (!res.ok) return [];
-    const data = await res.json();
-    if (!data?.content) return [];
-    const decoded = Buffer.from(data.content, 'base64').toString('utf-8');
-    const parsed = JSON.parse(decoded);
-    return Array.isArray(parsed) ? parsed.filter((t) => t && (t.streamUrl || t.cdnUrl)).map(normalizeTrackStreamUrl) : [];
-  } catch {
-    return [];
+  const apiUrl = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/data/catalog.json`;
+  const headers: Record<string, string> = {
+    Accept: 'application/vnd.github+json',
+  };
+  if (GITHUB_TOKEN) {
+    headers['Authorization'] = `Bearer ${GITHUB_TOKEN}`;
   }
+
+  try {
+    let res = await fetch(apiUrl, { headers, cache: 'no-store' });
+    if (!res.ok && GITHUB_TOKEN) {
+      res = await fetch(apiUrl, {
+        headers: { Accept: 'application/vnd.github+json' },
+        cache: 'no-store',
+      });
+    }
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.content) {
+        const decoded = Buffer.from(data.content, 'base64').toString('utf-8');
+        const parsed = JSON.parse(decoded);
+        if (Array.isArray(parsed)) {
+          return parsed.filter((t) => t && (t.streamUrl || t.cdnUrl)).map(normalizeTrackStreamUrl);
+        }
+      }
+    }
+  } catch {}
+
+  try {
+    const rawRes = await fetch(
+      `https://raw.githubusercontent.com/${GITHUB_OWNER}/${GITHUB_REPO}/main/data/catalog.json?t=${Date.now()}`,
+      { cache: 'no-store' }
+    );
+    if (rawRes.ok) {
+      const parsed = await rawRes.json();
+      if (Array.isArray(parsed)) {
+        return parsed.filter((t) => t && (t.streamUrl || t.cdnUrl)).map(normalizeTrackStreamUrl);
+      }
+    }
+  } catch {}
+
+  return [];
 }
 
 async function searchYouTube(query: string) {
@@ -291,7 +315,6 @@ async function dispatchGitHubWorkflow(inputs: {
   };
 
   try {
-    // Thử gửi với đầy đủ request_id & video_id
     const res = await fetch(workflowUrl, {
       method: 'POST',
       headers,
@@ -376,19 +399,42 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ results });
     }
 
-    // 2. KÍCH HOẠT TÁC VỤ TẢI NHẠC QUA GITHUB ACTIONS (KHÔNG BỊ GIỚI HẠN TIMEOUT VERCEL)
+    // 2. KÍCH HOẠT TÁC VỤ TẢI NHẠC QUA GITHUB ACTIONS
+    // Chấp nhận cả payload dạng { action: 'ingest', track: {...} } lẫn { action: 'ingest', url, title, ... }
     if (action === 'ingest') {
-      if (!track || (!track.videoId && !track.url)) {
-        return NextResponse.json({ error: 'URL hoặc thông tin bài hát không hợp lệ.' }, { status: 400 });
+      const trackInput = track && typeof track === 'object' ? track : body;
+      const rawUrl = String(trackInput.url || trackInput.videoUrl || body.url || body.query || '').trim();
+      const videoId = String(
+        trackInput.videoId ||
+          trackInput.id ||
+          body.videoId ||
+          body.id ||
+          extractYouTubeVideoId(rawUrl) ||
+          ''
+      ).trim();
+
+      if (!videoId && !rawUrl) {
+        return NextResponse.json(
+          { error: 'URL hoặc thông tin bài hát không hợp lệ.' },
+          { status: 400 }
+        );
       }
 
-      const videoId = track.videoId || extractYouTubeVideoId(track.url || '') || '';
-      const ytUrl = track.url || (videoId ? `https://www.youtube.com/watch?v=${videoId}` : '');
+      const ytUrl =
+        rawUrl && rawUrl.startsWith('http')
+          ? rawUrl
+          : videoId
+          ? `https://www.youtube.com/watch?v=${videoId}`
+          : '';
+
       if (!ytUrl || !ytUrl.startsWith('http')) {
         return NextResponse.json({ error: 'Đường dẫn YouTube không hợp lệ.' }, { status: 400 });
       }
 
-      const clean = cleanTrackMetadata(track.title || 'Track', track.artist);
+      const clean = cleanTrackMetadata(
+        trackInput.title || body.title || 'Track',
+        trackInput.artist || body.artist
+      );
 
       // Kiểm tra bài hát đã tồn tại trong kho chưa (chống tải trùng)
       const currentCatalog = await fetchGitHubCatalog();
@@ -396,6 +442,7 @@ export async function POST(req: NextRequest) {
       if (existing) {
         return NextResponse.json({
           status: 'completed',
+          duplicate: true,
           alreadyExists: true,
           track: existing,
         });
@@ -417,6 +464,11 @@ export async function POST(req: NextRequest) {
 
       const newRequestId = `trk-${videoId || 'yt'}-${Date.now()}`;
       const dispatchNow = Date.now();
+      const thumbUrl =
+        trackInput.thumbnail ||
+        body.thumbnail ||
+        (videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : '');
+      const durVal = String(trackInput.duration || body.duration || 240);
 
       const dispatchResult = await dispatchGitHubWorkflow({
         request_id: newRequestId,
@@ -424,8 +476,8 @@ export async function POST(req: NextRequest) {
         video_url: ytUrl,
         title: clean.title,
         artist: clean.artist,
-        thumbnail: track.thumbnail || (videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : ''),
-        duration: String(track.duration || 240),
+        thumbnail: thumbUrl,
+        duration: durVal,
       });
 
       if (!dispatchResult.ok) {
@@ -452,16 +504,11 @@ export async function POST(req: NextRequest) {
 
     // 3. KIỂM TRA TRẠNG THÁI TÁC VỤ (POLLING TỪ FRONTEND)
     if (action === 'status') {
-      if (!GITHUB_TOKEN) {
-        return NextResponse.json({ status: 'failed', error: 'Thiếu cấu hình GITHUB_TOKEN.' }, { status: 500 });
-      }
-
       // Bước A: Kiểm tra xem bài hát đã thực sự xuất hiện trong catalog.json trên GitHub chưa
       const catalog = await fetchGitHubCatalog();
       const matchedTrack = findMatchingTrackInCatalog(catalog, requestId, pollVideoId, pollTitle);
 
       if (matchedTrack) {
-        // Đồng bộ về file local nếu ở môi trường cho phép ghi
         try {
           await fs.writeFile(CATALOG_PATH, JSON.stringify(catalog, null, 2), 'utf-8');
         } catch {}
@@ -474,13 +521,17 @@ export async function POST(req: NextRequest) {
 
       // Bước B: Kiểm tra trạng thái thực tế của GitHub Actions workflow run
       try {
+        const headers: Record<string, string> = {
+          Accept: 'application/vnd.github+json',
+        };
+        if (GITHUB_TOKEN) {
+          headers['Authorization'] = `Bearer ${GITHUB_TOKEN}`;
+        }
+
         const runsRes = await fetch(
           `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/actions/workflows/ingest.yml/runs?per_page=5`,
           {
-            headers: {
-              Authorization: `Bearer ${GITHUB_TOKEN}`,
-              Accept: 'application/vnd.github+json',
-            },
+            headers,
             cache: 'no-store',
           }
         );
@@ -488,7 +539,13 @@ export async function POST(req: NextRequest) {
         if (runsRes.ok) {
           const runsData = await runsRes.json();
           const runs: any[] = runsData.workflow_runs || [];
-          const threshold = (startedAt || Date.now()) - 45000;
+          const parsedStart =
+            typeof startedAt === 'number'
+              ? startedAt
+              : startedAt
+              ? new Date(startedAt).getTime()
+              : Date.now();
+          const threshold = (isNaN(parsedStart) ? Date.now() : parsedStart) - 45000;
 
           const relevantRun = runs.find((r) => {
             const createdMs = new Date(r.created_at).getTime();
@@ -496,9 +553,11 @@ export async function POST(req: NextRequest) {
           });
 
           if (!relevantRun) {
+            const msg = 'Đang chờ máy ảo GitHub Actions tiếp nhận tác vụ...';
             return NextResponse.json({
               status: 'queued',
-              step: 'Đang chờ máy ảo GitHub Actions tiếp nhận tác vụ...',
+              step: msg,
+              message: msg,
             });
           }
 
@@ -508,24 +567,32 @@ export async function POST(req: NextRequest) {
             relevantRun.status === 'pending' ||
             relevantRun.status === 'requested'
           ) {
+            const msg = 'Đang xếp hàng chờ máy ảo GitHub Actions...';
             return NextResponse.json({
               status: 'queued',
-              step: 'Đang xếp hàng chờ máy ảo GitHub Actions...',
+              step: msg,
+              message: msg,
             });
           }
 
           if (relevantRun.status === 'in_progress') {
+            const msg = 'GitHub Actions đang tải nhạc & lưu vào kho lưu trữ...';
             return NextResponse.json({
               status: 'downloading',
-              step: 'GitHub Actions đang tải nhạc & lưu vào kho lưu trữ...',
+              step: msg,
+              message: msg,
             });
           }
 
           if (relevantRun.status === 'completed') {
             if (relevantRun.conclusion === 'success') {
-              // Đọc lại catalog.json lần nữa phòng trường hợp commit vừa hoàn tất
               const freshCatalog = await fetchGitHubCatalog();
-              const confirmed = findMatchingTrackInCatalog(freshCatalog, requestId, pollVideoId, pollTitle);
+              const confirmed = findMatchingTrackInCatalog(
+                freshCatalog,
+                requestId,
+                pollVideoId,
+                pollTitle
+              );
               if (confirmed) {
                 try {
                   await fs.writeFile(CATALOG_PATH, JSON.stringify(freshCatalog, null, 2), 'utf-8');
@@ -536,9 +603,11 @@ export async function POST(req: NextRequest) {
                 });
               }
 
+              const msg = 'Đang đồng bộ dữ liệu bài hát về website...';
               return NextResponse.json({
                 status: 'downloading',
-                step: 'Đang đồng bộ dữ liệu bài hát về website...',
+                step: msg,
+                message: msg,
               });
             } else {
               return NextResponse.json({
@@ -552,9 +621,11 @@ export async function POST(req: NextRequest) {
         console.warn('Lỗi kiểm tra trạng thái workflow:', e);
       }
 
+      const fallbackMsg = 'Đang xử lý tác vụ trên GitHub Actions...';
       return NextResponse.json({
         status: 'downloading',
-        step: 'Đang xử lý tác vụ trên GitHub Actions...',
+        step: fallbackMsg,
+        message: fallbackMsg,
       });
     }
 

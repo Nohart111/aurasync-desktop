@@ -21,6 +21,10 @@ export interface QueueItem {
   track: Track;
 }
 
+// Track synchronous batch enqueue calls from page.tsx's `tracks.forEach((t) => enqueueTrack(t))`
+let lastEnqueueTick = 0;
+let batchEnqueueIds: string[] = [];
+
 /**
  * Fisher-Yates shuffle that avoids placing `avoidFirstTrackId` at index 0
  * when there are 2 or more distinct tracks, preventing immediate back-to-back repeat
@@ -51,15 +55,26 @@ export function shuffleTracksForReplay(tracks: Track[], avoidFirstTrackId?: stri
   return shuffled;
 }
 
+function computeNextPreview(queue: Track[], currentTrack: Track | null): Track | null {
+  if (!queue || queue.length === 0) return null;
+  if (!currentTrack) return queue[0] || null;
+  const idx = queue.findIndex((t) => t.id === currentTrack.id);
+  if (idx >= 0 && idx < queue.length - 1) {
+    return queue[idx + 1];
+  }
+  return queue[0] || null;
+}
+
 export interface PlayerState {
   currentTrack: Track | null;
+  nextTrackPreview: Track | null;
   currentQueueId: string | null;
   isPlaying: boolean;
   volume: number;
   progress: number;
-  currentTime: number; // Alias for progress
+  currentTime: number;
   duration: number;
-  actualDuration: number; // Alias for duration
+  actualDuration: number;
   isShuffle: boolean;
   repeatMode: 'off' | 'all' | 'one';
   /** Monotonic counter incremented whenever a track should start/restart from 0:00 */
@@ -75,14 +90,16 @@ export interface PlayerState {
   queueItems: Track[];
   internalQueue: Track[];
 
-  // Actions with flexible argument lists to support legacy callers & multiple parameter overloads
+  // Actions with flexible argument lists to support all components & overloads
   toggleSidebar: (...args: any[]) => void;
   setSidebarCollapsed: (collapsed?: any, ...args: any[]) => void;
   setPlayingPlaylistName: (name?: any, ...args: any[]) => void;
 
   setCurrentTrack: (track?: any, ...args: any[]) => void;
+  playTrackNow: (track?: any, ...args: any[]) => void;
+  togglePlay: (...args: any[]) => void;
   setIsPlaying: (playing?: any, ...args: any[]) => void;
-  setPlaying: (playing?: any, ...args: any[]) => void; // Alias for useRoomSync.ts and legacy stores
+  setPlaying: (playing?: any, ...args: any[]) => void;
   setVolume: (vol?: any, ...args: any[]) => void;
   setProgress: (prog?: any, ...args: any[]) => void;
   setDuration: (dur?: any, ...args: any[]) => void;
@@ -92,17 +109,17 @@ export interface PlayerState {
   setLibrary: (tracks?: any, ...args: any[]) => void;
   setQueue: (tracks?: any, ...args: any[]) => void;
   addToQueue: (track?: any, ...args: any[]) => void;
-  enqueueTrack: (track?: any, ...args: any[]) => void; // Alias for DoublyLinkedQueue / useRoomSync / page.tsx
+  enqueueTrack: (track?: any, ...args: any[]) => void;
   playNextInQueue: (track?: any, ...args: any[]) => void;
   removeFromQueue: (idOrQueueId?: any, ...args: any[]) => void;
-  removeTrackFromQueue: (trackId?: any, ...args: any[]) => void; // Alias
+  removeTrackFromQueue: (trackId?: any, ...args: any[]) => void;
   clearQueue: (...args: any[]) => void;
 
   playNext: (...args: any[]) => void;
   playPrevious: (...args: any[]) => void;
   advanceNext: (reason?: any, ...args: any[]) => void;
-  advancePrev: (...args: any[]) => void; // Alias
-  jumpToTrack: (trackId?: any, ...args: any[]) => void; // Required for useRoomSync.ts and page.tsx (supports 1 or 2 arguments)
+  advancePrev: (...args: any[]) => void;
+  jumpToTrack: (trackIdOrTrack?: any, ...args: any[]) => void;
   playFromQueueItem: (id?: any, ...args: any[]) => void;
 }
 
@@ -110,6 +127,7 @@ export const usePlayerStore = create<PlayerState>()(
   persist(
     (set, get) => ({
       currentTrack: null,
+      nextTrackPreview: null,
       currentQueueId: null,
       isPlaying: false,
       volume: 0.8,
@@ -135,26 +153,63 @@ export const usePlayerStore = create<PlayerState>()(
       setPlayingPlaylistName: (name?: any, ..._args: any[]) =>
         set({ playingPlaylistName: typeof name === 'string' ? name : null }),
 
-      setCurrentTrack: (track?: any, ..._args: any[]) =>
+      setCurrentTrack: (track?: any, ...args: any[]) =>
         set((state) => {
           if (!track || !track.id) return state;
-          const baseQueue = state.queue.length > 0 ? state.queue : state.library;
-          const nextQueue = baseQueue.some((t) => t.id === track.id)
+          const optionalQueue = Array.isArray(args[0]) ? args[0] : null;
+          const optionalPlaylistName =
+            typeof args[0] === 'string'
+              ? args[0]
+              : typeof args[1] === 'string'
+              ? args[1]
+              : state.playingPlaylistName;
+
+          const baseQueue =
+            optionalQueue && optionalQueue.length > 0
+              ? optionalQueue
+              : state.queue.length > 0
+              ? state.queue
+              : state.library;
+
+          const nextQueue = baseQueue.some((t: Track) => t.id === track.id)
             ? baseQueue
             : [track, ...baseQueue];
 
           return {
             currentTrack: track,
+            nextTrackPreview: computeNextPreview(nextQueue, track),
             currentQueueId: track.id,
             queue: nextQueue,
             queueItems: nextQueue,
             internalQueue: nextQueue,
+            playingPlaylistName: optionalPlaylistName,
             progress: 0,
             currentTime: 0,
             isPlaying: true,
             playNonce: state.playNonce + 1,
           };
         }),
+
+      playTrackNow: (track?: any, ...args: any[]) => {
+        if (!track) return;
+        if (typeof track === 'string') {
+          get().jumpToTrack(track, ...args);
+          return;
+        }
+        get().setCurrentTrack(track, ...args);
+      },
+
+      togglePlay: (..._args: any[]) => {
+        const state = get();
+        if (!state.currentTrack) {
+          const first = state.queue[0] || state.library[0];
+          if (first) {
+            state.setCurrentTrack(first);
+            return;
+          }
+        }
+        set({ isPlaying: !state.isPlaying });
+      },
 
       setIsPlaying: (playing?: any, ..._args: any[]) => set({ isPlaying: Boolean(playing) }),
       setPlaying: (playing?: any, ..._args: any[]) => set({ isPlaying: Boolean(playing) }),
@@ -180,7 +235,7 @@ export const usePlayerStore = create<PlayerState>()(
           const raw = Array.isArray(tracks) ? tracks : [];
           const validTracks: Track[] = raw.filter((t) => Boolean(t && t.id && t.title));
           let nextQueue: Track[];
-          if (state.queue.length === 0) {
+          if (state.queue.length <= 1) {
             nextQueue = validTracks;
           } else {
             const syncedExisting = state.queue
@@ -203,6 +258,7 @@ export const usePlayerStore = create<PlayerState>()(
             queueItems: nextQueue,
             internalQueue: nextQueue,
             currentTrack: nextCurrent,
+            nextTrackPreview: computeNextPreview(nextQueue, nextCurrent),
             currentQueueId: nextCurrent ? nextCurrent.id : null,
           };
         }),
@@ -218,25 +274,67 @@ export const usePlayerStore = create<PlayerState>()(
             queue: validTracks,
             queueItems: validTracks,
             internalQueue: validTracks,
+            nextTrackPreview: computeNextPreview(validTracks, matched || null),
             currentQueueId: matched ? matched.id : null,
           };
         });
       },
 
-      addToQueue: (track?: any, ..._args: any[]) =>
+      addToQueue: (track?: any, ...args: any[]) =>
         set((s) => {
           if (!track || !track.id) return s;
-          if (s.queue.some((t) => t.id === track.id)) return s;
-          const newQueue = [...s.queue, track];
+          const now = Date.now();
+          const isSameBatch = now - lastEnqueueTick < 25;
+          lastEnqueueTick = now;
+
+          if (!isSameBatch) {
+            batchEnqueueIds = [track.id];
+          } else if (!batchEnqueueIds.includes(track.id)) {
+            batchEnqueueIds.push(track.id);
+          }
+
+          // If optional full playlist was passed as 2nd argument
+          if (Array.isArray(args[0]) && args[0].length > 0) {
+            const fullList = args[0].filter((t: any) => Boolean(t && t.id));
+            return {
+              queue: fullList,
+              queueItems: fullList,
+              internalQueue: fullList,
+              nextTrackPreview: computeNextPreview(fullList, s.currentTrack),
+            };
+          }
+
+          const basePool = s.queue.length > 1 ? s.queue : s.library.length > 0 ? s.library : s.queue;
+          const poolWithTrack = basePool.some((t) => t.id === track.id)
+            ? basePool.map((t) => (t.id === track.id ? track : t))
+            : [...basePool, track];
+
+          // If called in a synchronous .forEach loop (e.g. handleShuffle / handlePlayAll),
+          // order the queue according to batchEnqueueIds!
+          if (isSameBatch && batchEnqueueIds.length > 1) {
+            const orderedBatch = batchEnqueueIds
+              .map((id) => poolWithTrack.find((t) => t.id === id))
+              .filter((t): t is Track => Boolean(t));
+            const remaining = poolWithTrack.filter((t) => !batchEnqueueIds.includes(t.id));
+            const nextQueue = [...orderedBatch, ...remaining];
+            return {
+              queue: nextQueue,
+              queueItems: nextQueue,
+              internalQueue: nextQueue,
+              nextTrackPreview: computeNextPreview(nextQueue, s.currentTrack),
+            };
+          }
+
           return {
-            queue: newQueue,
-            queueItems: newQueue,
-            internalQueue: newQueue,
+            queue: poolWithTrack,
+            queueItems: poolWithTrack,
+            internalQueue: poolWithTrack,
+            nextTrackPreview: computeNextPreview(poolWithTrack, s.currentTrack),
           };
         }),
 
-      enqueueTrack: (track?: any, ..._args: any[]) => {
-        get().addToQueue(track);
+      enqueueTrack: (track?: any, ...args: any[]) => {
+        get().addToQueue(track, ...args);
       },
 
       playNextInQueue: (track?: any, ..._args: any[]) => {
@@ -254,6 +352,7 @@ export const usePlayerStore = create<PlayerState>()(
           queue: filtered,
           queueItems: filtered,
           internalQueue: filtered,
+          nextTrackPreview: computeNextPreview(filtered, currentTrack),
         });
       },
 
@@ -270,6 +369,7 @@ export const usePlayerStore = create<PlayerState>()(
               queueItems: nextQueue,
               internalQueue: nextQueue,
               currentTrack: fallbackTrack,
+              nextTrackPreview: computeNextPreview(nextQueue, fallbackTrack),
               currentQueueId: fallbackTrack ? fallbackTrack.id : null,
               progress: 0,
               currentTime: 0,
@@ -282,6 +382,7 @@ export const usePlayerStore = create<PlayerState>()(
             queue: nextQueue,
             queueItems: nextQueue,
             internalQueue: nextQueue,
+            nextTrackPreview: computeNextPreview(nextQueue, s.currentTrack),
           };
         }),
 
@@ -294,22 +395,53 @@ export const usePlayerStore = create<PlayerState>()(
           queue: [],
           queueItems: [],
           internalQueue: [],
+          nextTrackPreview: null,
           currentQueueId: null,
         }),
 
-      playFromQueueItem: (id?: any, ..._args: any[]) => {
-        get().jumpToTrack(id);
+      playFromQueueItem: (id?: any, ...args: any[]) => {
+        get().jumpToTrack(id, ...args);
       },
 
-      jumpToTrack: (trackId?: any, ..._args: any[]) => {
-        if (!trackId) return;
-        const { queue, library, playNonce } = get();
-        const list = queue.length > 0 ? queue : library;
-        const target = list.find((t) => t.id === trackId);
+      jumpToTrack: (trackIdOrTrack?: any, ...args: any[]) => {
+        if (!trackIdOrTrack) return;
+        const { queue, library, playNonce, playingPlaylistName } = get();
+
+        const extraQueue = Array.isArray(args[0]) ? args[0] : null;
+        const extraName =
+          typeof args[0] === 'string'
+            ? args[0]
+            : typeof args[1] === 'string'
+            ? args[1]
+            : playingPlaylistName;
+
+        let activeList =
+          extraQueue && extraQueue.length > 0
+            ? extraQueue
+            : queue.length > 0
+            ? queue
+            : library;
+
+        let target: Track | undefined;
+        if (typeof trackIdOrTrack === 'object' && trackIdOrTrack.id) {
+          target = trackIdOrTrack as Track;
+          if (!activeList.some((t) => t.id === target!.id)) {
+            activeList = [target, ...activeList];
+          }
+        } else {
+          const targetId = String(trackIdOrTrack);
+          target = activeList.find((t) => t.id === targetId) || library.find((t) => t.id === targetId);
+        }
+
         if (target) {
           set({
             currentTrack: target,
+            nextTrackPreview: computeNextPreview(activeList, target),
             currentQueueId: target.id,
+            queue: activeList,
+            queueItems: activeList,
+            internalQueue: activeList,
+            playingPlaylistName: extraName,
             progress: 0,
             currentTime: 0,
             isPlaying: true,
@@ -328,7 +460,7 @@ export const usePlayerStore = create<PlayerState>()(
           playNonce,
         } = get();
 
-        const rawSource = queue.length > 0 ? queue : library;
+        const rawSource = queue.length > 1 ? queue : library.length > 0 ? library : queue;
         const validList = rawSource.filter((t) => Boolean(t && t.id && (t.streamUrl || t.cdnUrl)));
 
         if (validList.length === 0) {
@@ -352,6 +484,7 @@ export const usePlayerStore = create<PlayerState>()(
           const singleTrack = validList[0];
           set({
             currentTrack: singleTrack,
+            nextTrackPreview: singleTrack,
             currentQueueId: singleTrack.id,
             queue: validList,
             queueItems: validList,
@@ -380,6 +513,7 @@ export const usePlayerStore = create<PlayerState>()(
 
           set({
             currentTrack: nextTrack,
+            nextTrackPreview: computeNextPreview(validList, nextTrack),
             currentQueueId: nextTrack.id,
             queue: validList,
             queueItems: validList,
@@ -394,9 +528,11 @@ export const usePlayerStore = create<PlayerState>()(
 
         // Case B: Current track wasn't in the active queue -> start at index 0 of current queue
         if (currIdx === -1) {
+          const first = validList[0];
           set({
-            currentTrack: validList[0],
-            currentQueueId: validList[0].id,
+            currentTrack: first,
+            nextTrackPreview: computeNextPreview(validList, first),
+            currentQueueId: first.id,
             queue: validList,
             queueItems: validList,
             internalQueue: validList,
@@ -418,6 +554,7 @@ export const usePlayerStore = create<PlayerState>()(
           queueItems: shuffledList,
           internalQueue: shuffledList,
           currentTrack: firstShuffled,
+          nextTrackPreview: computeNextPreview(shuffledList, firstShuffled),
           currentQueueId: firstShuffled.id,
           progress: 0,
           currentTime: 0,
@@ -437,7 +574,7 @@ export const usePlayerStore = create<PlayerState>()(
       playPrevious: (..._args: any[]) => {
         const { queue, library, currentTrack, currentQueueId, progress, playNonce } =
           get();
-        const rawSource = queue.length > 0 ? queue : library;
+        const rawSource = queue.length > 1 ? queue : library.length > 0 ? library : queue;
         const validList = rawSource.filter((t) => Boolean(t && t.id && (t.streamUrl || t.cdnUrl)));
         if (validList.length === 0) return;
 
@@ -456,10 +593,12 @@ export const usePlayerStore = create<PlayerState>()(
         }
 
         const prevIdx = currIdx > 0 ? currIdx - 1 : validList.length - 1;
+        const prevTrack = validList[prevIdx];
 
         set({
-          currentTrack: validList[prevIdx],
-          currentQueueId: validList[prevIdx].id,
+          currentTrack: prevTrack,
+          nextTrackPreview: computeNextPreview(validList, prevTrack),
+          currentQueueId: prevTrack.id,
           queue: validList,
           queueItems: validList,
           internalQueue: validList,

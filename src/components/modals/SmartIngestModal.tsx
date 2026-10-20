@@ -1,25 +1,31 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { X, Search, Globe, Disc, Check, AlertCircle, Loader2, Sparkles } from 'lucide-react';
+import {
+  X,
+  Search,
+  Globe,
+  Check,
+  AlertCircle,
+  Loader2,
+  Sparkles,
+  CloudDownload,
+  Music,
+  Clock,
+  CheckCircle2,
+} from 'lucide-react';
 import { usePlayerStore } from '@/store/usePlayerStore';
 import type { Track } from '@/store/usePlayerStore';
 
-function YoutubeIcon({ className = 'h-4 w-4' }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
-      <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
-    </svg>
-  );
-}
-
 export interface YouTubeResult {
   id: string;
+  videoId?: string;
   url: string;
   title: string;
   artist: string;
   thumbnail: string;
   duration: number;
+  durationFormatted?: string;
 }
 
 export type IngestTaskStatus = 'idle' | 'queued' | 'downloading' | 'completed' | 'failed';
@@ -36,6 +42,7 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
   const [ingestingId, setIngestingId] = useState<string | null>(null);
   const [taskStatus, setTaskStatus] = useState<IngestTaskStatus>('idle');
   const [statusText, setStatusText] = useState('');
+  const [elapsedSec, setElapsedSec] = useState(0);
   const [errorMsg, setErrorMsg] = useState('');
   const [successId, setSuccessId] = useState<string | null>(null);
 
@@ -77,6 +84,7 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
     setResults([]);
     setSearching(true);
     setTaskStatus('idle');
+    setStatusText('');
 
     try {
       const res = await fetch('/api/tracks/ingest', {
@@ -91,7 +99,7 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
       setResults(items);
 
       if (items.length === 0) {
-        setErrorMsg('Không tìm thấy kết quả phù hợp. Hãy thử từ khóa khác hoặc dán link trực tiếp.');
+        setErrorMsg('Không tìm thấy kết quả phù hợp. Hãy thử từ khóa khác hoặc dán link YouTube trực tiếp.');
       }
     } catch (err: any) {
       setErrorMsg(err.message || 'Không thể kết nối máy chủ tìm kiếm.');
@@ -104,19 +112,28 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
     try {
       const syncRes = await fetch(`/api/tracks/search?t=${Date.now()}`, { cache: 'no-store' });
       const syncData = await syncRes.json();
-      if (syncData.tracks && Array.isArray(syncData.tracks) && syncData.tracks.length > 0) {
-        setLibrary(syncData.tracks);
-        if (confirmedTrack) {
-          const found =
-            syncData.tracks.find((t: Track) => t.id === confirmedTrack.id) || confirmedTrack;
-          setCurrentTrack(found);
+      const tracksList: Track[] = Array.isArray(syncData)
+        ? syncData
+        : Array.isArray(syncData?.tracks)
+        ? syncData.tracks
+        : [];
+
+      if (tracksList.length > 0) {
+        setLibrary(tracksList);
+        const target = confirmedTrack
+          ? tracksList.find((t: Track) => t.id === confirmedTrack.id) || confirmedTrack
+          : tracksList[0];
+
+        if (target) {
+          setCurrentTrack(target);
           setIsPlaying(true);
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('aurasound:track-added', { detail: target }));
+          }
         }
         return;
       }
-    } catch {
-      // Fallback to inserting confirmedTrack directly into current store
-    }
+    } catch {}
 
     if (confirmedTrack) {
       const exists = library.some((t) => t.id === confirmedTrack.id);
@@ -126,17 +143,22 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
       setLibrary(updated);
       setCurrentTrack(confirmedTrack);
       setIsPlaying(true);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('aurasound:track-added', { detail: confirmedTrack }));
+      }
     }
   };
 
   const handleIngest = async (item: YouTubeResult) => {
-    if (ingestingId) return; // Prevent concurrent overlapping requests from UI
+    if (ingestingId) return;
     abortPollRef.current = false;
-    setIngestingId(item.id);
+    const itemKey = item.videoId || item.id;
+    setIngestingId(itemKey);
     setErrorMsg('');
     setSuccessId(null);
+    setElapsedSec(0);
     setTaskStatus('queued');
-    setStatusText('Đang chờ: Gửi yêu cầu tới GitHub Actions...');
+    setStatusText('Đang gửi yêu cầu khởi tạo tác vụ tới GitHub Actions...');
 
     try {
       const res = await fetch('/api/tracks/ingest', {
@@ -144,6 +166,17 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'ingest',
+          track: {
+            id: itemKey,
+            videoId: itemKey,
+            url: item.url,
+            title: item.title,
+            artist: item.artist,
+            thumbnail: item.thumbnail,
+            duration: item.duration,
+          },
+          id: itemKey,
+          videoId: itemKey,
           url: item.url,
           title: item.title,
           artist: item.artist,
@@ -157,15 +190,15 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
         throw new Error(data.error || 'Khởi tạo tiến trình tải nhạc thất bại.');
       }
 
-      // Case 1: Already in catalog (deduplicated immediately with confirmed streamUrl)
-      if (data.status === 'completed' && data.track && data.track.streamUrl) {
+      // Case 1: Bài hát đã tồn tại sẵn trong kho
+      if (data.status === 'completed' && data.track && (data.track.streamUrl || data.track.cdnUrl)) {
         setTaskStatus('completed');
         setStatusText(
-          data.duplicate
-            ? 'Bài hát đã tồn tại trong thư viện! Đang mở phát ngay...'
-            : 'Tải thành công! Đã xác nhận file nhạc trong kho lưu trữ.'
+          data.duplicate || data.alreadyExists
+            ? 'Bài hát đã có sẵn trong kho lưu trữ! Đang phát ngay...'
+            : 'Đã xác nhận file nhạc trong kho lưu trữ!'
         );
-        setSuccessId(item.id);
+        setSuccessId(itemKey);
         await syncConfirmedTrackToStore(data.track);
         setTimeout(() => {
           setIngestingId(null);
@@ -176,24 +209,26 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
         return;
       }
 
-      // Case 2: Dispatched to GitHub Actions (HTTP 202 Accepted)
+      // Case 2: Tác vụ được chuyển sang GitHub Actions (HTTP 202 Accepted)
       const requestId = data.requestId || '';
-      const videoId = data.videoId || item.id;
-      const startedAt = data.startedAt || new Date().toISOString();
+      const videoId = data.videoId || itemKey;
+      const startedAt = data.startedAt || Date.now();
 
-      const maxAttempts = 45; // 45 * 4s = 180 seconds max wait
+      const maxAttempts = 45; // 45 * 4s = 180s
       let confirmedTrack: Track | null = null;
 
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         if (abortPollRef.current) {
-          throw new Error('Đã hủy theo dõi tác vụ.');
+          throw new Error('Đã hủy theo dõi tác vụ tải nhạc.');
         }
 
         await new Promise((r) => setTimeout(r, 4000));
 
         if (abortPollRef.current) {
-          throw new Error('Đã hủy theo dõi tác vụ.');
+          throw new Error('Đã hủy theo dõi tác vụ tải nhạc.');
         }
+
+        setElapsedSec(attempt * 4);
 
         const statusRes = await fetch('/api/tracks/ingest', {
           method: 'POST',
@@ -217,20 +252,21 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
         const currentState: IngestTaskStatus = statusData.status || 'queued';
         setTaskStatus(currentState);
 
+        const serverMsg = statusData.message || statusData.step;
         if (currentState === 'queued') {
-          setStatusText(
-            `${statusData.message || 'Đang chờ GitHub Actions khởi tạo runner...'} (${attempt * 4}s)`
-          );
+          setStatusText(serverMsg || 'Đang chờ máy ảo GitHub Actions tiếp nhận tác vụ...');
         } else if (currentState === 'downloading') {
-          setStatusText(
-            `${statusData.message || 'Đang tải và lưu nhạc vào GitHub Release...'} (${attempt * 4}s)`
-          );
-        } else if (currentState === 'completed' && statusData.track && statusData.track.streamUrl) {
+          setStatusText(serverMsg || 'GitHub Actions đang tải âm thanh & đồng bộ vào Release...');
+        } else if (
+          currentState === 'completed' &&
+          statusData.track &&
+          (statusData.track.streamUrl || statusData.track.cdnUrl)
+        ) {
           confirmedTrack = statusData.track;
           break;
         } else if (currentState === 'failed') {
           throw new Error(
-            statusData.error || 'GitHub Actions workflow thất bại khi tải bài hát này.'
+            statusData.error || 'Không thể trích xuất luồng âm thanh của video này. Vui lòng thử video khác.'
           );
         }
       }
@@ -242,8 +278,8 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
       }
 
       setTaskStatus('completed');
-      setStatusText('Thành công! File nhạc đã được lưu và xác nhận trên GitHub.');
-      setSuccessId(item.id);
+      setStatusText('Hoàn tất! File nhạc đã được lưu vào GitHub Release và đồng bộ về thư viện.');
+      setSuccessId(itemKey);
       await syncConfirmedTrackToStore(confirmedTrack);
 
       setTimeout(() => {
@@ -251,7 +287,7 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
         setStatusText('');
         setTaskStatus('idle');
         onClose();
-      }, 1500);
+      }, 1400);
     } catch (err: any) {
       setTaskStatus('failed');
       setErrorMsg(err.message || 'Có lỗi xảy ra trong quá trình tải nhạc.');
@@ -261,122 +297,171 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
   };
 
   const formatTime = (sec: number) => {
-    if (!sec) return '0:00';
+    if (!sec) return '00:00';
     const m = Math.floor(sec / 60);
     const s = Math.floor(sec % 60);
-    return `${m}:${s < 10 ? '0' : ''}${s}`;
-  };
-
-  const getStatusBadgeLabel = (status: IngestTaskStatus) => {
-    switch (status) {
-      case 'queued':
-        return 'ĐANG CHỜ (QUEUED)';
-      case 'downloading':
-        return 'ĐANG TẢI (DOWNLOADING)';
-      case 'completed':
-        return 'THÀNH CÔNG (COMPLETED)';
-      case 'failed':
-        return 'THẤT BẠI (FAILED)';
-      default:
-        return '';
-    }
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
-      <div className="relative w-full max-w-2xl rounded-xl border border-amber-500/30 bg-[#121316] p-6 text-amber-50 shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xl p-4 select-none font-sans">
+      <div className="relative w-full max-w-2xl overflow-hidden rounded-3xl border border-white/[0.08] bg-gradient-to-b from-[#141424]/95 via-[#0b0b14]/98 to-[#06060b] p-6 text-white shadow-[0_24px_80px_rgba(0,0,0,0.9)]">
+        {/* Hiệu ứng ánh sáng viền trên chuẩn Studio Deck */}
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(0,240,255,0.08),transparent_60%)]" />
+
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-amber-500/20 pb-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400">
-              <Sparkles className="h-5 w-5" />
+        <div className="relative z-10 flex items-center justify-between border-b border-white/[0.08] pb-4">
+          <div className="flex items-center gap-3.5">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] text-neon-cyan shadow-inner">
+              <CloudDownload className="h-5 w-5" />
             </div>
             <div>
-              <h2 className="text-lg font-bold tracking-wider text-amber-400 uppercase font-mono">
-                Smart Cloud Ingest // GitHub Actions Pipeline
-              </h2>
-              <p className="text-xs text-amber-50/60">
-                Tìm kiếm bài hát hoặc dán URL YouTube — Tải & lưu trữ qua GitHub Actions
+              <div className="flex items-center gap-2">
+                <h2 className="text-base font-bold tracking-tight text-white">
+                  Nạp nhạc từ Cloud
+                </h2>
+                <span className="rounded-full border border-neon-cyan/30 bg-neon-cyan/10 px-2 py-0.5 font-mono text-[10px] font-semibold text-neon-cyan">
+                  GITHUB CDN
+                </span>
+              </div>
+              <p className="mt-0.5 text-xs text-zinc-400">
+                Tìm kiếm bài hát hoặc dán link YouTube để tải & lưu trữ vĩnh viễn qua GitHub Actions
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="rounded-lg p-2 text-amber-50/50 hover:bg-amber-500/10 hover:text-amber-400 transition"
+            className="rounded-xl border border-transparent p-2 text-zinc-400 transition hover:border-white/10 hover:bg-white/[0.06] hover:text-white"
+            title="Đóng"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
-        {/* Search Input */}
-        <form onSubmit={handleSearch} className="mt-5 flex gap-2">
+        {/* Search Input Bar */}
+        <form onSubmit={handleSearch} className="relative z-10 mt-5 flex items-center gap-2.5">
           <div className="relative flex-1">
+            {isUrl(query) ? (
+              <Globe className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-neon-cyan" />
+            ) : (
+              <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
+            )}
             <input
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Nhập tên bài hát, nghệ sĩ hoặc dán link YouTube (https://...)"
-              className="w-full rounded-lg border border-amber-500/30 bg-black/60 pl-10 pr-4 py-3 text-sm text-amber-50 placeholder-amber-50/30 focus:border-amber-400 focus:outline-none font-mono"
+              placeholder="Nhập tên bài hát, nghệ sĩ hoặc dán link YouTube..."
+              className="w-full rounded-2xl border border-white/10 bg-white/[0.04] pl-11 pr-4 py-3 text-sm text-white placeholder-zinc-500 transition focus:border-neon-cyan/50 focus:bg-white/[0.06] focus:outline-none"
             />
-            {isUrl(query) ? (
-              <Globe className="absolute left-3.5 top-3.5 h-4 w-4 text-emerald-400" />
-            ) : (
-              <Search className="absolute left-3.5 top-3.5 h-4 w-4 text-amber-400/60" />
-            )}
           </div>
           <button
             type="submit"
             disabled={searching || !!ingestingId}
-            className="flex items-center gap-2 rounded-lg bg-amber-500 px-5 py-3 text-xs font-bold uppercase tracking-wider text-black hover:bg-amber-400 disabled:opacity-50 transition font-mono"
+            className="flex items-center gap-2 rounded-2xl bg-white px-6 py-3 text-xs font-bold text-black shadow-lg transition hover:bg-zinc-200 active:scale-95 disabled:opacity-50 cursor-pointer shrink-0"
           >
-            {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : <YoutubeIcon className="h-4 w-4" />}
-            {isUrl(query) ? 'Kiểm tra Link' : 'Tìm kiếm'}
+            {searching ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin text-black" />
+                <span>Đang tìm...</span>
+              </>
+            ) : (
+              <span>{isUrl(query) ? 'Kiểm tra' : 'Tìm'}</span>
+            )}
           </button>
         </form>
 
-        {/* Status Bar */}
+        {/* Task Progress Tracker (Queued -> Downloading -> Completed) */}
         {statusText && (
-          <div className="mt-4 flex flex-col gap-1.5 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-300 font-mono">
-            <div className="flex items-center justify-between">
-              <span className="inline-flex items-center gap-2 font-bold text-amber-400">
-                <Loader2 className="h-4 w-4 animate-spin shrink-0" />
-                {getStatusBadgeLabel(taskStatus)}
-              </span>
-              <span className="text-[10px] text-amber-200/70">GitHub Actions Worker</span>
+          <div className="relative z-10 mt-4 overflow-hidden rounded-2xl border border-neon-cyan/30 bg-[#09151d]/90 p-4 shadow-inner">
+            <div className="flex items-center justify-between text-xs">
+              <div className="flex items-center gap-2.5 font-semibold text-neon-cyan">
+                {taskStatus === 'completed' ? (
+                  <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+                ) : (
+                  <Loader2 className="h-4 w-4 animate-spin text-neon-cyan shrink-0" />
+                )}
+                <span>
+                  {taskStatus === 'queued' && 'ĐANG CHỜ (QUEUED)'}
+                  {taskStatus === 'downloading' && 'ĐANG TẢI & ĐỒNG BỘ (DOWNLOADING)'}
+                  {taskStatus === 'completed' && 'THÀNH CÔNG (COMPLETED)'}
+                </span>
+              </div>
+              {elapsedSec > 0 && taskStatus !== 'completed' && (
+                <span className="font-mono text-[11px] text-zinc-400">{elapsedSec}s</span>
+              )}
             </div>
-            <span className="text-amber-100/90">{statusText}</span>
+            <p className="mt-1.5 text-xs text-zinc-300">{statusText}</p>
+            <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+              <div
+                className={`h-full rounded-full bg-gradient-to-r from-neon-cyan via-sky-400 to-emerald-400 transition-all duration-500 ${
+                  taskStatus === 'queued'
+                    ? 'w-1/3 animate-pulse'
+                    : taskStatus === 'downloading'
+                    ? 'w-3/4 animate-pulse'
+                    : 'w-full'
+                }`}
+              />
+            </div>
           </div>
         )}
 
-        {/* Error Bar */}
+        {/* Error Notification */}
         {errorMsg && (
-          <div className="mt-4 flex items-center gap-3 rounded-lg border border-red-500/40 bg-red-500/10 p-3 text-xs text-red-300 font-mono">
-            <AlertCircle className="h-4 w-4 shrink-0 text-red-400" />
+          <div className="relative z-10 mt-4 flex items-center gap-3 rounded-2xl border border-rose-500/30 bg-rose-950/40 px-4 py-3 text-xs text-rose-200">
+            <AlertCircle className="h-4 w-4 shrink-0 text-rose-400" />
             <span>{errorMsg}</span>
           </div>
         )}
 
-        {/* Results List */}
-        <div className="mt-5 max-h-80 overflow-y-auto space-y-2 pr-1">
+        {/* Search Results */}
+        <div className="relative z-10 mt-5 max-h-[340px] space-y-2.5 overflow-y-auto pr-1">
+          {results.length === 0 && !searching && !errorMsg && (
+            <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-white/[0.06] bg-white/[0.01] py-10 text-center">
+              <Music className="h-8 w-8 text-zinc-600 mb-2" />
+              <p className="text-xs font-medium text-zinc-400">
+                Nhập tên bài hát hoặc dán link YouTube để tìm kiếm
+              </p>
+              <p className="mt-1 text-[11px] text-zinc-600">
+                Nhạc được tải qua GitHub Actions và lưu vĩnh viễn trên GitHub Release CDN
+              </p>
+            </div>
+          )}
+
           {results.map((item) => {
-            const isIngesting = ingestingId === item.id;
-            const isDone = successId === item.id;
+            const itemKey = item.videoId || item.id;
+            const isIngesting = ingestingId === itemKey;
+            const isDone = successId === itemKey;
 
             return (
               <div
-                key={item.id}
-                className="flex items-center justify-between gap-3 rounded-lg border border-amber-500/15 bg-black/40 p-2.5 hover:border-amber-500/40 transition"
+                key={itemKey}
+                className={`group flex items-center justify-between gap-4 rounded-2xl border p-3 transition-all ${
+                  isIngesting
+                    ? 'border-neon-cyan/40 bg-neon-cyan/[0.06]'
+                    : isDone
+                    ? 'border-emerald-500/40 bg-emerald-500/[0.08]'
+                    : 'border-white/[0.06] bg-white/[0.02] hover:border-white/15 hover:bg-white/[0.05]'
+                }`}
               >
-                <div className="flex items-center gap-3 min-w-0">
-                  <img
-                    src={item.thumbnail}
-                    alt={item.title}
-                    className="h-12 w-16 rounded object-cover border border-amber-500/20 shrink-0"
-                  />
+                <div className="flex items-center gap-3.5 min-w-0">
+                  <div className="relative h-14 w-24 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-zinc-900">
+                    <img
+                      src={item.thumbnail}
+                      alt={item.title}
+                      className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+                    />
+                    <span className="absolute bottom-1 right-1 flex items-center gap-1 rounded bg-black/80 px-1.5 py-0.5 font-mono text-[10px] font-medium text-zinc-200 backdrop-blur-sm">
+                      <Clock className="h-2.5 w-2.5 text-neon-cyan" />
+                      {item.durationFormatted || formatTime(item.duration)}
+                    </span>
+                  </div>
+
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-amber-100">{item.title}</p>
-                    <p className="truncate text-xs text-amber-50/50">
-                      {item.artist} • <span className="font-mono">{formatTime(item.duration)}</span>
+                    <h4 className="truncate text-sm font-semibold text-white group-hover:text-neon-cyan transition-colors">
+                      {item.title}
+                    </h4>
+                    <p className="mt-0.5 truncate text-xs text-zinc-400">
+                      {item.artist || 'Nghệ sĩ chưa rõ'}
                     </p>
                   </div>
                 </div>
@@ -384,26 +469,28 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
                 <button
                   onClick={() => handleIngest(item)}
                   disabled={!!ingestingId}
-                  className={`shrink-0 flex items-center gap-1.5 rounded-md px-3.5 py-2 text-xs font-mono font-bold uppercase tracking-wider transition ${
+                  className={`shrink-0 flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-semibold transition-all cursor-pointer ${
                     isDone
-                      ? 'bg-emerald-500 text-black'
+                      ? 'bg-emerald-500 text-black font-bold shadow-[0_0_20px_rgba(16,185,129,0.4)]'
                       : isIngesting
-                      ? 'bg-amber-500/30 text-amber-300 border border-amber-500/40'
-                      : 'bg-amber-500/15 text-amber-300 border border-amber-500/30 hover:bg-amber-500 hover:text-black'
+                      ? 'border border-neon-cyan/40 bg-neon-cyan/15 text-neon-cyan'
+                      : 'border border-white/10 bg-white/[0.07] text-white hover:bg-white hover:text-black active:scale-95 disabled:opacity-40'
                   }`}
                 >
                   {isDone ? (
                     <>
-                      <Check className="h-3.5 w-3.5" /> Đã Lưu
+                      <Check className="h-4 w-4" />
+                      <span>Đã lưu</span>
                     </>
                   ) : isIngesting ? (
                     <>
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      {taskStatus === 'queued' ? 'Đang chờ...' : 'Đang tải...'}
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span>{taskStatus === 'queued' ? 'Đang chờ...' : 'Đang tải...'}</span>
                     </>
                   ) : (
                     <>
-                      <Disc className="h-3.5 w-3.5" /> Nạp Cloud
+                      <Sparkles className="h-3.5 w-3.5 text-neon-cyan group-hover:text-black transition-colors" />
+                      <span>Tải về Kho</span>
                     </>
                   )}
                 </button>
