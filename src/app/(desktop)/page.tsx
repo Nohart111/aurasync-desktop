@@ -396,7 +396,7 @@ export default function RetroCyberDeckPage() {
       const res = await fetch("/api/tracks/delete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: track.id, streamUrl: track.streamUrl }),
+        body: JSON.stringify({ id: track.id, title: track.title, streamUrl: track.streamUrl }),
       });
 
       if (res.ok) {
@@ -1076,3 +1076,4 @@ export default function RetroCyberDeckPage() {
     </div>
   );
 }
+

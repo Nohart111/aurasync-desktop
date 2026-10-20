@@ -1,4 +1,4 @@
-﻿import { NextResponse } from 'next/server';
+﻿import { NextRequest, NextResponse } from 'next/server';
 import fs from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
@@ -11,14 +11,17 @@ const GITHUB_REPO = process.env.GITHUB_REPO || 'aurasound-music-data';
 const GITHUB_RELEASE_TAG = process.env.GITHUB_RELEASE_TAG || 'tracks-v1';
 
 const CATALOG_PATH = path.join(process.cwd(), 'data', 'catalog.json');
-const YTDLP_BIN_PATH = path.join(os.tmpdir(), process.platform === 'win32' ? 'aurasound-yt-dlp.exe' : 'aurasound-yt-dlp');
+const YTDLP_BIN_PATH = path.join(
+  os.tmpdir(),
+  process.platform === 'win32' ? 'aurasound-yt-dlp.exe' : 'aurasound-yt-dlp'
+);
 
 function cleanTrackMetadata(rawTitle: string, rawArtist?: string): { title: string; artist: string } {
   let title = rawTitle.replace(/\.[a-zA-Z0-9]{2,4}$/, '').trim();
 
   title = title
-    .replace(/\[\s*(?:OFFICIAL\s*)?(?:MUSIC\s*)?(?:VIDEO\vert{}MV\vert{}AUDIO\vert{}LYRIC\vert{}HD\vert{}4K\vert{}VISUALIZER)\s*\]/gi, '')
-    .replace(/\(\s*(?:OFFICIAL\s*)?(?:MUSIC\s*)?(?:VIDEO\vert{}MV\vert{}AUDIO\vert{}LYRICS?\vert{}HD\vert{}4K\vert{}VISUALIZER)\s*\)/gi, '')
+    .replace(/\[\s*(?:OFFICIAL\s*)?(?:MUSIC\s*)?(?:VIDEO\vert{}MV\vert{}AUDIO\vert{}LYRIC\vert{}HD\vert{}4K\vert{}VISUALIZER\vert{}PERFORMANCE)\s*\]/gi, '')
+    .replace(/\(\s*(?:OFFICIAL\s*)?(?:MUSIC\s*)?(?:VIDEO\vert{}MV\vert{}AUDIO\vert{}LYRICS?\vert{}HD\vert{}4K\vert{}VISUALIZER\vert{}PERFORMANCE)\s*\)/gi, '')
     .replace(/\|\s*(?:OFFICIAL\s*)?(?:MUSIC\s*)?(?:VIDEO|MV|AUDIO|LYRICS?)\s*$/gi, '')
     .replace(/-\s*(?:OFFICIAL\s*)?(?:MUSIC\s*)?(?:VIDEO|MV|AUDIO|LYRICS?)\s*$/gi, '')
     .replace(/\b(?:OFFICIAL\s+MV|OFFICIAL\s+MUSIC\s+VIDEO|OFFICIAL\s+VIDEO)\b/gi, '')
@@ -116,7 +119,7 @@ async function ensureYtDlpBinary(): Promise<string | null> {
         ? 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe'
         : 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux';
 
-    const res = await fetch(dlUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    const res = await fetch(dlUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, cache: 'no-store' });
     if (!res.ok) return null;
     const buf = Buffer.from(await res.arrayBuffer());
     await fs.writeFile(YTDLP_BIN_PATH, buf);
@@ -138,6 +141,7 @@ async function searchYouTube(query: string) {
           'User-Agent':
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
         },
+        cache: 'no-store',
       });
       const html = await res.text();
       const titleMatch = html.match(/<title>(.+?) - YouTube<\/title>/);
@@ -145,7 +149,9 @@ async function searchYouTube(query: string) {
       const lenMatch = html.match(/"lengthSeconds":"(\d+)"/);
       const durationSec = lenMatch ? parseInt(lenMatch[1], 10) : 240;
 
-      const rawTitle = titleMatch ? titleMatch[1].replace(/&quot;/g, '"').replace(/&#39;/g, "'") : `YouTube (${directId})`;
+      const rawTitle = titleMatch
+        ? titleMatch[1].replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+        : `YouTube (${directId})`;
       const rawAuthor = authorMatch ? authorMatch[1] : 'YouTube';
       const clean = cleanTrackMetadata(rawTitle, rawAuthor);
 
@@ -187,6 +193,7 @@ async function searchYouTube(query: string) {
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
         'Accept-Language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7',
       },
+      cache: 'no-store',
     });
 
     if (res.ok) {
@@ -270,6 +277,8 @@ async function extractViaYtDlpRamPipe(ytUrl: string): Promise<Buffer | null> {
       binPath,
       [
         ytUrl,
+        '--extractor-args',
+        'youtube:player_client=tv,mweb',
         '-f',
         'ba[ext=m4a]/ba[acodec^=mp4a]/ba/b',
         '--no-playlist',
@@ -288,7 +297,7 @@ async function extractViaYtDlpRamPipe(ytUrl: string): Promise<Buffer | null> {
         child.kill();
       } catch {}
       resolve(null);
-    }, 45000);
+    }, 35000);
 
     child.stdout.on('data', (chunk: Buffer) => {
       chunks.push(chunk);
@@ -313,6 +322,112 @@ async function extractViaYtDlpRamPipe(ytUrl: string): Promise<Buffer | null> {
   });
 }
 
+async function extractViaSavenowProxy(ytUrl: string): Promise<Buffer | null> {
+  try {
+    const initRes = await fetch(
+      `https://p.savenow.to/ajax/download.php?format=m4a&url=${encodeURIComponent(
+        ytUrl
+      )}&api=dfcb6d76f2f6a9894gjkege8a4ab232222`,
+      { headers: { 'User-Agent': 'Mozilla/5.0' }, cache: 'no-store' }
+    );
+    if (!initRes.ok) return null;
+    const initData = await initRes.json();
+    const jobId = initData.id;
+    if (!jobId) return null;
+
+    const progressUrl = initData.progress_url || `https://p.savenow.to/ajax/progress.php?id=${jobId}`;
+
+    for (let i = 0; i < 16; i++) {
+      await new Promise((r) => setTimeout(r, 1500));
+      const progRes = await fetch(progressUrl, {
+        headers: { 'User-Agent': 'Mozilla/5.0' },
+        cache: 'no-store',
+      });
+      if (progRes.ok) {
+        const progData = await progRes.json();
+        if (progData.progress === 1000 && progData.download_url) {
+          const audioRes = await fetch(progData.download_url, { cache: 'no-store' });
+          if (audioRes.ok) {
+            const buf = Buffer.from(await audioRes.arrayBuffer());
+            if (buf.length > 100000) return buf;
+          }
+          break;
+        }
+      }
+    }
+  } catch {}
+  return null;
+}
+
+async function extractViaInnerTube(videoId: string): Promise<Buffer | null> {
+  try {
+    const playerRes = await fetch('https://www.youtube.com/youtubei/v1/player?prettyPrint=false', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent':
+          'com.google.android.apps.youtube.vr.oculus/1.60.19 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip',
+        'X-YouTube-Client-Name': '28',
+        'X-YouTube-Client-Version': '1.60.19',
+      },
+      body: JSON.stringify({
+        context: {
+          client: {
+            clientName: 'ANDROID_VR',
+            clientVersion: '1.60.19',
+            androidSdkVersion: 32,
+            hl: 'vi',
+            gl: 'VN',
+          },
+        },
+        videoId,
+      }),
+      cache: 'no-store',
+    });
+
+    if (!playerRes.ok) return null;
+    const data = await playerRes.json();
+    const formats: any[] = data?.streamingData?.adaptiveFormats || [];
+
+    const audioFormats = formats
+      .filter((f) => f.url && f.mimeType && f.mimeType.startsWith('audio/'))
+      .sort((a, b) => {
+        const aIsMp4 = a.mimeType.includes('audio/mp4') ? 1 : 0;
+        const bIsMp4 = b.mimeType.includes('audio/mp4') ? 1 : 0;
+        if (aIsMp4 !== bIsMp4) return bIsMp4 - aIsMp4;
+        return (b.bitrate || 0) - (a.bitrate || 0);
+      });
+
+    if (audioFormats.length === 0) return null;
+    const targetFormat = audioFormats[0];
+    const res = await fetch(targetFormat.url, { cache: 'no-store' });
+    if (res.ok) {
+      const finalBuf = Buffer.from(await res.arrayBuffer());
+      if (finalBuf.length > 100000) return finalBuf;
+    }
+  } catch {}
+  return null;
+}
+
+async function resolveYouTubeAudioStream(videoId: string, targetUrl: string): Promise<Buffer | null> {
+  const ytUrl = targetUrl || `https://www.youtube.com/watch?v=${videoId}`;
+
+  if (process.env.VERCEL !== '1') {
+    const ytdlpBuf = await extractViaYtDlpRamPipe(ytUrl);
+    if (ytdlpBuf) return ytdlpBuf;
+  }
+
+  const savenowBuf = await extractViaSavenowProxy(ytUrl);
+  if (savenowBuf) return savenowBuf;
+
+  if (videoId) {
+    const innerTubeBuf = await extractViaInnerTube(videoId);
+    if (innerTubeBuf) return innerTubeBuf;
+  }
+
+  return null;
+}
+
 function detectAudioFormat(buf: Buffer): { ext: string; mime: string } {
   if (buf.length > 12 && buf.subarray(4, 8).toString('ascii') === 'ftyp') {
     return { ext: 'm4a', mime: 'audio/mp4' };
@@ -327,10 +442,7 @@ async function uploadToGitHubCDN(
   buffer: Buffer,
   originalTitle: string
 ): Promise<{ safeName: string; browserDownloadUrl: string; ext: string } | null> {
-  if (!GITHUB_TOKEN) {
-    console.error('Thiếu GITHUB_TOKEN trong .env');
-    return null;
-  }
+  if (!GITHUB_TOKEN) return null;
 
   try {
     const releaseRes = await fetch(
@@ -340,6 +452,7 @@ async function uploadToGitHubCDN(
           Authorization: `Bearer ${GITHUB_TOKEN}`,
           Accept: 'application/vnd.github+json',
         },
+        cache: 'no-store',
       }
     );
 
@@ -362,6 +475,7 @@ async function uploadToGitHubCDN(
         'Content-Length': buffer.length.toString(),
       },
       body: new Uint8Array(buffer),
+      cache: 'no-store',
     });
 
     if (!upRes.ok) return null;
@@ -378,44 +492,69 @@ async function uploadToGitHubCDN(
   }
 }
 
-async function dispatchGitHubActionsIngest(
-  videoUrl: string,
-  title: string,
-  artist: string,
-  thumbnail: string,
-  duration: number
-): Promise<boolean> {
-  if (!GITHUB_TOKEN) return false;
+async function saveTrackToCatalogs(newTrack: any): Promise<void> {
+  let localCatalog: any[] = [];
+  try {
+    const raw = await fs.readFile(CATALOG_PATH, 'utf-8');
+    localCatalog = JSON.parse(raw);
+    if (!Array.isArray(localCatalog)) localCatalog = [];
+  } catch {
+    localCatalog = [];
+  }
+
+  const updatedLocal = [newTrack, ...localCatalog.filter((t: any) => t && t.id !== newTrack.id)];
+  try {
+    await fs.writeFile(CATALOG_PATH, JSON.stringify(updatedLocal, null, 2), 'utf-8');
+  } catch {}
+
+  if (!GITHUB_TOKEN) return;
 
   try {
-    const workflowUrl = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/actions/workflows/ingest.yml/dispatches`;
-    const res = await fetch(workflowUrl, {
-      method: 'POST',
+    const contentUrl = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/data/catalog.json`;
+    const getRes = await fetch(contentUrl, {
+      headers: {
+        Authorization: `Bearer ${GITHUB_TOKEN}`,
+        Accept: 'application/vnd.github+json',
+      },
+      cache: 'no-store',
+    });
+
+    let ghCatalog: any[] = [];
+    let sha: string | undefined = undefined;
+
+    if (getRes.ok) {
+      const data = await getRes.json();
+      sha = data.sha;
+      const rawJson = Buffer.from(data.content, 'base64').toString('utf-8');
+      ghCatalog = JSON.parse(rawJson);
+      if (!Array.isArray(ghCatalog)) ghCatalog = [];
+    } else {
+      ghCatalog = localCatalog;
+    }
+
+    const updatedGh = [newTrack, ...ghCatalog.filter((t: any) => t && t.id !== newTrack.id)];
+    const updatedBase64 = Buffer.from(JSON.stringify(updatedGh, null, 2), 'utf-8').toString('base64');
+
+    await fetch(contentUrl, {
+      method: 'PUT',
       headers: {
         Authorization: `Bearer ${GITHUB_TOKEN}`,
         Accept: 'application/vnd.github+json',
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        ref: 'main',
-        inputs: {
-          video_url: videoUrl,
-          title,
-          artist,
-          thumbnail: thumbnail || '',
-          duration: (duration || 240).toString(),
-        },
+        message: `feat: add track '${newTrack.title}' to catalog.json`,
+        content: updatedBase64,
+        ...(sha ? { sha } : {}),
       }),
+      cache: 'no-store',
     });
-
-    return res.status === 204 || res.ok;
-  } catch (err) {
-    console.error('Lỗi gọi GitHub Actions Dispatch:', err);
-    return false;
+  } catch (e) {
+    console.warn('GitHub catalog save warning:', e);
   }
 }
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const { action, query, track } = body;
@@ -434,68 +573,13 @@ export async function POST(req: Request) {
       }
 
       const clean = cleanTrackMetadata(track.title || 'Track', track.artist);
-      const ytUrl = track.url || `https://www.youtube.com/watch?v=${track.videoId}`;
+      const videoId = track.videoId || extractYouTubeVideoId(track.url || '') || '';
+      const ytUrl = track.url || `https://www.youtube.com/watch?v=${videoId}`;
 
-      const isVercel = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
-
-      if (isVercel) {
-        const dispatched = await dispatchGitHubActionsIngest(
-          ytUrl,
-          clean.title,
-          clean.artist,
-          track.thumbnail,
-          track.duration
-        );
-
-        if (dispatched) {
-          const cloudTrack = {
-            id: `trk-cloud-${Date.now()}`,
-            title: clean.title,
-            artist: clean.artist,
-            duration: track.duration || 240,
-            album: 'Cloud Vault',
-            genre: 'Stereo',
-            bitrate: '256 kbps',
-            format: 'm4a',
-            coverUrl: track.thumbnail || `https://i.ytimg.com/vi/${track.videoId}/hqdefault.jpg`,
-            streamUrl: '',
-            dateAdded: new Date().toISOString(),
-          };
-
-          return NextResponse.json({
-            success: true,
-            isCloudQueued: true,
-            message: `Đang kích hoạt máy ảo GitHub nạp bài "${clean.title}"... Bài hát sẽ xuất hiện trong giây lát!`,
-            track: cloudTrack,
-          });
-        }
-      }
-
-      const audioBuffer = await extractViaYtDlpRamPipe(ytUrl);
+      const audioBuffer = await resolveYouTubeAudioStream(videoId, ytUrl);
       if (!audioBuffer) {
-        const dispatched = await dispatchGitHubActionsIngest(
-          ytUrl,
-          clean.title,
-          clean.artist,
-          track.thumbnail,
-          track.duration
-        );
-        if (dispatched) {
-          return NextResponse.json({
-            success: true,
-            isCloudQueued: true,
-            message: `Đang xử lý nạp bài "${clean.title}" qua GitHub Actions...`,
-            track: {
-              id: `trk-cloud-${Date.now()}`,
-              title: clean.title,
-              artist: clean.artist,
-              duration: track.duration || 240,
-              coverUrl: track.thumbnail,
-            },
-          });
-        }
         return NextResponse.json(
-          { error: 'Không thể trích xuất luồng âm thanh của video này.' },
+          { error: 'Không thể trích xuất luồng âm thanh của video này. Vui lòng thử video khác.' },
           { status: 502 }
         );
       }
@@ -508,14 +592,6 @@ export async function POST(req: Request) {
         );
       }
 
-      let catalog: any[] = [];
-      try {
-        const raw = await fs.readFile(CATALOG_PATH, 'utf-8');
-        catalog = JSON.parse(raw);
-      } catch {
-        catalog = [];
-      }
-
       const newTrack = {
         id: `trk-${Date.now()}`,
         title: clean.title,
@@ -525,14 +601,13 @@ export async function POST(req: Request) {
         genre: 'Stereo',
         bitrate: '256 kbps',
         format: uploaded.ext,
-        coverUrl: track.thumbnail || `https://i.ytimg.com/vi/${track.videoId}/hqdefault.jpg`,
+        coverUrl: track.thumbnail || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
         streamUrl: `/api/tracks/stream?file=${encodeURIComponent(uploaded.safeName)}`,
         cdnUrl: uploaded.browserDownloadUrl,
         dateAdded: new Date().toISOString(),
       };
 
-      const updatedCatalog = [newTrack, ...catalog.filter((t: any) => t.id !== newTrack.id)];
-      await fs.writeFile(CATALOG_PATH, JSON.stringify(updatedCatalog, null, 2), 'utf-8');
+      await saveTrackToCatalogs(newTrack);
 
       return NextResponse.json({
         success: true,
@@ -542,6 +617,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ error: 'Yêu cầu không hợp lệ.' }, { status: 400 });
   } catch (error: any) {
+    if (error?.digest) throw error;
     console.error('Lỗi Ingest API:', error);
     return NextResponse.json({ error: error.message || 'Lỗi máy chủ.' }, { status: 500 });
   }

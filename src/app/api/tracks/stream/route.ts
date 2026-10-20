@@ -1,5 +1,6 @@
 ﻿import { NextRequest, NextResponse } from 'next/server';
 
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
 const GITHUB_OWNER = process.env.GITHUB_OWNER || 'Nohart111';
 const GITHUB_REPO = process.env.GITHUB_REPO || 'aurasound-music-data';
 const GITHUB_RELEASE_TAG = process.env.GITHUB_RELEASE_TAG || 'tracks-v1';
@@ -15,7 +16,6 @@ function getMimeType(filename: string): string {
 }
 
 export async function GET(req: NextRequest) {
-  // Đọc searchParams qua req.nextUrl bên ngoài try-catch để Next.js tự động nhận diện Dynamic route
   const { searchParams } = req.nextUrl;
   const file = searchParams.get('file');
   const directUrl = searchParams.get('url');
@@ -28,41 +28,59 @@ export async function GET(req: NextRequest) {
   if (directUrl && directUrl.startsWith('https://')) {
     targetUrl = directUrl;
   } else if (file) {
-    const cleanFile = file.replace(/^\/+|\/+$/g, '');
+    const cleanFile = decodeURIComponent(file).replace(/^\/+|\/+$/g, '');
     targetUrl = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/${GITHUB_RELEASE_TAG}/${encodeURIComponent(
       cleanFile
     )}`;
   }
 
   try {
-    let finalUrl = targetUrl;
-    try {
-      const redirectCheck = await fetch(targetUrl, {
-        method: 'GET',
-        headers: { 'User-Agent': 'AuraSound-Player/2.0' },
-        redirect: 'manual',
-      });
-      if (
-        redirectCheck.status === 302 ||
-        redirectCheck.status === 301 ||
-        redirectCheck.status === 307
-      ) {
-        const loc = redirectCheck.headers.get('location');
-        if (loc) finalUrl = loc;
-      }
-    } catch {}
-
     const rangeHeader = req.headers.get('range');
     const fetchHeaders: Record<string, string> = {
-      'User-Agent': 'AuraSound-Player/2.0',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
     };
     if (rangeHeader) {
       fetchHeaders['Range'] = rangeHeader;
     }
 
-    const upstream = await fetch(finalUrl, {
+    let upstream = await fetch(targetUrl, {
       headers: fetchHeaders,
+      redirect: 'follow',
+      cache: 'no-store',
     });
+
+    if (!upstream.ok && upstream.status !== 206 && file && GITHUB_TOKEN) {
+      try {
+        const relRes = await fetch(
+          `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/tags/${GITHUB_RELEASE_TAG}`,
+          {
+            headers: {
+              Authorization: `Bearer ${GITHUB_TOKEN}`,
+              Accept: 'application/vnd.github+json',
+            },
+            cache: 'no-store',
+          }
+        );
+        if (relRes.ok) {
+          const relData = await relRes.json();
+          const clean = decodeURIComponent(file).toLowerCase();
+          const prefix = clean.replace(/-\d+\.[a-z0-9]+$/, '');
+          const matchedAsset = (relData.assets || []).find(
+            (a: any) =>
+              a.name &&
+              (a.name.toLowerCase() === clean ||
+                (prefix.length > 3 && a.name.toLowerCase().startsWith(prefix)))
+          );
+          if (matchedAsset?.browser_download_url) {
+            upstream = await fetch(matchedAsset.browser_download_url, {
+              headers: fetchHeaders,
+              redirect: 'follow',
+              cache: 'no-store',
+            });
+          }
+        }
+      } catch {}
+    }
 
     if (!upstream.ok && upstream.status !== 206) {
       return NextResponse.json(
@@ -89,7 +107,6 @@ export async function GET(req: NextRequest) {
       headers: responseHeaders,
     });
   } catch (err: any) {
-    // Bắt buộc ném tiếp tín hiệu điều hướng nội bộ của Next.js (prerender bailout)
     if (err?.digest) throw err;
     console.error('Lỗi Stream API:', err);
     return NextResponse.json({ error: 'Lỗi truyền tải âm thanh.' }, { status: 500 });
