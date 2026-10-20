@@ -110,22 +110,34 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
   const syncConfirmedTrackToStore = async (confirmedTrack?: Track) => {
     if (!confirmedTrack) return;
 
-    // 1. NGAY LẬP TỨC PHÁT BÀI VỪA TẢI XONG (Không để bài cũ đè)
     const store = usePlayerStore.getState();
+    const isCurrentlyPlaying = store.isPlaying && Boolean(store.currentTrack);
     const existingLib = store.library || [];
     const existingQueue = store.queue || [];
-    const updatedLib = [confirmedTrack, ...existingLib.filter((t) => t.id !== confirmedTrack.id)];
-    const updatedQueue = [confirmedTrack, ...existingQueue.filter((t) => t.id !== confirmedTrack.id)];
+
+    // Chèn bài hát mới vào thư viện và thêm vào cuối hàng đợi phát (để bài đang nghe tiếp tục chạy êm đềm)
+    const updatedLib = existingLib.some((t) => t.id === confirmedTrack.id)
+      ? existingLib.map((t) => (t.id === confirmedTrack.id ? confirmedTrack : t))
+      : [...existingLib, confirmedTrack];
+
+    const updatedQueue = existingQueue.some((t) => t.id === confirmedTrack.id)
+      ? existingQueue.map((t) => (t.id === confirmedTrack.id ? confirmedTrack : t))
+      : [...existingQueue, confirmedTrack];
 
     store.setLibrary(updatedLib);
-    store.setCurrentTrack(confirmedTrack);
-    store.setIsPlaying(true);
+    store.setQueue(updatedQueue);
 
+    // Chỉ gán bài mới lên deck nếu trước đó chưa có bài nào được chọn
+    if (!isCurrentlyPlaying && !store.currentTrack) {
+      store.setCurrentTrack(confirmedTrack);
+    }
+
+    // Bắn sự kiện để trang chủ hiện Toast xanh "ĐÃ NẠP VÀO KHO THÀNH CÔNG"
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('aurasound:track-added', { detail: confirmedTrack }));
     }
 
-    // 2. Đồng bộ ngầm danh mục mới nhất từ API mà vẫn giữ bài mới tải đang phát
+    // Đồng bộ ngầm danh mục từ API mà không gây ngắt quãng bài đang phát
     try {
       const syncRes = await fetch(`/api/tracks/search?t=${Date.now()}`, { cache: 'no-store' });
       const syncData = await syncRes.json();
@@ -136,13 +148,11 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
         : [];
 
       if (tracksList.length > 0) {
-        const merged = [
-          confirmedTrack,
-          ...tracksList.filter((t: Track) => t.id !== confirmedTrack.id),
+        const mergedLib = [
+          ...tracksList,
+          ...(!tracksList.some((t: Track) => t.id === confirmedTrack.id) ? [confirmedTrack] : []),
         ];
-        usePlayerStore.getState().setLibrary(merged);
-        usePlayerStore.getState().setCurrentTrack(confirmedTrack);
-        usePlayerStore.getState().setIsPlaying(true);
+        usePlayerStore.getState().setLibrary(mergedLib);
       }
     } catch {}
   };
@@ -276,7 +286,7 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
       }
 
       setTaskStatus('completed');
-      setStatusText('Hoàn tất! Đang mở phát bài hát mới tải...');
+      setStatusText('Hoàn tất! Đã lưu bài hát vào kho nhạc.');
       setSuccessId(itemKey);
       await syncConfirmedTrackToStore(confirmedTrack);
 
