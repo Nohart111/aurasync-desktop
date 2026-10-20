@@ -1,0 +1,506 @@
+name: AuraSound Cloud Ingest & Storage Vault
+
+"on":
+  workflow_dispatch:
+    inputs:
+      request_id:
+        description: 'Unique Ingest Request ID'
+        required: false
+        default: ''
+      video_id:
+        description: 'YouTube Video ID'
+        required: false
+        default: ''
+      video_url:
+        description: 'Direct YouTube/Media URL'
+        required: true
+      title:
+        description: 'Track Title'
+        required: true
+      artist:
+        description: 'Track Artist'
+        required: false
+        default: 'Nghệ sĩ chưa rõ'
+      thumbnail:
+        description: 'Thumbnail URL'
+        required: false
+        default: ''
+      duration:
+        description: 'Duration in seconds'
+        required: false
+        default: '240'
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+          pip install --upgrade --no-cache-dir yt-dlp
+          mkdir -p output
+
+      - name: Download & Verify Audio Stream
+        shell: python
+        env:
+          PYTHONUNBUFFERED: "1"
+          INPUT_REQ_ID: ${{ github.event.inputs.request_id }}
+          INPUT_VIDEO_ID: ${{ github.event.inputs.video_id }}
+          INPUT_URL: ${{ github.event.inputs.video_url }}
+          INPUT_TITLE: ${{ github.event.inputs.title }}
+          INPUT_ARTIST: ${{ github.event.inputs.artist }}
+          INPUT_DURATION: ${{ github.event.inputs.duration }}
+        run: |
+          import os
+          import sys
+          import json
+          import time
+          import re
+          import unicodedata
+          import subprocess
+          import shutil
+          import urllib.request
+          import urllib.parse
+          import glob
+
+          UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+
+          url = os.environ.get("INPUT_URL", "").strip()
+          raw_title = os.environ.get("INPUT_TITLE", "").strip() or "Track"
+          raw_artist = os.environ.get("INPUT_ARTIST", "").strip() or ""
+
+          if not url.startswith("http"):
+              print("URL không hợp lệ:", url, flush=True)
+              sys.exit(1)
+
+          def slugify(text):
+              text = text.replace("đ", "d").replace("Đ", "d")
+              text = unicodedata.normalize("NFD", text).encode("ascii", "ignore").decode("utf-8").lower()
+              text = re.sub(r"[^a-z0-9]+", "-", text).strip("-")
+              return text[:50] or "track"
+
+          def clean_query_title(t):
+              t = re.sub(r"\[[^\]]*(?:official|mv|video|audio|lyric|hd|4k)[^\]]*\]", "", t, flags=re.I)
+              t = re.sub(r"\([^\)]*(?:official|mv|video|audio|lyric|hd|4k)[^\)]*\)", "", t, flags=re.I)
+              return t.strip() or raw_title
+
+          def is_unwanted_remix(candidate_title, original_title):
+              c_lower = (candidate_title or "").lower()
+              o_lower = (original_title or "").lower()
+              banned_keywords = [
+                  "remix", "re-mix", "cover", "mashup", "dj", "vinahouse",
+                  "speed up", "sped up", "slowed", "nightcore", "parody",
+                  "karaoke", "instrumental", "beat", "lofi", "lo-fi",
+                  "bass boost", "orchestral", "acoustic", "live session"
+              ]
+              for kw in banned_keywords:
+                  if kw in c_lower and kw not in o_lower:
+                      return True
+              return False
+
+          song_slug = slugify(raw_title)
+          ts = int(time.time())
+          base_slug = f"{song_slug}-{ts}"
+          final_mp3_name = f"{base_slug}.mp3"
+          final_mp3_path = os.path.join("output", final_mp3_name)
+          downloaded_file = None
+          verified_duration = 0
+
+          HAS_FFPROBE = bool(shutil.which("ffprobe"))
+          HAS_FFMPEG = bool(shutil.which("ffmpeg"))
+
+          def verify_and_transcode_to_mp3(candidate_path, dest_mp3_path):
+              global verified_duration
+              if not candidate_path or not os.path.exists(candidate_path):
+                  return False
+              fsize = os.path.getsize(candidate_path)
+              if fsize < 40000:
+                  return False
+
+              dur_val = 0.0
+              if HAS_FFPROBE:
+                  try:
+                      probe_cmd = [
+                          "ffprobe", "-v", "error",
+                          "-show_entries", "format=duration",
+                          "-of", "default=noprint_wrappers=1:nokey=1",
+                          candidate_path
+                      ]
+                      probe_res = subprocess.run(probe_cmd, capture_output=True, text=True)
+                      dur_val = float(probe_res.stdout.strip())
+                      if dur_val < 30.0:
+                          print(f"Bỏ qua file tạm vì thời lượng quá ngắn ({dur_val:.1f}s).", flush=True)
+                          return False
+                  except Exception as e:
+                      print(f"ffprobe kiểm tra không đạt ({e}), thử tiếp nguồn khác...", flush=True)
+                      return False
+
+              if HAS_FFMPEG:
+                  try:
+                      ff_cmd = [
+                          "ffmpeg", "-y", "-v", "error",
+                          "-i", candidate_path,
+                          "-vn", "-acodec", "libmp3lame", "-b:a", "192k", "-ar", "44100", "-ac", "2",
+                          dest_mp3_path
+                      ]
+                      ff_res = subprocess.run(ff_cmd, capture_output=True, text=True)
+                      if ff_res.returncode == 0 and os.path.exists(dest_mp3_path) and os.path.getsize(dest_mp3_path) > 100000:
+                          verified_duration = int(round(dur_val)) if dur_val > 0 else int(os.environ.get("INPUT_DURATION", "240"))
+                          print(f"Đã chuẩn hóa MP3 thành công ({verified_duration}s, {os.path.getsize(dest_mp3_path) // 1024} KB).", flush=True)
+                          return True
+                  except Exception as e:
+                      print(f"ffmpeg transcode lỗi ({e}).", flush=True)
+
+              if candidate_path.lower().endswith(".mp3") and fsize > 100000:
+                  shutil.copyfile(candidate_path, dest_mp3_path)
+                  verified_duration = int(os.environ.get("INPUT_DURATION", "240"))
+                  return True
+
+              return False
+
+          # =========================================================================
+          # TẦNG 1: TRÍCH XUẤT TRỰC TIẾP TỪ YOUTUBE URL ĐƯỢC CHỌN (ĐẢM BẢO 100% CHÍNH XÁC)
+          # Sử dụng Cloud Proxy p.savenow.to để lấy đúng audio của video YouTube người dùng chọn
+          # =========================================================================
+          print("Đang trích xuất luồng âm thanh chính xác từ video YouTube được chọn...", flush=True)
+          for fmt in ["mp3", "m4a"]:
+              if downloaded_file:
+                  break
+              try:
+                  encoded_url = urllib.parse.quote(url)
+                  api_url = f"https://p.savenow.to/ajax/download.php?button=1&start=1&end=1&format={fmt}&iframe_source=https://loader.to&url={encoded_url}"
+                  req = urllib.request.Request(
+                      api_url,
+                      headers={
+                          "User-Agent": UA,
+                          "Referer": "https://loader.to/",
+                          "Origin": "https://loader.to"
+                      }
+                  )
+                  with urllib.request.urlopen(req, timeout=12) as resp:
+                      init_data = json.loads(resp.read().decode("utf-8"))
+
+                  job_id = init_data.get("id")
+                  prog_url = init_data.get("progress_url") or (f"https://p.savenow.to/ajax/progress.php?id={job_id}" if job_id else None)
+
+                  if prog_url:
+                      for _ in range(25):
+                          time.sleep(1.2)
+                          p_req = urllib.request.Request(
+                              prog_url,
+                              headers={"User-Agent": UA, "Referer": "https://loader.to/"}
+                          )
+                          with urllib.request.urlopen(p_req, timeout=10) as p_resp:
+                              prog_data = json.loads(p_resp.read().decode("utf-8"))
+                          if prog_data.get("progress") == 1000 and prog_data.get("download_url"):
+                              dl_url = prog_data["download_url"]
+                              raw_proxy_file = os.path.join("output", f"raw_yt_proxy.{fmt}")
+                              subprocess.run(
+                                  [
+                                      "curl", "-L", "-s", "--max-time", "60",
+                                      "-A", UA,
+                                      "-e", "https://loader.to/",
+                                      "-o", raw_proxy_file,
+                                      dl_url
+                                  ]
+                              )
+                              if verify_and_transcode_to_mp3(raw_proxy_file, final_mp3_path):
+                                  downloaded_file = final_mp3_name
+                                  print(f"Tải thành công bản chính thức từ YouTube qua proxy ({fmt}):", downloaded_file, flush=True)
+                              break
+              except Exception as e:
+                  print(f"YouTube Proxy ({fmt}) notice:", e, flush=True)
+
+          # =========================================================================
+          # TẦNG 2: yt-dlp YouTube Direct (android_vr / tv_embedded)
+          # =========================================================================
+          if not downloaded_file:
+              for client in ["android_vr", "tv_embedded", "ios", "mweb"]:
+                  if downloaded_file:
+                      break
+                  print(f"Đang thử yt-dlp trực tiếp trên video YouTube với client {client}...", flush=True)
+                  for f_old in glob.glob(os.path.join("output", "raw_yt_*")):
+                      try:
+                          os.remove(f_old)
+                      except Exception:
+                          pass
+                  yt_out_tpl = os.path.join("output", f"raw_yt_{client}.%(ext)s")
+                  cmd = [
+                      "yt-dlp",
+                      "--extractor-args", f"youtube:player_client={client}",
+                      "-f", "ba[ext=m4a]/ba[ext=mp3]/ba/b",
+                      "--concurrent-fragments", "5",
+                      "--no-check-certificates",
+                      "--no-playlist",
+                      "--no-part",
+                      "--no-warnings",
+                      "--quiet",
+                      "-o", yt_out_tpl,
+                      url
+                  ]
+                  subprocess.run(cmd)
+                  for candidate in glob.glob(os.path.join("output", f"raw_yt_{client}.*")):
+                      if verify_and_transcode_to_mp3(candidate, final_mp3_path):
+                          downloaded_file = final_mp3_name
+                          print(f"Tải thành công từ YouTube qua yt-dlp ({client}):", downloaded_file, flush=True)
+                          break
+
+          # =========================================================================
+          # TẦNG 3: DỰ PHÒNG SOUNDCLOUD VỚI BỘ LỌC CHỐNG REMIX / COVER TRIỆT ĐỂ
+          # Chỉ chạy khi các nguồn trích xuất trực tiếp từ video YouTube thất bại
+          # =========================================================================
+          if not downloaded_file:
+              print("Các nguồn trực tiếp YouTube không khả dụng, đang tìm bản gốc trên SoundCloud...", flush=True)
+              clean_title = clean_query_title(raw_title)
+              artist_clean = raw_artist if raw_artist and raw_artist.lower() not in ["nghệ sĩ chưa rõ", "youtube", "unknown"] else ""
+              search_queries = []
+              if artist_clean:
+                  search_queries.append(f"{clean_title} {artist_clean}".strip())
+              if clean_title not in search_queries:
+                  search_queries.append(clean_title)
+
+              try:
+                  found_cid = None
+                  try:
+                      sc_req = urllib.request.Request("https://soundcloud.com", headers={"User-Agent": UA})
+                      with urllib.request.urlopen(sc_req, timeout=8) as r:
+                          sc_html = r.read().decode("utf-8", errors="ignore")
+                      js_urls = re.findall(r'src="(https://a-v2\.sndcdn\.com/assets/[^"]+\.js)"', sc_html)
+                      for js_url in reversed(js_urls[-6:]):
+                          try:
+                              js_req = urllib.request.Request(js_url, headers={"User-Agent": UA})
+                              with urllib.request.urlopen(js_req, timeout=8) as jr:
+                                  js_txt = jr.read().decode("utf-8", errors="ignore")
+                              m = re.search(r'client_id\s*[:=]\s*["\']([a-zA-Z0-9]{32})["\']', js_txt)
+                              if m:
+                                  found_cid = m.group(1)
+                                  break
+                          except Exception:
+                              continue
+                  except Exception as e:
+                      print("SoundCloud client_id notice:", e, flush=True)
+
+                  if found_cid:
+                      for q in search_queries:
+                          if downloaded_file:
+                              break
+                          search_api = f"https://api-v2.soundcloud.com/search/tracks?q={urllib.parse.quote(q)}&client_id={found_cid}&limit=12"
+                          req = urllib.request.Request(search_api, headers={"User-Agent": UA})
+                          with urllib.request.urlopen(req, timeout=8) as r:
+                              sc_data = json.loads(r.read().decode("utf-8"))
+
+                          for item in sc_data.get("collection", []):
+                              track_name = item.get("title", "")
+                              # CHẶN TOÀN BỘ BẢN REMIX / COVER / DJ / TIKTOK NẾU NGƯỜI DÙNG KHÔNG YÊU CẦU
+                              if is_unwanted_remix(track_name, raw_title):
+                                  print(f"Bỏ qua bản remix/cover không mong muốn: {track_name}", flush=True)
+                                  continue
+
+                              if item.get("monetization_model") in ["SUB_HIGH_TIER", "SUB_MID_TIER"]:
+                                  continue
+                              if item.get("policy") == "BLOCK" or item.get("snipped"):
+                                  continue
+                              dur_ms = item.get("duration") or 0
+                              if dur_ms < 55000 or dur_ms > 900000:
+                                  continue
+
+                              transcodings = item.get("media", {}).get("transcodings", [])
+                              transcodings_sorted = sorted(
+                                  transcodings,
+                                  key=lambda x: 0 if x.get("format", {}).get("protocol") == "progressive" else 1
+                              )
+                              for tr in transcodings_sorted:
+                                  protocol = str(tr.get("format", {}).get("protocol", "")).lower()
+                                  if "drm" in protocol or "encrypt" in protocol:
+                                      continue
+                                  tr_url = tr.get("url")
+                                  if protocol in ["progressive", "hls"] and tr_url:
+                                      try:
+                                          sep = "&" if "?" in tr_url else "?"
+                                          st_req = urllib.request.Request(
+                                              f"{tr_url}{sep}client_id={found_cid}",
+                                              headers={"User-Agent": UA}
+                                          )
+                                          with urllib.request.urlopen(st_req, timeout=8) as sr:
+                                              st_res = json.loads(sr.read().decode("utf-8"))
+                                          stream_link = st_res.get("url")
+                                          if stream_link:
+                                              raw_sc_file = os.path.join("output", f"raw_sc_api_{ts}.mp3")
+                                              if HAS_FFMPEG:
+                                                  subprocess.run(
+                                                      [
+                                                          "ffmpeg", "-y", "-v", "error",
+                                                          "-i", stream_link,
+                                                          "-vn", "-acodec", "libmp3lame", "-b:a", "192k", "-ar", "44100", "-ac", "2",
+                                                          raw_sc_file
+                                                      ],
+                                                      capture_output=True
+                                                  )
+                                              elif protocol == "progressive":
+                                                  urllib.request.urlretrieve(stream_link, raw_sc_file)
+
+                                              if verify_and_transcode_to_mp3(raw_sc_file, final_mp3_path):
+                                                  downloaded_file = final_mp3_name
+                                                  print(f"Tải thành công bản gốc qua SoundCloud API: {track_name}", flush=True)
+                                                  break
+                                      except Exception:
+                                          continue
+                              if downloaded_file:
+                                  break
+              except Exception as e:
+                  print("SoundCloud notice:", e, flush=True)
+
+          if not downloaded_file or not os.path.exists(final_mp3_path):
+              print("Tất cả các nguồn tải nhạc đều không trả về luồng âm thanh hợp lệ.", flush=True)
+              sys.exit(1)
+
+          with open("output/target_filename.txt", "w", encoding="utf-8") as f:
+              f.write(downloaded_file)
+
+          with open("output/target_slug.txt", "w", encoding="utf-8") as f:
+              f.write(song_slug)
+
+          with open("output/target_duration.txt", "w", encoding="utf-8") as f:
+              f.write(str(verified_duration or os.environ.get("INPUT_DURATION", "240")))
+
+          print(f"Đã lưu thành công file âm thanh chuẩn MP3: {downloaded_file}", flush=True)
+
+      - name: Upload Audio to GitHub Release (Non-Bloating Storage)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TARGET_FILE=$(cat output/target_filename.txt | tr -d '\r\n')
+          SONG_SLUG=$(cat output/target_slug.txt | tr -d '\r\n')
+          if [ -z "$TARGET_FILE" ] || [ ! -f "output/$TARGET_FILE" ]; then
+            echo "Lỗi: Không tìm thấy file đích output/$TARGET_FILE"
+            exit 1
+          fi
+
+          if [ -n "$SONG_SLUG" ]; then
+            OLD_ASSETS=$(gh release view tracks-v1 --json assets --jq ".assets[].name" 2>/dev/null | grep "^${SONG_SLUG}-" || true)
+            for OLD_ASSET in $OLD_ASSETS; do
+              if [ "$OLD_ASSET" != "$TARGET_FILE" ]; then
+                echo "Đang dọn file cũ trong Release: $OLD_ASSET"
+                gh release delete-asset tracks-v1 "$OLD_ASSET" -y || true
+              fi
+            done
+          fi
+
+          gh release upload tracks-v1 "output/$TARGET_FILE" --clobber || gh release create tracks-v1 "output/$TARGET_FILE" --title "AuraSound Tracks CDN" --notes "Binary audio storage outside git tree"
+
+      - name: Update data/catalog.json & Push Atomically
+        shell: python
+        env:
+          PYTHONUNBUFFERED: "1"
+          INPUT_REQ_ID: ${{ github.event.inputs.request_id }}
+          INPUT_VIDEO_ID: ${{ github.event.inputs.video_id }}
+          INPUT_TITLE: ${{ github.event.inputs.title }}
+          INPUT_ARTIST: ${{ github.event.inputs.artist }}
+          INPUT_THUMBNAIL: ${{ github.event.inputs.thumbnail }}
+          INPUT_DURATION: ${{ github.event.inputs.duration }}
+        run: |
+          import json
+          import os
+          import re
+          import unicodedata
+          import time
+          import subprocess
+          import sys
+
+          def slugify(text):
+              text = (text or "").replace("đ", "d").replace("Đ", "d")
+              text = unicodedata.normalize("NFD", text).encode("ascii", "ignore").decode("utf-8").lower()
+              text = re.sub(r"[^a-z0-9]+", "-", text).strip("-")
+              return text[:50] or "track"
+
+          subprocess.run(["git", "config", "--global", "user.name", "AuraSound Cloud Ingest"])
+          subprocess.run(["git", "config", "--global", "user.email", "bot@aurasound.internal"])
+
+          target_file = open("output/target_filename.txt", "r", encoding="utf-8").read().strip()
+          req_id = os.environ.get("INPUT_REQ_ID", "").strip() or f"trk-cloud-{int(time.time())}"
+          video_id = os.environ.get("INPUT_VIDEO_ID", "").strip()
+          title = os.environ.get("INPUT_TITLE", "").strip()
+          artist = os.environ.get("INPUT_ARTIST", "").strip() or "Nghệ sĩ chưa rõ"
+          thumbnail = os.environ.get("INPUT_THUMBNAIL", "").strip()
+          title_slug = slugify(title)
+
+          try:
+              duration = int(open("output/target_duration.txt", "r", encoding="utf-8").read().strip())
+              if duration <= 0:
+                  duration = int(os.environ.get("INPUT_DURATION", "240"))
+          except Exception:
+              try:
+                  duration = int(os.environ.get("INPUT_DURATION", "240"))
+              except Exception:
+                  duration = 240
+
+          for attempt in range(1, 4):
+              subprocess.run(["git", "pull", "--rebase", "origin", "main"])
+
+              catalog_path = "data/catalog.json"
+              os.makedirs("data", exist_ok=True)
+
+              catalog = []
+              if os.path.exists(catalog_path):
+                  try:
+                      with open(catalog_path, "r", encoding="utf-8") as f:
+                          catalog = json.load(f)
+                          if not isinstance(catalog, list):
+                              catalog = []
+                  except Exception:
+                      catalog = []
+
+              repo_name = os.environ.get("GITHUB_REPOSITORY", "Nohart111/aurasound-music-data")
+              cdn_download_url = f"https://github.com/{repo_name}/releases/download/tracks-v1/{target_file}"
+              new_track = {
+                  "id": req_id,
+                  "videoId": video_id,
+                  "title": title,
+                  "artist": artist,
+                  "duration": duration,
+                  "album": "Cloud Vault",
+                  "genre": "Stereo",
+                  "bitrate": "192 kbps",
+                  "format": "mp3",
+                  "coverUrl": thumbnail or (f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg" if video_id else "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=600&auto=format&fit=crop&q=80"),
+                  "streamUrl": f"/api/tracks/stream?file={target_file}",
+                  "cdnUrl": cdn_download_url,
+                  "dateAdded": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+              }
+
+              def is_same_song(t):
+                  if not isinstance(t, dict):
+                      return True
+                  if t.get("id") == req_id:
+                      return True
+                  if video_id and (t.get("videoId") == video_id or video_id in str(t.get("id", ""))):
+                      return True
+                  if title_slug and slugify(t.get("title", "")) == title_slug:
+                      return True
+                  return False
+
+              updated = [new_track] + [t for t in catalog if not is_same_song(t)]
+              with open(catalog_path, "w", encoding="utf-8") as f:
+                  json.dump(updated, f, indent=2, ensure_ascii=False)
+
+              subprocess.run(["git", "add", "data/catalog.json"])
+              commit_title = os.environ.get("INPUT_TITLE", "New Track")
+              subprocess.run(["git", "commit", "-m", f"feat: ingest track '{commit_title}' [{req_id}]"])
+              push_res = subprocess.run(["git", "push", "origin", "main"])
+              if push_res.returncode == 0:
+                  print("Đồng bộ catalog.json thành công!", flush=True)
+                  sys.exit(0)
+              time.sleep(2)
+
+          sys.exit(1)
