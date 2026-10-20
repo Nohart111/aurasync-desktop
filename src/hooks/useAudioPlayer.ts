@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useCallback } from 'react';
-import { usePlayerStore } from '@/store/usePlayerStore';
-import { audioEngine } from '@/core/audio/AudioEngine';
+import { usePlayerStore, Track } from '@/store/usePlayerStore';
+import { AudioEngine, audioEngine } from '@/core/audio/AudioEngine';
 
 // Module-level singleton state so multiple components calling useAudioPlayer()
 // (e.g., RetroCyberDeckPage and FloatingPlayerBar) never trigger duplicate loads or skip 2 tracks.
@@ -34,9 +34,7 @@ export function useAudioPlayer() {
     playPrevious,
   } = usePlayerStore();
 
-  // Register singleton AudioEngine callbacks. Because AudioEngine replaces its callback reference
-  // rather than calling addEventListener repeatedly, calling useAudioPlayer() in multiple
-  // components will NEVER fire advanceNext() multiple times when a track ends.
+  // Register singleton AudioEngine callbacks.
   useEffect(() => {
     audioEngine.onTimeUpdate((time) => {
       usePlayerStore.getState().setProgress(time);
@@ -127,16 +125,25 @@ export function useAudioPlayer() {
     [setProgress]
   );
 
+  const finalDuration = duration || currentTrack?.duration || 0;
+
   return {
     currentTrack,
     isPlaying,
     volume,
     progress,
-    duration: duration || currentTrack?.duration || 0,
+    currentTime: progress,
+    currentTimeMV: progress,
+    progressMV: progress,
+    duration: finalDuration,
+    actualDuration: finalDuration,
     togglePlay,
     seek,
+    seekTo: seek,
     setVolume,
     playNext,
     playPrevious,
   };
 }
+
+export default useAudioPlayer;

@@ -1,11 +1,11 @@
 export interface Track {
   id: string;
-  title: string;
-  artist: string;
+  title?: string;
+  artist?: string;
   album?: string;
   duration?: number;
   bpm?: number;
-  streamUrl: string;
+  streamUrl?: string;
   cdnUrl?: string;
   coverUrl?: string;
   thumbnail?: string;
@@ -13,4 +13,4 @@ export interface Track {
   [key: string]: any;
 }
 
-export type { Track as default };
+export default Track;
