@@ -430,12 +430,6 @@ async function dispatchGitHubWorkflow(inputs: {
   }
 }
 
-/**
- * Tìm bài hát trong catalog.json.
- * Nếu truyền `minTimestampMs` (trong lúc polling chờ job mới hoàn tất),
- * hàm sẽ CHỈ khớp với đúng `requestId` mới hoặc bản ghi vừa được tạo sau `minTimestampMs`,
- * tuyệt đối không trả về nhầm bản ghi cũ bị lỗi từ lần tải trước.
- */
 function findMatchingTrackInCatalog(
   catalog: any[],
   requestId?: string,
@@ -445,7 +439,6 @@ function findMatchingTrackInCatalog(
 ): any | null {
   if (!Array.isArray(catalog) || catalog.length === 0) return null;
 
-  // 1. Ưu tiên khớp chính xác theo requestId của lần tải hiện tại
   if (requestId) {
     const exactById = catalog.find((t) => t && (t.streamUrl || t.cdnUrl) && t.id === requestId);
     if (exactById) return exactById;
@@ -487,7 +480,17 @@ function findMatchingTrackInCatalog(
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { action, query, track, requestId, videoId: pollVideoId, title: pollTitle, startedAt, force } = body;
+    const {
+      action,
+      query,
+      track,
+      requestId,
+      runId,
+      videoId: pollVideoId,
+      title: pollTitle,
+      startedAt,
+      force,
+    } = body;
 
     // 1. TÌM KIẾM VIDEO YOUTUBE
     if (action === 'search') {
@@ -498,7 +501,79 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ results });
     }
 
-    // 2. KÍCH HOẠT TÁC VỤ TẢI NHẠC QUA GITHUB ACTIONS
+    // 2. HỦY TÁC VỤ ĐANG CHẠY TRÊN GITHUB ACTIONS
+    if (action === 'cancel') {
+      if (pollVideoId) recentDispatches.delete(String(pollVideoId));
+      if (pollTitle) recentDispatches.delete(slugifyTitle(String(pollTitle)));
+      for (const [k, v] of recentDispatches.entries()) {
+        if (requestId && v.requestId === requestId) {
+          recentDispatches.delete(k);
+        }
+      }
+
+      let cancelledRunId: number | string | null = runId || null;
+
+      if (GITHUB_TOKEN) {
+        const headers: Record<string, string> = {
+          Accept: 'application/vnd.github+json',
+          Authorization: `Bearer ${GITHUB_TOKEN}`,
+        };
+
+        try {
+          if (!cancelledRunId) {
+            const runsRes = await fetch(
+              `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/actions/workflows/ingest.yml/runs?per_page=6`,
+              { headers, cache: 'no-store' }
+            );
+            if (runsRes.ok) {
+              const runsData = await runsRes.json();
+              const runs: any[] = runsData.workflow_runs || [];
+              const parsedStart =
+                typeof startedAt === 'number'
+                  ? startedAt
+                  : startedAt
+                  ? new Date(startedAt).getTime()
+                  : Date.now() - 60000;
+              const threshold = (isNaN(parsedStart) ? Date.now() : parsedStart) - 45000;
+
+              const activeRun = runs.find(
+                (r) =>
+                  (r.status === 'in_progress' ||
+                    r.status === 'queued' ||
+                    r.status === 'waiting' ||
+                    r.status === 'pending' ||
+                    r.status === 'requested') &&
+                  new Date(r.created_at).getTime() >= threshold
+              );
+              if (activeRun?.id) {
+                cancelledRunId = activeRun.id;
+              }
+            }
+          }
+
+          if (cancelledRunId) {
+            await fetch(
+              `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/actions/runs/${cancelledRunId}/cancel`,
+              {
+                method: 'POST',
+                headers,
+                cache: 'no-store',
+              }
+            );
+          }
+        } catch (e) {
+          console.warn('Lỗi gửi lệnh hủy workflow GitHub Actions:', e);
+        }
+      }
+
+      return NextResponse.json({
+        status: 'cancelled',
+        runId: cancelledRunId,
+        message: 'Đã hủy tác vụ tải nhạc.',
+      });
+    }
+
+    // 3. KÍCH HOẠT TÁC VỤ TẢI NHẠC QUA GITHUB ACTIONS
     if (action === 'ingest') {
       const trackInput = track && typeof track === 'object' ? track : body;
       const rawUrl = String(trackInput.url || trackInput.videoUrl || body.url || body.query || '').trim();
@@ -534,7 +609,6 @@ export async function POST(req: NextRequest) {
         trackInput.artist || body.artist
       );
 
-      // Chỉ dùng lại bản ghi cũ nếu force !== true VÀ bản ghi cũ đã là chuẩn .mp3 hợp lệ
       if (!force) {
         const currentCatalog = await fetchGitHubCatalog();
         const existing = findMatchingTrackInCatalog(currentCatalog, undefined, videoId, clean.title);
@@ -553,7 +627,6 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // Kiểm tra tác vụ đang chạy trùng cho cùng videoId trong 25 giây gần nhất
       const dedupeKey = videoId || slugifyTitle(clean.title);
       const prevDispatch = recentDispatches.get(dedupeKey);
       if (prevDispatch && Date.now() - prevDispatch.startedAt < 25000) {
@@ -607,7 +680,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 3. KIỂM TRA TRẠNG THÁI TÁC VỤ (POLLING TỪ FRONTEND)
+    // 4. KIỂM TRA TRẠNG THÁI TÁC VỤ (POLLING TỪ FRONTEND)
     if (action === 'status') {
       const parsedStart =
         typeof startedAt === 'number'
@@ -681,6 +754,7 @@ export async function POST(req: NextRequest) {
             const msg = 'Đang xếp hàng chờ máy ảo GitHub Actions...';
             return NextResponse.json({
               status: 'queued',
+              runId: relevantRun.id,
               step: msg,
               message: msg,
             });
@@ -690,6 +764,7 @@ export async function POST(req: NextRequest) {
             const msg = 'GitHub Actions đang tải nhạc & chuẩn hóa MP3 vào kho lưu trữ...';
             return NextResponse.json({
               status: 'downloading',
+              runId: relevantRun.id,
               step: msg,
               message: msg,
             });
@@ -711,6 +786,7 @@ export async function POST(req: NextRequest) {
                 } catch {}
                 return NextResponse.json({
                   status: 'completed',
+                  runId: relevantRun.id,
                   track: confirmed,
                 });
               }
@@ -718,12 +794,20 @@ export async function POST(req: NextRequest) {
               const msg = 'Đang đồng bộ dữ liệu bài hát về website...';
               return NextResponse.json({
                 status: 'downloading',
+                runId: relevantRun.id,
                 step: msg,
                 message: msg,
+              });
+            } else if (relevantRun.conclusion === 'cancelled') {
+              return NextResponse.json({
+                status: 'cancelled',
+                runId: relevantRun.id,
+                error: 'Đã hủy tác vụ tải nhạc.',
               });
             } else {
               return NextResponse.json({
                 status: 'failed',
+                runId: relevantRun.id,
                 error: `Workflow tải nhạc thất bại (${relevantRun.conclusion || 'error'}). Vui lòng thử lại hoặc chọn nguồn video khác.`,
               });
             }

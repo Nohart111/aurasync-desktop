@@ -95,6 +95,20 @@ jobs:
               t = re.sub(r"\([^\)]*(?:official|mv|video|audio|lyric|hd|4k)[^\)]*\)", "", t, flags=re.I)
               return t.strip() or raw_title
 
+          def is_unwanted_remix(candidate_title, original_title):
+              c_lower = (candidate_title or "").lower()
+              o_lower = (original_title or "").lower()
+              banned_keywords = [
+                  "remix", "re-mix", "cover", "mashup", "dj", "vinahouse",
+                  "speed up", "sped up", "slowed", "nightcore", "parody",
+                  "karaoke", "instrumental", "beat", "lofi", "lo-fi",
+                  "bass boost", "orchestral", "acoustic", "live session"
+              ]
+              for kw in banned_keywords:
+                  if kw in c_lower and kw not in o_lower:
+                      return True
+              return False
+
           song_slug = slugify(raw_title)
           ts = int(time.time())
           base_slug = f"{song_slug}-{ts}"
@@ -148,7 +162,6 @@ jobs:
                   except Exception as e:
                       print(f"ffmpeg transcode lỗi ({e}).", flush=True)
 
-              # Fallback nếu không có ffmpeg nhưng file đã là mp3 hợp lệ
               if candidate_path.lower().endswith(".mp3") and fsize > 100000:
                   shutil.copyfile(candidate_path, dest_mp3_path)
                   verified_duration = int(os.environ.get("INPUT_DURATION", "240"))
@@ -156,200 +169,67 @@ jobs:
 
               return False
 
-          clean_title = clean_query_title(raw_title)
-          artist_clean = raw_artist if raw_artist and raw_artist.lower() not in ["nghệ sĩ chưa rõ", "youtube", "unknown"] else ""
-          search_queries = []
-          if artist_clean:
-              search_queries.append(f"{clean_title} {artist_clean}".strip())
-          if clean_title not in search_queries:
-              search_queries.append(clean_title)
-
           # =========================================================================
-          # TẦNG 1A: SoundCloud Direct API v2 (Bỏ qua bài DRM / Sub High Tier)
+          # TẦNG 1: TRÍCH XUẤT TRỰC TIẾP TỪ YOUTUBE URL ĐƯỢC CHỌN (ĐẢM BẢO 100% CHÍNH XÁC)
+          # Sử dụng Cloud Proxy p.savenow.to để lấy đúng audio của video YouTube người dùng chọn
           # =========================================================================
-          try:
-              print("Đang tìm nguồn âm thanh chất lượng cao qua SoundCloud CDN...", flush=True)
-              found_cid = None
-
+          print("Đang trích xuất luồng âm thanh chính xác từ video YouTube được chọn...", flush=True)
+          for fmt in ["mp3", "m4a"]:
+              if downloaded_file:
+                  break
               try:
-                  sc_req = urllib.request.Request("https://soundcloud.com", headers={"User-Agent": UA})
-                  with urllib.request.urlopen(sc_req, timeout=8) as r:
-                      sc_html = r.read().decode("utf-8", errors="ignore")
-                  js_urls = re.findall(r'src="(https://a-v2\.sndcdn\.com/assets/[^"]+\.js)"', sc_html)
-                  for js_url in reversed(js_urls[-6:]):
-                      try:
-                          js_req = urllib.request.Request(js_url, headers={"User-Agent": UA})
-                          with urllib.request.urlopen(js_req, timeout=8) as jr:
-                              js_txt = jr.read().decode("utf-8", errors="ignore")
-                          m = re.search(r'client_id\s*[:=]\s*["\']([a-zA-Z0-9]{32})["\']', js_txt)
-                          if m:
-                              found_cid = m.group(1)
-                              break
-                      except Exception:
-                          continue
-              except Exception as e:
-                  print("Không lấy được JS bundle SoundCloud:", e, flush=True)
+                  encoded_url = urllib.parse.quote(url)
+                  api_url = f"https://p.savenow.to/ajax/download.php?button=1&start=1&end=1&format={fmt}&iframe_source=https://loader.to&url={encoded_url}"
+                  req = urllib.request.Request(
+                      api_url,
+                      headers={
+                          "User-Agent": UA,
+                          "Referer": "https://loader.to/",
+                          "Origin": "https://loader.to"
+                      }
+                  )
+                  with urllib.request.urlopen(req, timeout=12) as resp:
+                      init_data = json.loads(resp.read().decode("utf-8"))
 
-              if found_cid:
-                  for q in search_queries:
-                      if downloaded_file:
-                          break
-                      search_api = f"https://api-v2.soundcloud.com/search/tracks?q={urllib.parse.quote(q)}&client_id={found_cid}&limit=10"
-                      req = urllib.request.Request(search_api, headers={"User-Agent": UA})
-                      with urllib.request.urlopen(req, timeout=8) as r:
-                          sc_data = json.loads(r.read().decode("utf-8"))
+                  job_id = init_data.get("id")
+                  prog_url = init_data.get("progress_url") or (f"https://p.savenow.to/ajax/progress.php?id={job_id}" if job_id else None)
 
-                      for item in sc_data.get("collection", []):
-                          # Bỏ qua các track bị khóa DRM / trả phí Go+
-                          if item.get("monetization_model") in ["SUB_HIGH_TIER", "SUB_MID_TIER"]:
-                              continue
-                          if item.get("policy") == "BLOCK" or item.get("snipped"):
-                              continue
-                          dur_ms = item.get("duration") or 0
-                          if dur_ms < 55000 or dur_ms > 900000:
-                              continue
-
-                          transcodings = item.get("media", {}).get("transcodings", [])
-                          transcodings_sorted = sorted(
-                              transcodings,
-                              key=lambda x: 0 if x.get("format", {}).get("protocol") == "progressive" else 1
+                  if prog_url:
+                      for _ in range(25):
+                          time.sleep(1.2)
+                          p_req = urllib.request.Request(
+                              prog_url,
+                              headers={"User-Agent": UA, "Referer": "https://loader.to/"}
                           )
-                          for tr in transcodings_sorted:
-                              protocol = str(tr.get("format", {}).get("protocol", "")).lower()
-                              if "drm" in protocol or "encrypt" in protocol:
-                                  continue
-                              tr_url = tr.get("url")
-                              if protocol in ["progressive", "hls"] and tr_url:
-                                  try:
-                                      sep = "&" if "?" in tr_url else "?"
-                                      st_req = urllib.request.Request(
-                                          f"{tr_url}{sep}client_id={found_cid}",
-                                          headers={"User-Agent": UA}
-                                      )
-                                      with urllib.request.urlopen(st_req, timeout=8) as sr:
-                                          st_res = json.loads(sr.read().decode("utf-8"))
-                                      stream_link = st_res.get("url")
-                                      if stream_link:
-                                          raw_sc_file = os.path.join("output", f"raw_sc_api_{ts}.mp3")
-                                          if HAS_FFMPEG:
-                                              subprocess.run(
-                                                  [
-                                                      "ffmpeg", "-y", "-v", "error",
-                                                      "-i", stream_link,
-                                                      "-vn", "-acodec", "libmp3lame", "-b:a", "192k", "-ar", "44100", "-ac", "2",
-                                                      raw_sc_file
-                                                  ],
-                                                  capture_output=True
-                                              )
-                                          elif protocol == "progressive":
-                                              urllib.request.urlretrieve(stream_link, raw_sc_file)
-
-                                          if verify_and_transcode_to_mp3(raw_sc_file, final_mp3_path):
-                                              downloaded_file = final_mp3_name
-                                              print("Tải thành công siêu tốc qua SoundCloud API:", downloaded_file, flush=True)
-                                              break
-                                  except Exception:
-                                      continue
-                          if downloaded_file:
-                              break
-          except Exception as e:
-              print("SoundCloud API notice:", e, flush=True)
-
-          # =========================================================================
-          # TẦNG 1B: yt-dlp SoundCloud Search (Bỏ qua DRM với --ignore-errors)
-          # =========================================================================
-          if not downloaded_file:
-              for q in search_queries:
-                  if downloaded_file:
-                      break
-                  print(f"Đang tìm kiếm qua yt-dlp SoundCloud cho: {q}...", flush=True)
-                  for f_old in glob.glob(os.path.join("output", "raw_sc_ytdlp*")):
-                      try:
-                          os.remove(f_old)
-                      except Exception:
-                          pass
-                  sc_out_tpl = os.path.join("output", "raw_sc_ytdlp.%(ext)s")
-                  cmd = [
-                      "yt-dlp",
-                      f"scsearch5:{q}",
-                      "--ignore-errors",
-                      "--no-abort-on-error",
-                      "--match-filter", "duration > 55 & duration < 900",
-                      "--max-downloads", "1",
-                      "--no-playlist",
-                      "--no-warnings",
-                      "--quiet",
-                      "-f", "ba/b",
-                      "-o", sc_out_tpl
-                  ]
-                  subprocess.run(cmd)
-                  for candidate in glob.glob(os.path.join("output", "raw_sc_ytdlp.*")):
-                      if verify_and_transcode_to_mp3(candidate, final_mp3_path):
-                          downloaded_file = final_mp3_name
-                          print("Tải thành công qua yt-dlp SoundCloud:", downloaded_file, flush=True)
-                          break
-
-          # =========================================================================
-          # TẦNG 2: Cloud Proxy p.savenow.to (Thử format mp3 & m4a + xác thực ffmpeg)
-          # =========================================================================
-          if not downloaded_file:
-              print("Đang thử Cloud Proxy dự phòng...", flush=True)
-              for fmt in ["mp3", "m4a"]:
-                  if downloaded_file:
-                      break
-                  try:
-                      encoded_url = urllib.parse.quote(url)
-                      api_url = f"https://p.savenow.to/ajax/download.php?button=1&start=1&end=1&format={fmt}&iframe_source=https://loader.to&url={encoded_url}"
-                      req = urllib.request.Request(
-                          api_url,
-                          headers={
-                              "User-Agent": UA,
-                              "Referer": "https://loader.to/",
-                              "Origin": "https://loader.to"
-                          }
-                      )
-                      with urllib.request.urlopen(req, timeout=12) as resp:
-                          init_data = json.loads(resp.read().decode("utf-8"))
-
-                      job_id = init_data.get("id")
-                      prog_url = init_data.get("progress_url") or (f"https://p.savenow.to/ajax/progress.php?id={job_id}" if job_id else None)
-
-                      if prog_url:
-                          for _ in range(22):
-                              time.sleep(1.2)
-                              p_req = urllib.request.Request(
-                                  prog_url,
-                                  headers={"User-Agent": UA, "Referer": "https://loader.to/"}
+                          with urllib.request.urlopen(p_req, timeout=10) as p_resp:
+                              prog_data = json.loads(p_resp.read().decode("utf-8"))
+                          if prog_data.get("progress") == 1000 and prog_data.get("download_url"):
+                              dl_url = prog_data["download_url"]
+                              raw_proxy_file = os.path.join("output", f"raw_yt_proxy.{fmt}")
+                              subprocess.run(
+                                  [
+                                      "curl", "-L", "-s", "--max-time", "60",
+                                      "-A", UA,
+                                      "-e", "https://loader.to/",
+                                      "-o", raw_proxy_file,
+                                      dl_url
+                                  ]
                               )
-                              with urllib.request.urlopen(p_req, timeout=10) as p_resp:
-                                  prog_data = json.loads(p_resp.read().decode("utf-8"))
-                              if prog_data.get("progress") == 1000 and prog_data.get("download_url"):
-                                  dl_url = prog_data["download_url"]
-                                  raw_proxy_file = os.path.join("output", f"raw_proxy.{fmt}")
-                                  subprocess.run(
-                                      [
-                                          "curl", "-L", "-s", "--max-time", "45",
-                                          "-A", UA,
-                                          "-e", "https://loader.to/",
-                                          "-o", raw_proxy_file,
-                                          dl_url
-                                      ]
-                                  )
-                                  if verify_and_transcode_to_mp3(raw_proxy_file, final_mp3_path):
-                                      downloaded_file = final_mp3_name
-                                      print(f"Tải và chuẩn hóa MP3 thành công qua proxy ({fmt}):", downloaded_file, flush=True)
-                                  break
-                  except Exception as e:
-                      print(f"Proxy ({fmt}) notice:", e, flush=True)
+                              if verify_and_transcode_to_mp3(raw_proxy_file, final_mp3_path):
+                                  downloaded_file = final_mp3_name
+                                  print(f"Tải thành công bản chính thức từ YouTube qua proxy ({fmt}):", downloaded_file, flush=True)
+                              break
+              except Exception as e:
+                  print(f"YouTube Proxy ({fmt}) notice:", e, flush=True)
 
           # =========================================================================
-          # TẦNG 3: yt-dlp YouTube Direct (android_vr / tv_embedded) + xác thực ffmpeg
+          # TẦNG 2: yt-dlp YouTube Direct (android_vr / tv_embedded)
           # =========================================================================
           if not downloaded_file:
               for client in ["android_vr", "tv_embedded", "ios", "mweb"]:
                   if downloaded_file:
                       break
-                  print(f"Đang thử yt-dlp trực tiếp với client {client}...", flush=True)
+                  print(f"Đang thử yt-dlp trực tiếp trên video YouTube với client {client}...", flush=True)
                   for f_old in glob.glob(os.path.join("output", "raw_yt_*")):
                       try:
                           os.remove(f_old)
@@ -373,8 +253,113 @@ jobs:
                   for candidate in glob.glob(os.path.join("output", f"raw_yt_{client}.*")):
                       if verify_and_transcode_to_mp3(candidate, final_mp3_path):
                           downloaded_file = final_mp3_name
-                          print(f"Tải thành công qua yt-dlp ({client}):", downloaded_file, flush=True)
+                          print(f"Tải thành công từ YouTube qua yt-dlp ({client}):", downloaded_file, flush=True)
                           break
+
+          # =========================================================================
+          # TẦNG 3: DỰ PHÒNG SOUNDCLOUD VỚI BỘ LỌC CHỐNG REMIX / COVER TRIỆT ĐỂ
+          # Chỉ chạy khi các nguồn trích xuất trực tiếp từ video YouTube thất bại
+          # =========================================================================
+          if not downloaded_file:
+              print("Các nguồn trực tiếp YouTube không khả dụng, đang tìm bản gốc trên SoundCloud...", flush=True)
+              clean_title = clean_query_title(raw_title)
+              artist_clean = raw_artist if raw_artist and raw_artist.lower() not in ["nghệ sĩ chưa rõ", "youtube", "unknown"] else ""
+              search_queries = []
+              if artist_clean:
+                  search_queries.append(f"{clean_title} {artist_clean}".strip())
+              if clean_title not in search_queries:
+                  search_queries.append(clean_title)
+
+              try:
+                  found_cid = None
+                  try:
+                      sc_req = urllib.request.Request("https://soundcloud.com", headers={"User-Agent": UA})
+                      with urllib.request.urlopen(sc_req, timeout=8) as r:
+                          sc_html = r.read().decode("utf-8", errors="ignore")
+                      js_urls = re.findall(r'src="(https://a-v2\.sndcdn\.com/assets/[^"]+\.js)"', sc_html)
+                      for js_url in reversed(js_urls[-6:]):
+                          try:
+                              js_req = urllib.request.Request(js_url, headers={"User-Agent": UA})
+                              with urllib.request.urlopen(js_req, timeout=8) as jr:
+                                  js_txt = jr.read().decode("utf-8", errors="ignore")
+                              m = re.search(r'client_id\s*[:=]\s*["\']([a-zA-Z0-9]{32})["\']', js_txt)
+                              if m:
+                                  found_cid = m.group(1)
+                                  break
+                          except Exception:
+                              continue
+                  except Exception as e:
+                      print("SoundCloud client_id notice:", e, flush=True)
+
+                  if found_cid:
+                      for q in search_queries:
+                          if downloaded_file:
+                              break
+                          search_api = f"https://api-v2.soundcloud.com/search/tracks?q={urllib.parse.quote(q)}&client_id={found_cid}&limit=12"
+                          req = urllib.request.Request(search_api, headers={"User-Agent": UA})
+                          with urllib.request.urlopen(req, timeout=8) as r:
+                              sc_data = json.loads(r.read().decode("utf-8"))
+
+                          for item in sc_data.get("collection", []):
+                              track_name = item.get("title", "")
+                              # CHẶN TOÀN BỘ BẢN REMIX / COVER / DJ / TIKTOK NẾU NGƯỜI DÙNG KHÔNG YÊU CẦU
+                              if is_unwanted_remix(track_name, raw_title):
+                                  print(f"Bỏ qua bản remix/cover không mong muốn: {track_name}", flush=True)
+                                  continue
+
+                              if item.get("monetization_model") in ["SUB_HIGH_TIER", "SUB_MID_TIER"]:
+                                  continue
+                              if item.get("policy") == "BLOCK" or item.get("snipped"):
+                                  continue
+                              dur_ms = item.get("duration") or 0
+                              if dur_ms < 55000 or dur_ms > 900000:
+                                  continue
+
+                              transcodings = item.get("media", {}).get("transcodings", [])
+                              transcodings_sorted = sorted(
+                                  transcodings,
+                                  key=lambda x: 0 if x.get("format", {}).get("protocol") == "progressive" else 1
+                              )
+                              for tr in transcodings_sorted:
+                                  protocol = str(tr.get("format", {}).get("protocol", "")).lower()
+                                  if "drm" in protocol or "encrypt" in protocol:
+                                      continue
+                                  tr_url = tr.get("url")
+                                  if protocol in ["progressive", "hls"] and tr_url:
+                                      try:
+                                          sep = "&" if "?" in tr_url else "?"
+                                          st_req = urllib.request.Request(
+                                              f"{tr_url}{sep}client_id={found_cid}",
+                                              headers={"User-Agent": UA}
+                                          )
+                                          with urllib.request.urlopen(st_req, timeout=8) as sr:
+                                              st_res = json.loads(sr.read().decode("utf-8"))
+                                          stream_link = st_res.get("url")
+                                          if stream_link:
+                                              raw_sc_file = os.path.join("output", f"raw_sc_api_{ts}.mp3")
+                                              if HAS_FFMPEG:
+                                                  subprocess.run(
+                                                      [
+                                                          "ffmpeg", "-y", "-v", "error",
+                                                          "-i", stream_link,
+                                                          "-vn", "-acodec", "libmp3lame", "-b:a", "192k", "-ar", "44100", "-ac", "2",
+                                                          raw_sc_file
+                                                      ],
+                                                      capture_output=True
+                                                  )
+                                              elif protocol == "progressive":
+                                                  urllib.request.urlretrieve(stream_link, raw_sc_file)
+
+                                              if verify_and_transcode_to_mp3(raw_sc_file, final_mp3_path):
+                                                  downloaded_file = final_mp3_name
+                                                  print(f"Tải thành công bản gốc qua SoundCloud API: {track_name}", flush=True)
+                                                  break
+                                      except Exception:
+                                          continue
+                              if downloaded_file:
+                                  break
+              except Exception as e:
+                  print("SoundCloud notice:", e, flush=True)
 
           if not downloaded_file or not os.path.exists(final_mp3_path):
               print("Tất cả các nguồn tải nhạc đều không trả về luồng âm thanh hợp lệ.", flush=True)
