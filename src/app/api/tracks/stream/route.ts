@@ -7,6 +7,7 @@ const GITHUB_RELEASE_TAG = process.env.GITHUB_RELEASE_TAG || 'tracks-v1';
 
 function getMimeType(filename: string): string {
   const clean = filename.split('?')[0].toLowerCase();
+  if (clean.endsWith('.mp3')) return 'audio/mpeg';
   if (clean.endsWith('.m4a') || clean.endsWith('.mp4')) return 'audio/mp4';
   if (clean.endsWith('.webm')) return 'audio/webm';
   if (clean.endsWith('.flac')) return 'audio/flac';
@@ -43,6 +44,7 @@ export async function GET(req: NextRequest) {
     inferredFile = parts[parts.length - 1] || '';
   }
 
+  let resolvedAssetName = inferredFile;
   let targetUrl = '';
   if (directUrl && directUrl.startsWith('https://')) {
     targetUrl = directUrl;
@@ -93,8 +95,8 @@ export async function GET(req: NextRequest) {
       break;
     }
 
-    // BƯỚC 2: Nếu tải trực tiếp không thành công (ví dụ: kho private hoặc tên file có sai khác),
-    // truy vấn trực tiếp GitHub Release API để lấy asset nhị phân qua Accept: application/octet-stream
+    // BƯỚC 2: Nếu tải trực tiếp không thành công (ví dụ: file .m4a cũ đã được thay bằng file .mp3 mới trong Release),
+    // truy vấn trực tiếp GitHub Release API để lấy asset nhị phân mới nhất của cùng bài hát
     if ((!upstream || (!upstream.ok && upstream.status !== 206)) && inferredFile) {
       try {
         const apiHeaders: Record<string, string> = {
@@ -113,14 +115,31 @@ export async function GET(req: NextRequest) {
           const relData = await relRes.json();
           const clean = decodeURIComponent(inferredFile).toLowerCase();
           const prefix = clean.replace(/-\d+\.[a-z0-9]+$/, '');
-          const matchedAsset = (relData.assets || []).find(
-            (a: any) =>
-              a.name &&
-              (a.name.toLowerCase() === clean ||
-                (prefix.length > 3 && a.name.toLowerCase().startsWith(prefix)))
-          );
+          const assets: any[] = Array.isArray(relData.assets) ? [...relData.assets] : [];
+
+          // Sắp xếp ưu tiên file .mp3 và mới nhất trước
+          assets.sort((a, b) => {
+            const aMp3 = String(a?.name || '').toLowerCase().endsWith('.mp3') ? 1 : 0;
+            const bMp3 = String(b?.name || '').toLowerCase().endsWith('.mp3') ? 1 : 0;
+            if (aMp3 !== bMp3) return bMp3 - aMp3;
+            const aTime = new Date(a?.updated_at || a?.created_at || 0).getTime();
+            const bTime = new Date(b?.updated_at || b?.created_at || 0).getTime();
+            return bTime - aTime;
+          });
+
+          const matchedAsset =
+            assets.find((a: any) => a?.name && a.name.toLowerCase() === clean) ||
+            assets.find(
+              (a: any) =>
+                a?.name && prefix.length > 3 && a.name.toLowerCase().startsWith(prefix + '-')
+            ) ||
+            assets.find(
+              (a: any) =>
+                a?.name && prefix.length > 3 && a.name.toLowerCase().startsWith(prefix)
+            );
 
           if (matchedAsset && matchedAsset.url) {
+            resolvedAssetName = matchedAsset.name || inferredFile;
             const assetHeaders: Record<string, string> = {
               Accept: 'application/octet-stream',
               'User-Agent': 'Mozilla/5.0',
@@ -129,7 +148,6 @@ export async function GET(req: NextRequest) {
               assetHeaders['Authorization'] = `Bearer ${GITHUB_TOKEN}`;
             }
 
-            // GitHub API trả về 302 chuyển hướng sang S3 ký sẵn
             const assetResp = await fetch(matchedAsset.url, {
               headers: assetHeaders,
               redirect: 'manual',
@@ -172,7 +190,7 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const mimeType = getMimeType(inferredFile || targetUrl);
+    const mimeType = getMimeType(resolvedAssetName || inferredFile || targetUrl);
     const responseHeaders = new Headers();
     responseHeaders.set('Content-Type', mimeType);
     responseHeaders.set('Accept-Ranges', 'bytes');

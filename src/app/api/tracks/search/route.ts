@@ -8,6 +8,18 @@ const GITHUB_REPO = process.env.GITHUB_REPO || 'aurasound-music-data';
 
 const CATALOG_PATH = path.join(process.cwd(), 'data', 'catalog.json');
 
+function slugifyTitle(text: string): string {
+  return (text || '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'd')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 50);
+}
+
 function normalizeTrack(t: any) {
   const rawUrl = t.streamUrl || t.cdnUrl || '';
   let streamUrl = rawUrl;
@@ -29,6 +41,26 @@ function normalizeTrack(t: any) {
     ...t,
     streamUrl,
   };
+}
+
+function deduplicateCatalogTracks(tracks: any[]): any[] {
+  const seenKeys = new Set<string>();
+  const result: any[] = [];
+
+  for (const raw of tracks) {
+    if (!raw || !(raw.streamUrl || raw.cdnUrl)) continue;
+    const t = normalizeTrack(raw);
+    const titleSlug = slugifyTitle(t.title || '');
+    const key = titleSlug || t.videoId || t.id;
+    if (!key) continue;
+
+    if (!seenKeys.has(key)) {
+      seenKeys.add(key);
+      result.push(t);
+    }
+  }
+
+  return result;
 }
 
 export async function GET(req: NextRequest) {
@@ -68,10 +100,7 @@ export async function GET(req: NextRequest) {
           const decoded = Buffer.from(fileData.content, 'base64').toString('utf-8');
           const ghTracks = JSON.parse(decoded);
           if (Array.isArray(ghTracks)) {
-            const validGhTracks = ghTracks
-              .filter((t) => t && (t.streamUrl || t.cdnUrl))
-              .map(normalizeTrack);
-
+            const validGhTracks = deduplicateCatalogTracks(ghTracks);
             return NextResponse.json(validGhTracks, {
               headers: { 'Cache-Control': 'no-store, max-age=0' },
             });
@@ -91,9 +120,7 @@ export async function GET(req: NextRequest) {
       if (rawRes.ok) {
         const rawTracks = await rawRes.json();
         if (Array.isArray(rawTracks)) {
-          const validRaw = rawTracks
-            .filter((t) => t && (t.streamUrl || t.cdnUrl))
-            .map(normalizeTrack);
+          const validRaw = deduplicateCatalogTracks(rawTracks);
           return NextResponse.json(validRaw, {
             headers: { 'Cache-Control': 'no-store, max-age=0' },
           });
@@ -102,7 +129,7 @@ export async function GET(req: NextRequest) {
     } catch {}
 
     // 3. Fallback về file local
-    const normalizedLocal = localTracks.map(normalizeTrack);
+    const normalizedLocal = deduplicateCatalogTracks(localTracks);
     return NextResponse.json(normalizedLocal, {
       headers: { 'Cache-Control': 'no-store, max-age=0' },
     });

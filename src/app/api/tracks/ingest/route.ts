@@ -11,6 +11,18 @@ const CATALOG_PATH = path.join(process.cwd(), 'data', 'catalog.json');
 // Map chống gửi trùng tác vụ trong vòng 25 giây cho cùng 1 videoId
 const recentDispatches = new Map<string, { requestId: string; startedAt: number }>();
 
+function slugifyTitle(text: string): string {
+  return (text || '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'd')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 50);
+}
+
 function cleanTrackMetadata(rawTitle: string, rawArtist?: string): { title: string; artist: string } {
   let title = (rawTitle || 'Track').replace(/\.[a-zA-Z0-9]{2,4}$/, '').trim();
 
@@ -314,7 +326,6 @@ async function dispatchGitHubWorkflow(inputs: {
   };
 
   try {
-    // 1. Dò tìm tên nhánh mặc định & danh sách workflow
     let targetBranch = 'main';
     let workflowTarget = 'ingest.yml';
 
@@ -337,10 +348,11 @@ async function dispatchGitHubWorkflow(inputs: {
         const workflows: any[] = wfData?.workflows || [];
         const found = workflows.find(
           (w) =>
-            w.path?.endsWith('ingest.yml') ||
-            w.path?.endsWith('ingest.yaml') ||
-            w.name?.toLowerCase().includes('ingest') ||
-            w.name?.toLowerCase().includes('aurasound')
+            w.state === 'active' &&
+            (w.path?.endsWith('ingest.yml') ||
+              w.path?.endsWith('ingest.yaml') ||
+              w.name?.toLowerCase().includes('ingest') ||
+              w.name?.toLowerCase().includes('aurasound'))
         );
         if (found) {
           workflowTarget = String(found.id || found.path?.split('/').pop() || 'ingest.yml');
@@ -350,7 +362,6 @@ async function dispatchGitHubWorkflow(inputs: {
 
     const workflowUrl = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/actions/workflows/${workflowTarget}/dispatches`;
 
-    // 2. Kích hoạt workflow với nhánh chính
     const res = await fetch(workflowUrl, {
       method: 'POST',
       headers,
@@ -365,11 +376,9 @@ async function dispatchGitHubWorkflow(inputs: {
       return { ok: true };
     }
 
-    // Nếu trả về lỗi 422
     if (res.status === 422) {
       const errTxt = await res.text();
 
-      // Nếu lỗi do trigger workflow_dispatch chưa nhận diện trên nhánh hiện tại, thử lại với nhánh đối ứng (master / main)
       if (errTxt.includes('workflow_dispatch')) {
         const altBranch = targetBranch === 'main' ? 'master' : 'main';
         const altRes = await fetch(workflowUrl, {
@@ -392,7 +401,6 @@ async function dispatchGitHubWorkflow(inputs: {
         };
       }
 
-      // Thử fallback sang 5 inputs cơ bản nếu là lỗi input mismatch
       const fallbackRes = await fetch(workflowUrl, {
         method: 'POST',
         headers,
@@ -422,24 +430,53 @@ async function dispatchGitHubWorkflow(inputs: {
   }
 }
 
+/**
+ * Tìm bài hát trong catalog.json.
+ * Nếu truyền `minTimestampMs` (trong lúc polling chờ job mới hoàn tất),
+ * hàm sẽ CHỈ khớp với đúng `requestId` mới hoặc bản ghi vừa được tạo sau `minTimestampMs`,
+ * tuyệt đối không trả về nhầm bản ghi cũ bị lỗi từ lần tải trước.
+ */
 function findMatchingTrackInCatalog(
   catalog: any[],
   requestId?: string,
   videoId?: string,
-  title?: string
+  title?: string,
+  minTimestampMs?: number
 ): any | null {
   if (!Array.isArray(catalog) || catalog.length === 0) return null;
 
+  // 1. Ưu tiên khớp chính xác theo requestId của lần tải hiện tại
+  if (requestId) {
+    const exactById = catalog.find((t) => t && (t.streamUrl || t.cdnUrl) && t.id === requestId);
+    if (exactById) return exactById;
+  }
+
+  const isRecentEnough = (t: any): boolean => {
+    if (!minTimestampMs) return true;
+    if (t.dateAdded) {
+      const addedMs = new Date(t.dateAdded).getTime();
+      if (!isNaN(addedMs)) {
+        return addedMs >= minTimestampMs - 15000;
+      }
+    }
+    return false;
+  };
+
   for (const t of catalog) {
     if (!t || !(t.streamUrl || t.cdnUrl)) continue;
-    if (requestId && t.id === requestId) return t;
+    if (!isRecentEnough(t)) continue;
     if (videoId && t.videoId && t.videoId === videoId) return t;
   }
 
   if (title) {
-    const cleanTarget = title.trim().toLowerCase();
+    const targetSlug = slugifyTitle(title);
     const matchByTitle = catalog.find(
-      (t) => t && (t.streamUrl || t.cdnUrl) && t.title && t.title.trim().toLowerCase() === cleanTarget
+      (t) =>
+        t &&
+        (t.streamUrl || t.cdnUrl) &&
+        isRecentEnough(t) &&
+        t.title &&
+        slugifyTitle(t.title) === targetSlug
     );
     if (matchByTitle) return matchByTitle;
   }
@@ -450,7 +487,7 @@ function findMatchingTrackInCatalog(
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { action, query, track, requestId, videoId: pollVideoId, title: pollTitle, startedAt } = body;
+    const { action, query, track, requestId, videoId: pollVideoId, title: pollTitle, startedAt, force } = body;
 
     // 1. TÌM KIẾM VIDEO YOUTUBE
     if (action === 'search') {
@@ -497,20 +534,27 @@ export async function POST(req: NextRequest) {
         trackInput.artist || body.artist
       );
 
-      // Kiểm tra bài hát đã tồn tại trong kho chưa (chống tải trùng)
-      const currentCatalog = await fetchGitHubCatalog();
-      const existing = findMatchingTrackInCatalog(currentCatalog, undefined, videoId, clean.title);
-      if (existing) {
-        return NextResponse.json({
-          status: 'completed',
-          duplicate: true,
-          alreadyExists: true,
-          track: existing,
-        });
+      // Chỉ dùng lại bản ghi cũ nếu force !== true VÀ bản ghi cũ đã là chuẩn .mp3 hợp lệ
+      if (!force) {
+        const currentCatalog = await fetchGitHubCatalog();
+        const existing = findMatchingTrackInCatalog(currentCatalog, undefined, videoId, clean.title);
+        const isVerifiedMp3 =
+          existing &&
+          existing.format === 'mp3' &&
+          String(existing.streamUrl || existing.cdnUrl || '').toLowerCase().includes('.mp3');
+
+        if (existing && isVerifiedMp3) {
+          return NextResponse.json({
+            status: 'completed',
+            duplicate: true,
+            alreadyExists: true,
+            track: existing,
+          });
+        }
       }
 
       // Kiểm tra tác vụ đang chạy trùng cho cùng videoId trong 25 giây gần nhất
-      const dedupeKey = videoId || clean.title.toLowerCase();
+      const dedupeKey = videoId || slugifyTitle(clean.title);
       const prevDispatch = recentDispatches.get(dedupeKey);
       if (prevDispatch && Date.now() - prevDispatch.startedAt < 25000) {
         return NextResponse.json({
@@ -565,8 +609,22 @@ export async function POST(req: NextRequest) {
 
     // 3. KIỂM TRA TRẠNG THÁI TÁC VỤ (POLLING TỪ FRONTEND)
     if (action === 'status') {
+      const parsedStart =
+        typeof startedAt === 'number'
+          ? startedAt
+          : startedAt
+          ? new Date(startedAt).getTime()
+          : Date.now();
+      const safeStartMs = isNaN(parsedStart) ? Date.now() : parsedStart;
+
       const catalog = await fetchGitHubCatalog();
-      const matchedTrack = findMatchingTrackInCatalog(catalog, requestId, pollVideoId, pollTitle);
+      const matchedTrack = findMatchingTrackInCatalog(
+        catalog,
+        requestId,
+        pollVideoId,
+        pollTitle,
+        safeStartMs
+      );
 
       if (matchedTrack) {
         try {
@@ -598,13 +656,7 @@ export async function POST(req: NextRequest) {
         if (runsRes.ok) {
           const runsData = await runsRes.json();
           const runs: any[] = runsData.workflow_runs || [];
-          const parsedStart =
-            typeof startedAt === 'number'
-              ? startedAt
-              : startedAt
-              ? new Date(startedAt).getTime()
-              : Date.now();
-          const threshold = (isNaN(parsedStart) ? Date.now() : parsedStart) - 45000;
+          const threshold = safeStartMs - 45000;
 
           const relevantRun = runs.find((r) => {
             const createdMs = new Date(r.created_at).getTime();
@@ -635,7 +687,7 @@ export async function POST(req: NextRequest) {
           }
 
           if (relevantRun.status === 'in_progress') {
-            const msg = 'GitHub Actions đang tải nhạc & lưu vào kho lưu trữ...';
+            const msg = 'GitHub Actions đang tải nhạc & chuẩn hóa MP3 vào kho lưu trữ...';
             return NextResponse.json({
               status: 'downloading',
               step: msg,
@@ -650,7 +702,8 @@ export async function POST(req: NextRequest) {
                 freshCatalog,
                 requestId,
                 pollVideoId,
-                pollTitle
+                pollTitle,
+                safeStartMs
               );
               if (confirmed) {
                 try {
@@ -671,7 +724,7 @@ export async function POST(req: NextRequest) {
             } else {
               return NextResponse.json({
                 status: 'failed',
-                error: `Workflow tải nhạc thất bại (${relevantRun.conclusion || 'error'}). Vui lòng thử nguồn video khác.`,
+                error: `Workflow tải nhạc thất bại (${relevantRun.conclusion || 'error'}). Vui lòng thử lại hoặc chọn nguồn video khác.`,
               });
             }
           }

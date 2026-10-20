@@ -35,6 +35,17 @@ export interface SmartIngestModalProps {
   onClose: () => void;
 }
 
+function normalizeTitleSlug(text?: string): string {
+  return (text || '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'd')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
 export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<YouTubeResult[]>([]);
@@ -114,30 +125,34 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
     const isCurrentlyPlaying = store.isPlaying && Boolean(store.currentTrack);
     const existingLib = store.library || [];
     const existingQueue = store.queue || [];
+    const targetSlug = normalizeTitleSlug(confirmedTrack.title);
 
-    // Chèn bài hát mới vào thư viện và thêm vào cuối hàng đợi phát (để bài đang nghe tiếp tục chạy êm đềm)
-    const updatedLib = existingLib.some((t) => t.id === confirmedTrack.id)
-      ? existingLib.map((t) => (t.id === confirmedTrack.id ? confirmedTrack : t))
+    const isSameSong = (t: Track) =>
+      t.id === confirmedTrack.id ||
+      Boolean(confirmedTrack.videoId && t.videoId === confirmedTrack.videoId) ||
+      Boolean(targetSlug && normalizeTitleSlug(t.title) === targetSlug);
+
+    // Thay thế bản ghi cũ (nếu có) hoặc thêm vào cuối danh sách để không làm ngắt bài đang phát
+    const updatedLib = existingLib.some(isSameSong)
+      ? existingLib.map((t) => (isSameSong(t) ? confirmedTrack : t))
       : [...existingLib, confirmedTrack];
 
-    const updatedQueue = existingQueue.some((t) => t.id === confirmedTrack.id)
-      ? existingQueue.map((t) => (t.id === confirmedTrack.id ? confirmedTrack : t))
+    const updatedQueue = existingQueue.some(isSameSong)
+      ? existingQueue.map((t) => (isSameSong(t) ? confirmedTrack : t))
       : [...existingQueue, confirmedTrack];
 
     store.setLibrary(updatedLib);
     store.setQueue(updatedQueue);
 
-    // Chỉ gán bài mới lên deck nếu trước đó chưa có bài nào được chọn
-    if (!isCurrentlyPlaying && !store.currentTrack) {
+    // Nếu chưa có bài nào đang phát (hoặc bài đang chọn chính là bản ghi cũ của bài vừa tải lại), cập nhật currentTrack
+    if (!isCurrentlyPlaying && (!store.currentTrack || isSameSong(store.currentTrack))) {
       store.setCurrentTrack(confirmedTrack);
     }
 
-    // Bắn sự kiện để trang chủ hiện Toast xanh "ĐÃ NẠP VÀO KHO THÀNH CÔNG"
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('aurasound:track-added', { detail: confirmedTrack }));
     }
 
-    // Đồng bộ ngầm danh mục từ API mà không gây ngắt quãng bài đang phát
     try {
       const syncRes = await fetch(`/api/tracks/search?t=${Date.now()}`, { cache: 'no-store' });
       const syncData = await syncRes.json();
@@ -149,8 +164,8 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
 
       if (tracksList.length > 0) {
         const mergedLib = [
-          ...tracksList,
-          ...(!tracksList.some((t: Track) => t.id === confirmedTrack.id) ? [confirmedTrack] : []),
+          ...tracksList.map((t: Track) => (isSameSong(t) ? confirmedTrack : t)),
+          ...(!tracksList.some(isSameSong) ? [confirmedTrack] : []),
         ];
         usePlayerStore.getState().setLibrary(mergedLib);
       }
@@ -174,6 +189,7 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'ingest',
+          force: true,
           track: {
             id: itemKey,
             videoId: itemKey,
@@ -198,12 +214,11 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
         throw new Error(data.error || 'Khởi tạo tiến trình tải nhạc thất bại.');
       }
 
-      // Case 1: Bài hát đã tồn tại sẵn trong kho -> phát ngay lập tức
       if (data.status === 'completed' && data.track && (data.track.streamUrl || data.track.cdnUrl)) {
         setTaskStatus('completed');
         setStatusText(
           data.duplicate || data.alreadyExists
-            ? 'Bài hát đã có sẵn trong kho lưu trữ! Đang phát ngay...'
+            ? 'Bài hát đã có sẵn trong kho lưu trữ!'
             : 'Đã xác nhận file nhạc trong kho lưu trữ!'
         );
         setSuccessId(itemKey);
@@ -217,12 +232,11 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
         return;
       }
 
-      // Case 2: Tác vụ được chuyển sang GitHub Actions (HTTP 202 Accepted)
       const requestId = data.requestId || '';
       const videoId = data.videoId || itemKey;
       const startedAt = data.startedAt || Date.now();
 
-      const maxAttempts = 60; // 60 * 2s = 120s max wait (tăng tốc độ kiểm tra gấp đôi)
+      const maxAttempts = 60; // 60 * 2s = 120s max wait
       let confirmedTrack: Track | null = null;
 
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -264,7 +278,7 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
         if (currentState === 'queued') {
           setStatusText(serverMsg || 'Đang chờ máy ảo GitHub Actions tiếp nhận tác vụ...');
         } else if (currentState === 'downloading') {
-          setStatusText(serverMsg || 'GitHub Actions đang tải âm thanh & đồng bộ vào Release...');
+          setStatusText(serverMsg || 'GitHub Actions đang tải âm thanh & chuẩn hóa MP3...');
         } else if (
           currentState === 'completed' &&
           statusData.track &&
@@ -286,7 +300,7 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
       }
 
       setTaskStatus('completed');
-      setStatusText('Hoàn tất! Đã lưu bài hát vào kho nhạc.');
+      setStatusText('Hoàn tất! Đã lưu bài hát chuẩn MP3 vào kho nhạc.');
       setSuccessId(itemKey);
       await syncConfirmedTrackToStore(confirmedTrack);
 
@@ -314,7 +328,6 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xl p-4 select-none font-sans">
       <div className="relative w-full max-w-2xl overflow-hidden rounded-3xl border border-white/[0.08] bg-gradient-to-b from-[#141424]/95 via-[#0b0b14]/98 to-[#06060b] p-6 text-white shadow-[0_24px_80px_rgba(0,0,0,0.9)]">
-        {/* Hiệu ứng ánh sáng viền trên chuẩn Studio Deck */}
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(0,240,255,0.08),transparent_60%)]" />
 
         {/* Header */}

@@ -4,7 +4,7 @@
  * - Prevents duplicate loadAndPlay restarts when multiple hook instances run in the same render pass
  * - Unlocks AudioContext synchronously on user gesture (click, pointerdown, touchstart)
  * - Exposes window.__AURASOUND_ANALYSER__ for 60fps Canvas Spectrum & 24-LED Studio VU Meter
- * - Automatic CORS fallback: if crossOrigin fails, removes attribute and plays natively
+ * - Preserves crossOrigin = "anonymous" on same-origin /api/tracks/stream so MediaElementAudioSourceNode never outputs silence
  */
 export class AudioEngine {
   private static instance: AudioEngine;
@@ -39,7 +39,6 @@ export class AudioEngine {
 
       this.bindNativeEvents();
 
-      // Mở khóa AudioContext ngay tại sự kiện bấm chuột/chạm của người dùng
       const unlock = () => {
         this.resumeContext();
       };
@@ -135,7 +134,6 @@ export class AudioEngine {
     const isSameUrl = this.currentUrl === url && Boolean(this.primaryAudio.src);
     const isNewNonce = typeof nonce === 'number' && nonce !== this.currentNonce;
 
-    // Chống gọi lặp khi cả trang và thanh điều khiển cùng kích hoạt hook
     if (isSameUrl && !isNewNonce) {
       if (this.isLoading || (!this.primaryAudio.paused && !this.primaryAudio.ended)) {
         return;
@@ -157,6 +155,11 @@ export class AudioEngine {
     this.isLoading = true;
 
     try {
+      // Luôn giữ crossOrigin = 'anonymous' để MediaElementAudioSourceNode không bị khóa tiếng (CORS taint)
+      if (this.primaryAudio.crossOrigin !== 'anonymous') {
+        this.primaryAudio.crossOrigin = 'anonymous';
+      }
+
       if (!isSameUrl) {
         this.primaryAudio.pause();
         this.primaryAudio.src = url;
@@ -171,21 +174,13 @@ export class AudioEngine {
       }
 
       this.ensureAudioContext();
+      this.resumeContext();
 
       if (loadId !== this.activeLoadId) return;
 
       await this.primaryAudio.play();
     } catch (err: any) {
       if (loadId !== this.activeLoadId) return;
-      // Fallback: nếu lỗi CORS do crossOrigin = anonymous, gỡ thuộc tính và phát trực tiếp
-      if (this.primaryAudio && this.primaryAudio.hasAttribute('crossorigin')) {
-        try {
-          this.primaryAudio.removeAttribute('crossorigin');
-          this.primaryAudio.load();
-          await this.primaryAudio.play();
-          return;
-        } catch {}
-      }
       if (err?.name === 'AbortError' || err?.name === 'NotAllowedError') {
         return;
       }
