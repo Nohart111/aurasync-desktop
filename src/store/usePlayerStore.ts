@@ -437,17 +437,32 @@ export const usePlayerStore = create<PlayerState>()(
           }
         } else {
           const targetId = String(trackIdOrTrack);
-          target = activeList.find((t) => t.id === targetId) || library.find((t) => t.id === targetId);
+          target =
+            activeList.find((t) => t.id === targetId || (t.videoId && t.videoId === targetId)) ||
+            library.find((t) => t.id === targetId || (t.videoId && t.videoId === targetId)) ||
+            (get().currentTrack?.id === targetId ? get().currentTrack! : undefined);
+        }
+
+        if (!target && args[0] && typeof args[0] === 'object' && args[0].id) {
+          target = args[0] as Track;
         }
 
         if (target) {
+          const nextQueue = activeList.some((t) => t.id === target!.id)
+            ? activeList
+            : [target!, ...activeList];
+          const nextLib = library.some((t) => t.id === target!.id)
+            ? library
+            : [target!, ...library];
+
           set({
             currentTrack: target,
-            nextTrackPreview: computeNextPreview(activeList, target),
+            nextTrackPreview: computeNextPreview(nextQueue, target),
             currentQueueId: target.id,
-            queue: activeList,
-            queueItems: activeList,
-            internalQueue: activeList,
+            queue: nextQueue,
+            queueItems: nextQueue,
+            internalQueue: nextQueue,
+            library: nextLib,
             playingPlaylistName: extraName,
             progress: 0,
             currentTime: 0,

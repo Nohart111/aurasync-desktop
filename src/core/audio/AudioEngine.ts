@@ -180,13 +180,24 @@ export class AudioEngine {
       }
     } catch (err: any) {
       if (loadId !== this.activeLoadId) return;
-      this.isLoading = false;
+      if (this.primaryAudio && this.primaryAudio.hasAttribute('crossorigin')) {
+        try {
+          this.primaryAudio.removeAttribute('crossorigin');
+          this.primaryAudio.load();
+          await this.primaryAudio.play();
+          return;
+        } catch {}
+      }
       if (err?.name === 'AbortError' || err?.name === 'NotAllowedError') {
         return;
       }
       console.warn('AudioEngine loadAndPlay error:', err?.message || err);
       if (this.errorCallback) {
         this.errorCallback(err?.message || 'Audio playback error');
+      }
+    } finally {
+      if (loadId === this.activeLoadId) {
+        this.isLoading = false;
       }
     }
   }
