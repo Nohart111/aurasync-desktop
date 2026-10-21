@@ -14,12 +14,24 @@ export interface Track {
   thumbnail?: string;
   dominantColors?: [string, string];
   isPreview?: boolean;
+  streamCount?: number;
+  viewCountText?: string;
   [key: string]: any;
 }
 
 export interface QueueItem {
   queueId: string;
   track: Track;
+}
+
+export interface CustomPlaylist {
+  id: string;
+  name: string;
+  description?: string;
+  coverUrl?: string;
+  createdAt: string;
+  trackIds: string[];
+  tracks?: Track[];
 }
 
 let lastEnqueueTick = 0;
@@ -82,15 +94,22 @@ export interface PlayerState {
 
   isSidebarCollapsed: boolean;
   playingPlaylistName: string | null;
+  activePlaylistId: string | null;
 
   library: Track[];
   queue: Track[];
   queueItems: Track[];
   internalQueue: Track[];
 
+  // Custom Playlists & Stream Counts persisted in localStorage
+  customPlaylists: CustomPlaylist[];
+  likedTrackIds: string[];
+  streamCounts: Record<string, number>;
+
   toggleSidebar: (...args: any[]) => void;
   setSidebarCollapsed: (collapsed?: any, ...args: any[]) => void;
   setPlayingPlaylistName: (name?: any, ...args: any[]) => void;
+  setActivePlaylistId: (id?: string | null) => void;
 
   setCurrentTrack: (track?: any, ...args: any[]) => void;
   playTrackNow: (track?: any, ...args: any[]) => void;
@@ -118,6 +137,15 @@ export interface PlayerState {
   advancePrev: (...args: any[]) => void;
   jumpToTrack: (trackIdOrTrack?: any, ...args: any[]) => void;
   playFromQueueItem: (id?: any, ...args: any[]) => void;
+
+  // Custom Playlist & Stream Count Actions
+  createPlaylist: (name: string, description?: string) => string;
+  deletePlaylist: (playlistId: string) => void;
+  addTrackToPlaylist: (playlistId: string, track: Track) => void;
+  removeTrackFromPlaylist: (playlistId: string, trackId: string) => void;
+  playPlaylist: (playlistId: string, shuffle?: boolean) => void;
+  toggleLikeTrack: (trackId: string) => void;
+  recordTrackStream: (trackId: string) => void;
 }
 
 export const usePlayerStore = create<PlayerState>()(
@@ -138,24 +166,29 @@ export const usePlayerStore = create<PlayerState>()(
 
       isSidebarCollapsed: false,
       playingPlaylistName: null,
+      activePlaylistId: null,
 
       library: [],
       queue: [],
       queueItems: [],
       internalQueue: [],
 
+      customPlaylists: [],
+      likedTrackIds: [],
+      streamCounts: {},
+
       toggleSidebar: (..._args: any[]) => set((s) => ({ isSidebarCollapsed: !s.isSidebarCollapsed })),
       setSidebarCollapsed: (collapsed?: any, ..._args: any[]) =>
         set({ isSidebarCollapsed: Boolean(collapsed) }),
       setPlayingPlaylistName: (name?: any, ..._args: any[]) =>
         set({ playingPlaylistName: typeof name === 'string' ? name : null }),
+      setActivePlaylistId: (id?: string | null) =>
+        set({ activePlaylistId: id || null }),
 
       setCurrentTrack: (track?: any, ...args: any[]) =>
         set((state) => {
           if (!track || !track.id) return state;
 
-          // Nếu là bài nghe thử tạm thời từ mục Khám phá (isPreview === true),
-          // chỉ gán lên currentTrack mà không chèn vào danh sách phát cố định (queue)
           if (track.isPreview) {
             return {
               currentTrack: track,
@@ -251,15 +284,14 @@ export const usePlayerStore = create<PlayerState>()(
             nextQueue = validTracks;
           } else {
             const syncedExisting = state.queue
-              .map((qt) => validTracks.find((vt) => vt.id === qt.id))
-              .filter((t): t is Track => Boolean(t));
+              .map((qt) => validTracks.find((vt) => vt.id === qt.id) || qt)
+              .filter((t): t is Track => Boolean(t && !t.isPreview));
             const newTracks = validTracks.filter(
               (vt) => !syncedExisting.some((st) => st.id === vt.id)
             );
-            nextQueue = [...newTracks, ...syncedExisting];
+            nextQueue = [...syncedExisting, ...newTracks];
           }
 
-          // Nếu đang phát bài nghe thử (isPreview), giữ nguyên currentTrack nghe thử mà không làm gián đoạn
           const matchedCurrent = state.currentTrack?.isPreview
             ? state.currentTrack
             : state.currentTrack
@@ -289,7 +321,8 @@ export const usePlayerStore = create<PlayerState>()(
             internalQueue: nextQueue,
             currentTrack: matchedCurrent,
             nextTrackPreview: computeNextPreview(nextQueue, matchedCurrent),
-            currentQueueId: matchedCurrent && !matchedCurrent.isPreview ? matchedCurrent.id : state.currentQueueId,
+            currentQueueId:
+              matchedCurrent && !matchedCurrent.isPreview ? matchedCurrent.id : state.currentQueueId,
           };
         }),
 
@@ -333,7 +366,7 @@ export const usePlayerStore = create<PlayerState>()(
             };
           }
 
-          const basePool = s.queue.length > 1 ? s.queue : s.library.length > 0 ? s.library : s.queue;
+          const basePool = s.queue.length > 0 ? s.queue : s.library.length > 0 ? s.library : s.queue;
           const poolWithTrack = basePool.some((t) => t.id === track.id)
             ? basePool.map((t) => (t.id === track.id ? track : t))
             : [...basePool, track];
@@ -644,6 +677,122 @@ export const usePlayerStore = create<PlayerState>()(
           playNonce: playNonce + 1,
         });
       },
+
+      // ======================================================================
+      // QUẢN LÝ CUSTOM PLAYLISTS & ĐẾM LƯỢT STREAM (PERSISTED IN LOCALSTORAGE)
+      // ======================================================================
+      createPlaylist: (name: string, description?: string) => {
+        const cleanName = (name || '').trim() || 'Playlist mới';
+        const newId = `pl-${Date.now()}`;
+        const newPlaylist: CustomPlaylist = {
+          id: newId,
+          name: cleanName,
+          description: description || '',
+          createdAt: new Date().toISOString(),
+          trackIds: [],
+          tracks: [],
+        };
+        set((state) => ({
+          customPlaylists: [...state.customPlaylists, newPlaylist],
+        }));
+        return newId;
+      },
+
+      deletePlaylist: (playlistId: string) =>
+        set((state) => ({
+          customPlaylists: state.customPlaylists.filter((p) => p.id !== playlistId),
+          activePlaylistId: state.activePlaylistId === playlistId ? null : state.activePlaylistId,
+        })),
+
+      addTrackToPlaylist: (playlistId: string, track: Track) =>
+        set((state) => {
+          if (!playlistId || !track || !track.id) return state;
+          const updated = state.customPlaylists.map((pl) => {
+            if (pl.id !== playlistId) return pl;
+            if (pl.trackIds.includes(track.id)) return pl;
+            const prevTracks = Array.isArray(pl.tracks) ? pl.tracks : [];
+            return {
+              ...pl,
+              trackIds: [...pl.trackIds, track.id],
+              tracks: [...prevTracks.filter((t) => t.id !== track.id), track],
+              coverUrl: pl.coverUrl || track.coverUrl || track.thumbnail,
+            };
+          });
+          return { customPlaylists: updated };
+        }),
+
+      removeTrackFromPlaylist: (playlistId: string, trackId: string) =>
+        set((state) => {
+          const updated = state.customPlaylists.map((pl) => {
+            if (pl.id !== playlistId) return pl;
+            return {
+              ...pl,
+              trackIds: pl.trackIds.filter((id) => id !== trackId),
+              tracks: Array.isArray(pl.tracks)
+                ? pl.tracks.filter((t) => t.id !== trackId)
+                : [],
+            };
+          });
+          return { customPlaylists: updated };
+        }),
+
+      playPlaylist: (playlistId: string, shuffle: boolean = false) => {
+        const state = get();
+        const pl = state.customPlaylists.find((p) => p.id === playlistId);
+        if (!pl) return;
+
+        const resolvedTracks = pl.trackIds
+          .map(
+            (id) =>
+              state.library.find((t) => t.id === id) ||
+              (Array.isArray(pl.tracks) ? pl.tracks.find((t) => t.id === id) : undefined)
+          )
+          .filter((t): t is Track => Boolean(t && isVaultTrack(t)));
+
+        if (resolvedTracks.length === 0) return;
+
+        const finalQueue = shuffle ? shuffleTracksForReplay(resolvedTracks) : resolvedTracks;
+        const firstTrack = finalQueue[0];
+
+        set({
+          queue: finalQueue,
+          queueItems: finalQueue,
+          internalQueue: finalQueue,
+          currentTrack: firstTrack,
+          nextTrackPreview: computeNextPreview(finalQueue, firstTrack),
+          currentQueueId: firstTrack.id,
+          playingPlaylistName: pl.name,
+          activePlaylistId: pl.id,
+          progress: 0,
+          currentTime: 0,
+          isPlaying: true,
+          playNonce: state.playNonce + 1,
+        });
+      },
+
+      toggleLikeTrack: (trackId: string) =>
+        set((state) => {
+          if (!trackId) return state;
+          const exists = state.likedTrackIds.includes(trackId);
+          return {
+            likedTrackIds: exists
+              ? state.likedTrackIds.filter((id) => id !== trackId)
+              : [...state.likedTrackIds, trackId],
+          };
+        }),
+
+      recordTrackStream: (trackId: string) =>
+        set((state) => {
+          if (!trackId) return state;
+          const cleanId = trackId.replace(/^preview-/, '');
+          const prev = state.streamCounts[cleanId] || 0;
+          return {
+            streamCounts: {
+              ...state.streamCounts,
+              [cleanId]: prev + 1,
+            },
+          };
+        }),
     }),
     {
       name: 'aurasound-player-storage',
@@ -652,6 +801,9 @@ export const usePlayerStore = create<PlayerState>()(
         isShuffle: state.isShuffle,
         repeatMode: state.repeatMode,
         isSidebarCollapsed: state.isSidebarCollapsed,
+        customPlaylists: state.customPlaylists,
+        likedTrackIds: state.likedTrackIds,
+        streamCounts: state.streamCounts,
       }),
     }
   )

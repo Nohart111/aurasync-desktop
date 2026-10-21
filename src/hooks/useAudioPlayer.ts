@@ -15,6 +15,7 @@ import {
 
 let consecutiveErrorCount = 0;
 let initialCatalogSynced = false;
+let lastRecordedStreamSessionKey = '';
 
 const FALLBACK_ARTWORK_URL =
   'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=512&auto=format&fit=crop&q=80';
@@ -66,6 +67,28 @@ function updateMediaSessionPosition(positionSec: number, durationSec: number) {
   } catch {}
 }
 
+/**
+ * Chuẩn quốc tế (Spotify / Apple Music Standard):
+ * Khi bài hát phát vượt qua mốc 30 giây, ghi nhận +1 lượt stream hợp lệ cho phiên phát đó.
+ */
+function checkAndRecord30sStream(currentTimeSec: number) {
+  const state = usePlayerStore.getState();
+  const track = state.currentTrack;
+  if (!track || !track.id || !state.isPlaying) return;
+
+  const threshold = track.duration && track.duration < 60 ? Math.max(10, track.duration * 0.5) : 30;
+  if (currentTimeSec >= threshold) {
+    const sessionKey = `${track.id}-${state.playNonce}`;
+    if (lastRecordedStreamSessionKey !== sessionKey) {
+      lastRecordedStreamSessionKey = sessionKey;
+      state.recordTrackStream(track.id);
+      if (track.videoId && track.videoId !== track.id) {
+        state.recordTrackStream(track.videoId);
+      }
+    }
+  }
+}
+
 function triggerImmediateSyncPlaybackFromStore() {
   const nextState = usePlayerStore.getState();
   const nextTrack = nextState.currentTrack;
@@ -98,7 +121,6 @@ export function useAudioPlayer() {
   const currentTimeMV = useMotionValue(0);
   const rafIdRef = useRef<number | null>(null);
 
-  // Pre-warm YouTube Preview Bridge & Sync catalog on initial load
   useEffect(() => {
     initYouTubePreviewBridge();
 
@@ -127,7 +149,6 @@ export function useAudioPlayer() {
     return () => window.removeEventListener('aurasound:track-added', onTrackAdded);
   }, []);
 
-  // 60fps loop updating MotionValues for MagneticSeekbar
   const syncFrame = useCallback(() => {
     if (typeof document !== 'undefined' && document.hidden) {
       rafIdRef.current = null;
@@ -146,6 +167,10 @@ export function useAudioPlayer() {
         storeState.duration ||
         storeState.currentTrack?.duration ||
         0;
+
+    if (isPreviewMode) {
+      checkAndRecord30sStream(current);
+    }
 
     currentTimeMV.set(current);
     progressMV.set(total > 0 ? Math.min(1, Math.max(0, current / total)) : 0);
@@ -189,6 +214,7 @@ export function useAudioPlayer() {
       const state = usePlayerStore.getState();
       if (state.currentTrack?.isPreview) return;
       state.setProgress(time);
+      checkAndRecord30sStream(time);
       const total = audioEngine.getDuration() || state.duration || state.currentTrack?.duration || 0;
       updateMediaSessionPosition(time, total);
     });
@@ -236,7 +262,6 @@ export function useAudioPlayer() {
     });
   }, []);
 
-  // Media Session API integration
   useEffect(() => {
     if (typeof window === 'undefined' || typeof navigator === 'undefined' || !('mediaSession' in navigator)) {
       return;
@@ -349,7 +374,6 @@ export function useAudioPlayer() {
     });
   }, [currentTrack, isPlaying]);
 
-  // Unified single playback synchronization effect (handles both Vault CDN tracks & YouTube Previews)
   useEffect(() => {
     if (!currentTrack) {
       audioEngine.pause();
@@ -359,7 +383,6 @@ export function useAudioPlayer() {
 
     const rawUrl = currentTrack.streamUrl || currentTrack.cdnUrl || '';
 
-    // Chế độ Nghe thử (YouTube Preview Bridge)
     if (currentTrack.isPreview || rawUrl.startsWith('yt-preview:')) {
       audioEngine.pause();
       if (currentTrack.duration && currentTrack.duration > 0) {
@@ -373,7 +396,6 @@ export function useAudioPlayer() {
       return;
     }
 
-    // Chế độ Nhạc trong Kho CDN (AudioEngine) -> Tắt ngay YouTube Preview
     stopYouTubePreview();
 
     const streamUrl = resolveStreamUrl(rawUrl);
@@ -390,7 +412,6 @@ export function useAudioPlayer() {
     }
   }, [currentTrack, isPlaying, playNonce, setDuration]);
 
-  // Preload next track in queue
   useEffect(() => {
     if (nextTrackPreview && !nextTrackPreview.isPreview) {
       const nextRaw = nextTrackPreview.streamUrl || nextTrackPreview.cdnUrl || '';
@@ -401,7 +422,6 @@ export function useAudioPlayer() {
     }
   }, [nextTrackPreview]);
 
-  // Sync volume to both AudioEngine & YouTubePreviewBridge
   useEffect(() => {
     audioEngine.setVolume(volume);
     setYouTubePreviewVolume(volume);

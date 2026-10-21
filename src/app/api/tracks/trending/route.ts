@@ -7,22 +7,27 @@ const CATEGORY_QUERIES: Record<string, string[]> = {
   trending: [
     'top bài hát thịnh hành việt nam official music video',
     'nhạc việt thịnh hành mới nhất official mv',
+    'bảng xếp hạng nhạc trẻ việt nam official audio',
   ],
   vpop: [
     'vpop mới nhất official music video',
     'nhạc trẻ việt nam official mv mới nhất',
+    'vpop hits thịnh hành official audio',
   ],
   rap: [
     'rap việt mới nhất thịnh hành official mv',
     'hip hop rap việt official music video',
+    'rap việt hay nhất official audio',
   ],
   indie: [
     'indie việt official mv mới nhất',
     'nhạc indie chill việt nam official audio',
+    'acoustic indie việt nam hay nhất',
   ],
   usuk: [
     'pop hits official music video',
     'billboard hot 100 official music video',
+    'global top hits official audio',
   ],
 };
 
@@ -217,6 +222,23 @@ function formatSeconds(sec: number): string {
   return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 }
 
+function parseViewCountText(v: any): string {
+  const raw =
+    v?.shortViewCountText?.simpleText ||
+    v?.shortViewCountText?.runs?.[0]?.text ||
+    v?.viewCountText?.simpleText ||
+    v?.viewCountText?.runs?.[0]?.text ||
+    '';
+  if (!raw) return '250K+ streams';
+  const cleaned = String(raw)
+    .replace(/lượt xem|views|view/gi, '')
+    .replace(/Tr/g, 'M')
+    .replace(/N/g, 'K')
+    .replace(/,/g, '.')
+    .trim();
+  return cleaned ? `${cleaned} streams` : '250K+ streams';
+}
+
 function collectVideoRenderers(node: any, out: any[] = []) {
   if (!node || typeof node !== 'object') return out;
   if (node.videoRenderer && node.videoRenderer.videoId) {
@@ -331,7 +353,6 @@ export async function GET(req: NextRequest) {
       const durationStr = v.lengthText?.simpleText;
       if (!durationStr) continue;
 
-      // Chỉ chọn các bài hát đơn lẻ chuẩn (từ 1m30s đến 8m00s), loại bỏ Shorts và video gộp nhiều giờ
       const durationSec = parseDurationToSeconds(durationStr);
       if (durationSec < 90 || durationSec > 480) continue;
 
@@ -360,13 +381,15 @@ export async function GET(req: NextRequest) {
         artist: clean.artist,
         duration: durationSec,
         durationFormatted: formatSeconds(durationSec),
+        viewCountText: parseViewCountText(v),
         thumbnail: `https://i.ytimg.com/vi/${v.videoId}/hqdefault.jpg`,
         url: `https://www.youtube.com/watch?v=${v.videoId}`,
         category,
         source: 'youtube',
       });
 
-      if (results.length >= 16) break;
+      // Cache sẵn tối đa 42 bài để nút "Xem thêm" hiển thị tức thì 0ms
+      if (results.length >= 42) break;
     }
 
     if (results.length > 0) {

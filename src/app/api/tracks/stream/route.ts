@@ -5,6 +5,14 @@ const GITHUB_OWNER = process.env.GITHUB_OWNER || 'Nohart111';
 const GITHUB_REPO = process.env.GITHUB_REPO || 'aurasound-music-data';
 const GITHUB_RELEASE_TAG = process.env.GITHUB_RELEASE_TAG || 'tracks-v1';
 
+const CORS_HEADERS: Record<string, string> = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+  'Access-Control-Allow-Headers': 'Range, Content-Type, Accept, Origin',
+  'Access-Control-Expose-Headers': 'Content-Range, Content-Length, Accept-Ranges',
+  'Access-Control-Max-Age': '86400',
+};
+
 function getMimeType(filename: string): string {
   const clean = filename.split('?')[0].toLowerCase();
   if (clean.endsWith('.mp3')) return 'audio/mpeg';
@@ -19,13 +27,7 @@ function getMimeType(filename: string): string {
 export async function OPTIONS() {
   return new Response(null, {
     status: 204,
-    headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
-      'Access-Control-Allow-Headers': 'Range, Content-Type, Accept',
-      'Access-Control-Expose-Headers': 'Content-Range, Content-Length, Accept-Ranges',
-      'Access-Control-Max-Age': '86400',
-    },
+    headers: CORS_HEADERS,
   });
 }
 
@@ -35,7 +37,10 @@ export async function GET(req: NextRequest) {
   const directUrl = searchParams.get('url');
 
   if (!fileParam && !directUrl) {
-    return NextResponse.json({ error: 'Thiếu tham số file.' }, { status: 400 });
+    return NextResponse.json(
+      { error: 'Thiếu tham số file.' },
+      { status: 400, headers: CORS_HEADERS }
+    );
   }
 
   let inferredFile = fileParam || '';
@@ -58,13 +63,13 @@ export async function GET(req: NextRequest) {
   try {
     const rangeHeader = req.headers.get('range');
 
-    // BƯỚC 1: Xử lý chuyển hướng 302 thủ công
-    // QUAN TRỌNG: Không gửi Range header lên github.com (endpoint chuyển hướng) vì proxy GitHub sẽ trả về lỗi 400.
-    // Chỉ gửi Range header lên endpoint lưu trữ thực tế (AWS S3: objects.githubusercontent.com).
+    // BƯỚC 1: Xử lý chuyển hướng 302 thủ công phía Server (tối đa 6 bước nhảy)
+    // để trình duyệt luôn nhận stream trực tiếp từ cùng domain kèm đầy đủ CORS_HEADERS,
+    // giúp Web Audio API AnalyserNode (VU Meter & Spectrum) đọc được dữ liệu tần số 100% không bị lỗi CORS Taint.
     let upstream: Response | null = null;
     let currentFetchUrl = targetUrl;
 
-    for (let redirectCount = 0; redirectCount < 4; redirectCount++) {
+    for (let redirectCount = 0; redirectCount < 6; redirectCount++) {
       const isStorageEndpoint =
         currentFetchUrl.includes('githubusercontent.com') ||
         currentFetchUrl.includes('amazonaws.com') ||
@@ -83,10 +88,16 @@ export async function GET(req: NextRequest) {
         cache: 'no-store',
       });
 
-      if (resp.status === 301 || resp.status === 302 || resp.status === 307 || resp.status === 308) {
+      if (
+        resp.status === 301 ||
+        resp.status === 302 ||
+        resp.status === 303 ||
+        resp.status === 307 ||
+        resp.status === 308
+      ) {
         const loc = resp.headers.get('location');
         if (loc) {
-          currentFetchUrl = loc;
+          currentFetchUrl = loc.startsWith('http') ? loc : new URL(loc, currentFetchUrl).href;
           continue;
         }
       }
@@ -95,8 +106,7 @@ export async function GET(req: NextRequest) {
       break;
     }
 
-    // BƯỚC 2: Nếu tải trực tiếp không thành công (ví dụ: file .m4a cũ đã được thay bằng file .mp3 mới trong Release),
-    // truy vấn trực tiếp GitHub Release API để lấy asset nhị phân mới nhất của cùng bài hát
+    // BƯỚC 2: Nếu tải trực tiếp không thành công, tra cứu GitHub Release API để lấy asset mới nhất
     if ((!upstream || (!upstream.ok && upstream.status !== 206)) && inferredFile) {
       try {
         const apiHeaders: Record<string, string> = {
@@ -117,7 +127,6 @@ export async function GET(req: NextRequest) {
           const prefix = clean.replace(/-\d+\.[a-z0-9]+$/, '');
           const assets: any[] = Array.isArray(relData.assets) ? [...relData.assets] : [];
 
-          // Sắp xếp ưu tiên file .mp3 và mới nhất trước
           assets.sort((a, b) => {
             const aMp3 = String(a?.name || '').toLowerCase().endsWith('.mp3') ? 1 : 0;
             const bMp3 = String(b?.name || '').toLowerCase().endsWith('.mp3') ? 1 : 0;
@@ -179,25 +188,24 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // BƯỚC 3: Nếu cả 2 cách trên không lấy được stream server-side, chuyển hướng 307 cho trình duyệt tự tải
     if (!upstream || (!upstream.ok && upstream.status !== 206)) {
       if (targetUrl && targetUrl.startsWith('https://')) {
-        return NextResponse.redirect(targetUrl, 307);
+        const redir = NextResponse.redirect(targetUrl, 307);
+        for (const [k, v] of Object.entries(CORS_HEADERS)) {
+          redir.headers.set(k, v);
+        }
+        return redir;
       }
       return NextResponse.json(
         { error: 'Không tìm thấy file nhạc trên CDN hoặc Release storage.' },
-        { status: upstream ? upstream.status : 404 }
+        { status: upstream ? upstream.status : 404, headers: CORS_HEADERS }
       );
     }
 
     const mimeType = getMimeType(resolvedAssetName || inferredFile || targetUrl);
-    const responseHeaders = new Headers();
+    const responseHeaders = new Headers(CORS_HEADERS);
     responseHeaders.set('Content-Type', mimeType);
     responseHeaders.set('Accept-Ranges', 'bytes');
-    responseHeaders.set('Access-Control-Allow-Origin', '*');
-    responseHeaders.set('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-    responseHeaders.set('Access-Control-Allow-Headers', 'Range, Content-Type, Accept');
-    responseHeaders.set('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges');
     responseHeaders.set('Cache-Control', 'public, max-age=31536000, immutable');
 
     const contentLength = upstream.headers.get('content-length');
@@ -214,8 +222,15 @@ export async function GET(req: NextRequest) {
     if (err?.digest) throw err;
     console.error('Lỗi Stream API:', err);
     if (targetUrl && targetUrl.startsWith('https://')) {
-      return NextResponse.redirect(targetUrl, 307);
+      const redir = NextResponse.redirect(targetUrl, 307);
+      for (const [k, v] of Object.entries(CORS_HEADERS)) {
+        redir.headers.set(k, v);
+      }
+      return redir;
     }
-    return NextResponse.json({ error: 'Lỗi truyền tải âm thanh.' }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Lỗi truyền tải âm thanh.' },
+      { status: 500, headers: CORS_HEADERS }
+    );
   }
 }
