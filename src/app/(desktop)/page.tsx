@@ -4,6 +4,7 @@ import React, { useEffect, useState, useMemo, useRef } from "react";
 import { usePlayerStore } from "@/store/usePlayerStore";
 import { useAudioPlayer } from "@/hooks/useAudioPlayer";
 import { AudioEngine } from "@/core/audio/AudioEngine";
+import { ExploreTrendingSection } from "@/app/(desktop)/explore/page";
 import {
   Play,
   Pause,
@@ -20,6 +21,7 @@ import {
   CheckCircle2,
   Sparkles,
   CloudDownload,
+  Compass,
 } from "lucide-react";
 import { Track } from "@/core/algorithms/DoublyLinkedQueue";
 
@@ -214,6 +216,7 @@ export default function RetroCyberDeckPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [likedTrackIds, setLikedTrackIds] = useState<Set<string>>(new Set());
   const [newlyAddedTrack, setNewlyAddedTrack] = useState<Track | null>(null);
+  const [activeView, setActiveView] = useState<"vault" | "explore">("vault");
 
   const { currentTrack, isPlaying, setPlaying, enqueueTrack, jumpToTrack } =
     usePlayerStore();
@@ -250,8 +253,19 @@ export default function RetroCyberDeckPage() {
       }
     };
 
+    const handleSwitchView = (e: Event) => {
+      const customEvent = e as CustomEvent<"vault" | "explore">;
+      if (customEvent.detail === "explore" || customEvent.detail === "vault") {
+        setActiveView(customEvent.detail);
+      }
+    };
+
     window.addEventListener("aurasound:track-added", handleTrackAdded);
-    return () => window.removeEventListener("aurasound:track-added", handleTrackAdded);
+    window.addEventListener("aurasound:switch-view", handleSwitchView);
+    return () => {
+      window.removeEventListener("aurasound:track-added", handleTrackAdded);
+      window.removeEventListener("aurasound:switch-view", handleSwitchView);
+    };
   }, []);
 
   const filteredTracks = useMemo(() => {
@@ -382,7 +396,7 @@ export default function RetroCyberDeckPage() {
             <div className="flex w-full items-center justify-between gap-2 rounded-lg bg-zinc-900/80 border border-white/[0.06] px-2.5 sm:px-3 py-2 text-xs">
               <div className="truncate pr-1 min-w-0">
                 <span className="text-[9px] sm:text-[10px] font-mono text-zinc-500 block uppercase">
-                  MASTER CASSETTE
+                  {(currentTrack as any)?.isPreview ? "YOUTUBE PREVIEW" : "MASTER CASSETTE"}
                 </span>
                 <span className="font-mono font-bold text-neon-cyan truncate block">
                   {currentTrack ? currentTrack.title : "EMPTY DECK (SẴN SÀNG)"}
@@ -420,9 +434,9 @@ export default function RetroCyberDeckPage() {
               <button
                 onClick={handlePlayAll}
                 disabled={tracks.length === 0}
-                className="group flex items-center gap-2 rounded-xl bg-gradient-to-r from-neon-cyan to-neon-violet px-4 sm:px-6 py-3 sm:py-3.5 text-xs font-mono font-bold tracking-wider text-black shadow-lg shadow-neon-cyan/20 transition hover:scale-105 active:scale-95 disabled:opacity-40"
+                className="group flex items-center gap-2 rounded-xl bg-gradient-to-r from-neon-cyan to-neon-violet px-4 sm:px-6 py-3 sm:py-3.5 text-xs font-mono font-bold tracking-wider text-black shadow-lg shadow-neon-cyan/20 transition hover:scale-105 active:scale-95 disabled:opacity-40 cursor-pointer"
               >
-                {isPlaying ? (
+                {isPlaying && !(currentTrack as any)?.isPreview ? (
                   <Pause className="h-4 w-4 fill-black" />
                 ) : (
                   <Play className="h-4 w-4 fill-black" />
@@ -433,7 +447,7 @@ export default function RetroCyberDeckPage() {
               <button
                 onClick={handleShuffle}
                 disabled={tracks.length === 0}
-                className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3.5 sm:px-4 py-3 sm:py-3.5 text-xs font-mono text-zinc-300 transition hover:bg-white/10 hover:text-white disabled:opacity-40"
+                className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3.5 sm:px-4 py-3 sm:py-3.5 text-xs font-mono text-zinc-300 transition hover:bg-white/10 hover:text-white disabled:opacity-40 cursor-pointer"
                 title="Trộn bài"
               >
                 <Shuffle className="h-4 w-4 text-neon-cyan" />
@@ -444,7 +458,7 @@ export default function RetroCyberDeckPage() {
                 onClick={() => {
                   window.dispatchEvent(new CustomEvent("aurasound:open-ingest-modal"));
                 }}
-                className="flex md:hidden items-center gap-2 rounded-xl border border-neon-cyan/30 bg-neon-cyan/10 px-3.5 py-3 text-xs font-mono font-semibold text-neon-cyan transition active:scale-95"
+                className="flex md:hidden items-center gap-2 rounded-xl border border-neon-cyan/30 bg-neon-cyan/10 px-3.5 py-3 text-xs font-mono font-semibold text-neon-cyan transition active:scale-95 cursor-pointer"
               >
                 <CloudDownload className="h-4 w-4" />
                 <span>NẠP NHẠC</span>
@@ -455,7 +469,10 @@ export default function RetroCyberDeckPage() {
                 <input
                   type="text"
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    if (activeView !== "vault") setActiveView("vault");
+                  }}
                   placeholder="FILTER_TRACK_BY_NAME..."
                   className="w-full rounded-xl border border-white/[0.08] bg-black/50 pl-9 pr-3 py-3 text-xs font-mono text-neon-cyan placeholder-zinc-600 outline-none transition focus:border-neon-cyan/50 focus:bg-black/80"
                 />
@@ -465,17 +482,45 @@ export default function RetroCyberDeckPage() {
         </div>
       </section>
 
-      {/* DANH SÁCH BÀI HÁT AUDIOPHILE CHUYÊN NGHIỆP */}
-      <section id="catalog-section" className="space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/[0.08] pb-2 text-[11px] sm:text-xs font-mono text-zinc-400 uppercase">
-          <span className="flex items-center gap-2">
-            <Cpu className="h-4 w-4 text-neon-cyan shrink-0" />
-            <span>CATALOG_CARTRIDGES ({filteredTracks.length} TAPES LOADED)</span>
+      {/* CHUYỂN ĐỔI GIỮA KHO NHẠC CÁ NHÂN & MỤC KHÁM PHÁ THỊNH HÀNH */}
+      <section id="catalog-section" className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.08] pb-3">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setActiveView("vault")}
+              className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-mono font-bold uppercase tracking-wider transition-all cursor-pointer ${
+                activeView === "vault"
+                  ? "bg-white text-black shadow-md"
+                  : "border border-white/[0.08] bg-white/[0.03] text-zinc-400 hover:bg-white/[0.07] hover:text-white"
+              }`}
+            >
+              <Cpu className={`h-3.5 w-3.5 ${activeView === "vault" ? "text-black" : "text-neon-cyan"}`} />
+              <span>Kho nhạc ({filteredTracks.length})</span>
+            </button>
+
+            <button
+              onClick={() => setActiveView("explore")}
+              className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-mono font-bold uppercase tracking-wider transition-all cursor-pointer ${
+                activeView === "explore"
+                  ? "bg-neon-cyan text-black shadow-[0_0_20px_rgba(0,240,255,0.3)]"
+                  : "border border-white/[0.08] bg-white/[0.03] text-zinc-400 hover:bg-white/[0.07] hover:text-white"
+              }`}
+            >
+              <Compass className={`h-3.5 w-3.5 ${activeView === "explore" ? "text-black" : "text-neon-cyan"}`} />
+              <span>Khám phá</span>
+            </button>
+          </div>
+
+          <span className="hidden sm:inline text-xs font-mono text-zinc-500 uppercase">
+            {activeView === "vault"
+              ? "FORMAT: 44.1kHz / 16-BIT PCM"
+              : "INSTANT YOUTUBE AUDIO PREVIEW"}
           </span>
-          <span className="hidden sm:inline">FORMAT: 44.1kHz / 16-BIT PCM</span>
         </div>
 
-        {isLoading ? (
+        {activeView === "explore" ? (
+          <ExploreTrendingSection />
+        ) : isLoading ? (
           <div className="flex h-48 items-center justify-center font-mono text-xs text-zinc-500">
             LOADING_DATA_CARTRIDGES...
           </div>
@@ -484,7 +529,7 @@ export default function RetroCyberDeckPage() {
             <Disc className="mb-2 h-8 w-8 text-zinc-600" />
             <p className="text-sm text-zinc-400">NO CARTRIDGES FOUND</p>
             <p className="mt-1 text-xs text-zinc-600">
-              Bấm nút &quot;Nạp nhạc&quot; để chèn băng nhạc đầu tiên vào kho lưu trữ.
+              Bấm sang tab &quot;Khám phá&quot; hoặc nút &quot;Nạp nhạc&quot; để lưu bài hát đầu tiên vào kho.
             </p>
           </div>
         ) : (

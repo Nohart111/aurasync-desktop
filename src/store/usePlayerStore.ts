@@ -13,6 +13,7 @@ export interface Track {
   coverUrl?: string;
   thumbnail?: string;
   dominantColors?: [string, string];
+  isPreview?: boolean;
   [key: string]: any;
 }
 
@@ -21,17 +22,18 @@ export interface QueueItem {
   track: Track;
 }
 
-// Track synchronous batch enqueue calls from page.tsx's `tracks.forEach((t) => enqueueTrack(t))`
 let lastEnqueueTick = 0;
 let batchEnqueueIds: string[] = [];
 
-/**
- * Fisher-Yates shuffle that avoids placing `avoidFirstTrackId` at index 0
- * when there are 2 or more distinct tracks, preventing immediate back-to-back repeat
- * at the playlist boundary while preserving all valid tracks without loss or duplication.
- */
+function isVaultTrack(t?: Track | null): boolean {
+  if (!t || !t.id || t.isPreview) return false;
+  const raw = String(t.streamUrl || t.cdnUrl || '');
+  if (!raw || raw.startsWith('yt-preview:')) return false;
+  return true;
+}
+
 export function shuffleTracksForReplay(tracks: Track[], avoidFirstTrackId?: string | null): Track[] {
-  const valid = tracks.filter((t) => Boolean(t && t.id && (t.streamUrl || t.cdnUrl)));
+  const valid = tracks.filter((t) => isVaultTrack(t));
   if (valid.length <= 1) return [...valid];
 
   const shuffled = [...valid];
@@ -42,7 +44,6 @@ export function shuffleTracksForReplay(tracks: Track[], avoidFirstTrackId?: stri
     shuffled[j] = temp;
   }
 
-  // Avoid immediately repeating the track that just finished playing
   if (avoidFirstTrackId && shuffled.length > 1 && shuffled[0].id === avoidFirstTrackId) {
     const swapIdx = shuffled.findIndex((t, idx) => idx > 0 && t.id !== avoidFirstTrackId);
     if (swapIdx > 0) {
@@ -57,7 +58,7 @@ export function shuffleTracksForReplay(tracks: Track[], avoidFirstTrackId?: stri
 
 function computeNextPreview(queue: Track[], currentTrack: Track | null): Track | null {
   if (!queue || queue.length === 0) return null;
-  if (!currentTrack) return queue[0] || null;
+  if (!currentTrack || currentTrack.isPreview) return queue[0] || null;
   const idx = queue.findIndex((t) => t.id === currentTrack.id);
   if (idx >= 0 && idx < queue.length - 1) {
     return queue[idx + 1];
@@ -77,20 +78,16 @@ export interface PlayerState {
   actualDuration: number;
   isShuffle: boolean;
   repeatMode: 'off' | 'all' | 'one';
-  /** Monotonic counter incremented whenever a track should start/restart from 0:00 */
   playNonce: number;
 
-  // Sidebar & Playlist UI State
   isSidebarCollapsed: boolean;
   playingPlaylistName: string | null;
 
-  // Library & Active Queue (queueItems typed as Track[] for QueueDrawer.tsx compatibility)
   library: Track[];
   queue: Track[];
   queueItems: Track[];
   internalQueue: Track[];
 
-  // Actions with flexible argument lists to support all components & overloads
   toggleSidebar: (...args: any[]) => void;
   setSidebarCollapsed: (collapsed?: any, ...args: any[]) => void;
   setPlayingPlaylistName: (name?: any, ...args: any[]) => void;
@@ -156,6 +153,21 @@ export const usePlayerStore = create<PlayerState>()(
       setCurrentTrack: (track?: any, ...args: any[]) =>
         set((state) => {
           if (!track || !track.id) return state;
+
+          // Nếu là bài nghe thử tạm thời từ mục Khám phá (isPreview === true),
+          // chỉ gán lên currentTrack mà không chèn vào danh sách phát cố định (queue)
+          if (track.isPreview) {
+            return {
+              currentTrack: track,
+              progress: 0,
+              currentTime: 0,
+              duration: track.duration || 240,
+              actualDuration: track.duration || 240,
+              isPlaying: true,
+              playNonce: state.playNonce + 1,
+            };
+          }
+
           const optionalQueue = Array.isArray(args[0]) ? args[0] : null;
           const optionalPlaylistName =
             typeof args[0] === 'string'
@@ -233,7 +245,7 @@ export const usePlayerStore = create<PlayerState>()(
       setLibrary: (tracks?: any, ..._args: any[]) =>
         set((state) => {
           const raw = Array.isArray(tracks) ? tracks : [];
-          const validTracks: Track[] = raw.filter((t) => Boolean(t && t.id && t.title));
+          const validTracks: Track[] = raw.filter((t) => Boolean(t && t.id && t.title && !t.isPreview));
           let nextQueue: Track[];
           if (state.queue.length <= 1) {
             nextQueue = validTracks;
@@ -247,15 +259,26 @@ export const usePlayerStore = create<PlayerState>()(
             nextQueue = [...newTracks, ...syncedExisting];
           }
 
-          const matchedCurrent = state.currentTrack
+          // Nếu đang phát bài nghe thử (isPreview), giữ nguyên currentTrack nghe thử mà không làm gián đoạn
+          const matchedCurrent = state.currentTrack?.isPreview
+            ? state.currentTrack
+            : state.currentTrack
             ? validTracks.find((t) => t.id === state.currentTrack?.id) || state.currentTrack
             : validTracks[0] || null;
 
           let finalLibrary = validTracks;
-          if (matchedCurrent && !finalLibrary.some((t) => t.id === matchedCurrent.id)) {
+          if (
+            matchedCurrent &&
+            !matchedCurrent.isPreview &&
+            !finalLibrary.some((t) => t.id === matchedCurrent.id)
+          ) {
             finalLibrary = [matchedCurrent, ...finalLibrary];
           }
-          if (matchedCurrent && !nextQueue.some((t) => t.id === matchedCurrent.id)) {
+          if (
+            matchedCurrent &&
+            !matchedCurrent.isPreview &&
+            !nextQueue.some((t) => t.id === matchedCurrent.id)
+          ) {
             nextQueue = [matchedCurrent, ...nextQueue];
           }
 
@@ -266,13 +289,13 @@ export const usePlayerStore = create<PlayerState>()(
             internalQueue: nextQueue,
             currentTrack: matchedCurrent,
             nextTrackPreview: computeNextPreview(nextQueue, matchedCurrent),
-            currentQueueId: matchedCurrent ? matchedCurrent.id : null,
+            currentQueueId: matchedCurrent && !matchedCurrent.isPreview ? matchedCurrent.id : state.currentQueueId,
           };
         }),
 
       setQueue: (tracks?: any, ..._args: any[]) => {
         const raw = Array.isArray(tracks) ? tracks : [];
-        const validTracks: Track[] = raw.filter((t) => Boolean(t && t.id && t.title));
+        const validTracks: Track[] = raw.filter((t) => Boolean(t && t.id && t.title && !t.isPreview));
         set((state) => {
           const matched = state.currentTrack
             ? validTracks.find((t) => t.id === state.currentTrack?.id)
@@ -282,14 +305,14 @@ export const usePlayerStore = create<PlayerState>()(
             queueItems: validTracks,
             internalQueue: validTracks,
             nextTrackPreview: computeNextPreview(validTracks, matched || null),
-            currentQueueId: matched ? matched.id : null,
+            currentQueueId: matched ? matched.id : state.currentQueueId,
           };
         });
       },
 
       addToQueue: (track?: any, ...args: any[]) =>
         set((s) => {
-          if (!track || !track.id) return s;
+          if (!track || !track.id || track.isPreview) return s;
           const now = Date.now();
           const isSameBatch = now - lastEnqueueTick < 25;
           lastEnqueueTick = now;
@@ -300,9 +323,8 @@ export const usePlayerStore = create<PlayerState>()(
             batchEnqueueIds.push(track.id);
           }
 
-          // If optional full playlist was passed as 2nd argument
           if (Array.isArray(args[0]) && args[0].length > 0) {
-            const fullList = args[0].filter((t: any) => Boolean(t && t.id));
+            const fullList = args[0].filter((t: any) => Boolean(t && t.id && !t.isPreview));
             return {
               queue: fullList,
               queueItems: fullList,
@@ -316,8 +338,6 @@ export const usePlayerStore = create<PlayerState>()(
             ? basePool.map((t) => (t.id === track.id ? track : t))
             : [...basePool, track];
 
-          // If called in a synchronous .forEach loop (e.g. handleShuffle / handlePlayAll),
-          // order the queue according to batchEnqueueIds!
           if (isSameBatch && batchEnqueueIds.length > 1) {
             const orderedBatch = batchEnqueueIds
               .map((id) => poolWithTrack.find((t) => t.id === id))
@@ -345,11 +365,11 @@ export const usePlayerStore = create<PlayerState>()(
       },
 
       playNextInQueue: (track?: any, ..._args: any[]) => {
-        if (!track || !track.id) return;
+        if (!track || !track.id || track.isPreview) return;
         const { queue, currentTrack } = get();
         const filtered = queue.filter((t) => t.id !== track.id);
         let insertIdx = 0;
-        if (currentTrack) {
+        if (currentTrack && !currentTrack.isPreview) {
           const curr = filtered.findIndex((t) => t.id === currentTrack.id);
           insertIdx = curr >= 0 ? curr + 1 : 0;
         }
@@ -432,7 +452,7 @@ export const usePlayerStore = create<PlayerState>()(
         let target: Track | undefined;
         if (typeof trackIdOrTrack === 'object' && trackIdOrTrack.id) {
           target = trackIdOrTrack as Track;
-          if (!activeList.some((t) => t.id === target!.id)) {
+          if (!target.isPreview && !activeList.some((t) => t.id === target!.id)) {
             activeList = [target, ...activeList];
           }
         } else {
@@ -448,17 +468,19 @@ export const usePlayerStore = create<PlayerState>()(
         }
 
         if (target) {
-          const nextQueue = activeList.some((t) => t.id === target!.id)
-            ? activeList
-            : [target!, ...activeList];
-          const nextLib = library.some((t) => t.id === target!.id)
-            ? library
-            : [target!, ...library];
+          const nextQueue =
+            target.isPreview || activeList.some((t) => t.id === target!.id)
+              ? activeList
+              : [target!, ...activeList];
+          const nextLib =
+            target.isPreview || library.some((t) => t.id === target!.id)
+              ? library
+              : [target!, ...library];
 
           set({
             currentTrack: target,
             nextTrackPreview: computeNextPreview(nextQueue, target),
-            currentQueueId: target.id,
+            currentQueueId: target.isPreview ? get().currentQueueId : target.id,
             queue: nextQueue,
             queueItems: nextQueue,
             internalQueue: nextQueue,
@@ -483,15 +505,14 @@ export const usePlayerStore = create<PlayerState>()(
         } = get();
 
         const rawSource = queue.length > 1 ? queue : library.length > 0 ? library : queue;
-        const validList = rawSource.filter((t) => Boolean(t && t.id && (t.streamUrl || t.cdnUrl)));
+        const validList = rawSource.filter((t) => isVaultTrack(t));
 
         if (validList.length === 0) {
           set({ isPlaying: false, progress: 0, currentTime: 0 });
           return;
         }
 
-        // Handle single-track repeat mode on natural track end
-        if (reason === 'ended' && repeatMode === 'one' && currentTrack) {
+        if (reason === 'ended' && repeatMode === 'one' && currentTrack && !currentTrack.isPreview) {
           set({
             progress: 0,
             currentTime: 0,
@@ -501,7 +522,6 @@ export const usePlayerStore = create<PlayerState>()(
           return;
         }
 
-        // Single-track playlist: replay from 0:00 without stalling
         if (validList.length === 1) {
           const singleTrack = validList[0];
           set({
@@ -519,16 +539,14 @@ export const usePlayerStore = create<PlayerState>()(
           return;
         }
 
-        // Resolve exact current position in queue
         let currIdx = -1;
         if (currentQueueId) {
           currIdx = validList.findIndex((t) => t.id === currentQueueId);
         }
-        if (currIdx === -1 && currentTrack) {
+        if (currIdx === -1 && currentTrack && !currentTrack.isPreview) {
           currIdx = validList.findIndex((t) => t.id === currentTrack.id);
         }
 
-        // Case A: Still have unplayed tracks ahead in the current queue -> play next sequentially
         if (currIdx >= 0 && currIdx < validList.length - 1) {
           const nextIdx = currIdx + 1;
           const nextTrack = validList[nextIdx];
@@ -548,7 +566,6 @@ export const usePlayerStore = create<PlayerState>()(
           return;
         }
 
-        // Case B: Current track wasn't in the active queue -> start at index 0 of current queue
         if (currIdx === -1) {
           const first = validList[0];
           set({
@@ -566,8 +583,6 @@ export const usePlayerStore = create<PlayerState>()(
           return;
         }
 
-        // Case C: Reached the end of the playlist (currIdx === validList.length - 1)
-        // Automatically shuffle the valid playlist and restart playback from index 0 of the shuffled list!
         const shuffledList = shuffleTracksForReplay(validList, currentTrack?.id);
         const firstShuffled = shuffledList[0];
 
@@ -597,11 +612,10 @@ export const usePlayerStore = create<PlayerState>()(
         const { queue, library, currentTrack, currentQueueId, progress, playNonce } =
           get();
         const rawSource = queue.length > 1 ? queue : library.length > 0 ? library : queue;
-        const validList = rawSource.filter((t) => Boolean(t && t.id && (t.streamUrl || t.cdnUrl)));
+        const validList = rawSource.filter((t) => isVaultTrack(t));
         if (validList.length === 0) return;
 
-        // If more than 3 seconds into the song, restart current song from 0:00
-        if (progress > 3 && currentTrack) {
+        if (progress > 3 && currentTrack && !currentTrack.isPreview) {
           set({ progress: 0, currentTime: 0, isPlaying: true, playNonce: playNonce + 1 });
           return;
         }
@@ -610,7 +624,7 @@ export const usePlayerStore = create<PlayerState>()(
         if (currentQueueId) {
           currIdx = validList.findIndex((t) => t.id === currentQueueId);
         }
-        if (currIdx === -1 && currentTrack) {
+        if (currIdx === -1 && currentTrack && !currentTrack.isPreview) {
           currIdx = validList.findIndex((t) => t.id === currentTrack.id);
         }
 

@@ -2,7 +2,7 @@
  * Singleton Web Audio & HTML5 Audio Engine
  * - Guarantees a single active ended/timeupdate listener even when multiple components call useAudioPlayer()
  * - Prevents duplicate loadAndPlay restarts when multiple hook instances run in the same render pass
- * - Unlocks AudioContext synchronously on user gesture (click, pointerdown, touchstart) when page is visible
+ * - Mutual Exclusion: automatically stops YouTubePreviewBridge when playing a Vault CDN track
  * - Avoids routing <audio> through createMediaElementSource on mobileOS (iOS/iPadOS/Android) so Lock Screen
  *   background playback never gets muted when the OS suspends AudioContext in deep sleep
  * - Preloads next track at 70% progress so track transitions while screen is locked happen in 0ms
@@ -68,9 +68,16 @@ export class AudioEngine {
     if (typeof navigator === 'undefined') return false;
     const ua = navigator.userAgent || '';
     if (/iPhone|iPad|iPod|Android|Mobile/i.test(ua)) return true;
-    // iPadOS 13+ reports as MacIntel with multi-touch points
     if (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) return true;
     return false;
+  }
+
+  private stopPreviewBridgeIfActive(): void {
+    if (typeof window !== 'undefined' && typeof (window as any).__AURASOUND_STOP_YT_PREVIEW__ === 'function') {
+      try {
+        (window as any).__AURASOUND_STOP_YT_PREVIEW__();
+      } catch {}
+    }
   }
 
   public resumeContext(): void {
@@ -92,7 +99,6 @@ export class AudioEngine {
       const curr = this.primaryAudio.currentTime || 0;
       const dur = this.primaryAudio.duration || 0;
 
-      // Preload luồng âm thanh bài tiếp theo khi bài hiện tại đạt 70% để chống ngắt quãng trên iOS Lock Screen
       if (
         !this.hasTriggered70PercentPreload &&
         this.nextPreloadUrl &&
@@ -127,15 +133,14 @@ export class AudioEngine {
       }
     });
 
-    // Đồng bộ 2 chiều khi người dùng bấm Play/Pause từ Màn hình khóa hoặc tai nghe AirPods
     this.primaryAudio.addEventListener('play', () => {
+      this.stopPreviewBridgeIfActive();
       if (this.playStateCallback) {
         this.playStateCallback(true);
       }
     });
 
     this.primaryAudio.addEventListener('pause', () => {
-      // Không bắn pause giả khi bài hát vừa kết thúc tự nhiên (ended) hoặc đang nạp bài mới (isLoading)
       if (!this.primaryAudio || this.primaryAudio.ended || this.isLoading) return;
       if (this.playStateCallback) {
         this.playStateCallback(false);
@@ -154,9 +159,6 @@ export class AudioEngine {
 
   private ensureAudioContext(): void {
     if (typeof window === 'undefined' || !this.primaryAudio) return;
-    // QUAN TRỌNG: Trên iOS / iPadOS / Android, KHÔNG gắn createMediaElementSource vào thẻ <audio>
-    // vì khi khóa màn hình, hệ điều hành sẽ cưỡng chế suspend AudioContext làm mất tiếng hoàn toàn.
-    // Để thẻ <audio> chạy trực tiếp qua phần cứng OS giúp phát ngầm liên tục hàng giờ với 0% CPU.
     if (this.isMobileDevice()) return;
     if (typeof document !== 'undefined' && document.hidden) return;
 
@@ -182,13 +184,14 @@ export class AudioEngine {
       }
 
       this.resumeContext();
-    } catch {
-      // Fallback tự nhiên qua native audio nếu Web Audio bị chặn
-    }
+    } catch {}
   }
 
   public async loadAndPlay(url: string, nonce?: number): Promise<void> {
-    if (!this.primaryAudio || !url) return;
+    if (!this.primaryAudio || !url || url.startsWith('yt-preview:')) return;
+
+    // Ngắt ngay trình nghe thử YouTube trước khi phát nhạc từ kho CDN
+    this.stopPreviewBridgeIfActive();
 
     const isSameUrl = this.currentUrl === url && Boolean(this.primaryAudio.src);
     const isNewNonce = typeof nonce === 'number' && nonce !== this.currentNonce;
@@ -255,7 +258,7 @@ export class AudioEngine {
   }
 
   private triggerPreloadFetch(nextUrl: string): void {
-    if (!this.preloadAudio || !nextUrl) return;
+    if (!this.preloadAudio || !nextUrl || nextUrl.startsWith('yt-preview:')) return;
     try {
       if (this.preloadAudio.src !== nextUrl) {
         this.preloadAudio.src = nextUrl;
@@ -265,7 +268,7 @@ export class AudioEngine {
   }
 
   public preloadNextTrack(nextUrl: string | null): void {
-    if (!nextUrl) {
+    if (!nextUrl || nextUrl.startsWith('yt-preview:')) {
       this.nextPreloadUrl = '';
       return;
     }
@@ -281,7 +284,9 @@ export class AudioEngine {
   public async play(fallbackUrl?: string, nonce?: number): Promise<void> {
     if (!this.primaryAudio) return;
     const targetUrl = this.currentUrl || fallbackUrl || '';
-    if (!targetUrl) return;
+    if (!targetUrl || targetUrl.startsWith('yt-preview:')) return;
+
+    this.stopPreviewBridgeIfActive();
 
     if (!this.primaryAudio.src || this.currentUrl !== targetUrl) {
       return this.loadAndPlay(targetUrl, nonce);

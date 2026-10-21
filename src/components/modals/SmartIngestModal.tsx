@@ -149,6 +149,17 @@ function notifySubscribers() {
   });
 }
 
+export function getIngestControllerSnapshot() {
+  return controllerState;
+}
+
+export function subscribeIngestController(cb: () => void): () => void {
+  subscribers.add(cb);
+  return () => {
+    subscribers.delete(cb);
+  };
+}
+
 function interruptibleSleep(ms: number): Promise<void> {
   return new Promise((resolve) => {
     const timer = setTimeout(() => {
@@ -510,7 +521,6 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
   if (!effectiveOpen && !hasRunningTasks) return null;
 
   const renderContent = () => {
-    // CHẾ ĐỘ CHẠY NGẦM (FLOATING PILL NHỎ GỌN GÓC DƯỚI PHẢI)
     if ((!effectiveOpen || isMinimized) && hasRunningTasks && activeTask) {
       return (
         <div className="fixed bottom-36 md:bottom-28 right-3 md:right-6 z-50 w-72 sm:w-80 overflow-hidden rounded-2xl border border-neon-cyan/35 bg-[#0b0b16]/95 p-3.5 text-white shadow-[0_16px_50px_rgba(0,0,0,0.85)] backdrop-blur-xl select-none font-sans">
@@ -647,7 +657,6 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
         <div className="relative w-full max-w-2xl overflow-hidden rounded-3xl border border-white/[0.08] bg-gradient-to-b from-[#141424]/95 via-[#0b0b14]/98 to-[#06060b] p-4 sm:p-6 text-white shadow-[0_24px_80px_rgba(0,0,0,0.9)]">
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(0,240,255,0.08),transparent_60%)]" />
 
-          {/* Header */}
           <div className="relative z-10 flex items-center justify-between border-b border-white/[0.08] pb-3.5 sm:pb-4">
             <div className="flex items-center gap-3 min-w-0">
               <div className="flex h-10 w-10 sm:h-11 sm:w-11 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] text-neon-cyan shadow-inner">
@@ -689,7 +698,6 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
             </div>
           </div>
 
-          {/* Search Input Bar */}
           <form onSubmit={handleSearch} className="relative z-10 mt-4 sm:mt-5 flex items-center gap-2">
             <div className="relative flex-1">
               {isUrl(query) ? (
@@ -721,7 +729,6 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
             </button>
           </form>
 
-          {/* Active Task & Queue Progress Tracker */}
           {activeTask && (
             <div className="relative z-10 mt-3.5 sm:mt-4 overflow-hidden rounded-2xl border border-neon-cyan/30 bg-[#09151d]/90 p-3.5 sm:p-4 shadow-inner">
               <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
@@ -785,7 +792,6 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
             </div>
           )}
 
-          {/* Error Notification */}
           {combinedError && (
             <div className="relative z-10 mt-3.5 flex items-center justify-between gap-3 rounded-2xl border border-rose-500/30 bg-rose-950/40 px-4 py-3 text-xs text-rose-200">
               <div className="flex items-center gap-2.5 min-w-0">
@@ -805,7 +811,6 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
             </div>
           )}
 
-          {/* Batch Action Bar */}
           {results.length > 1 && unqueuedResults.length > 1 && (
             <div className="relative z-10 mt-3.5 flex items-center justify-between px-1">
               <span className="text-[11px] text-zinc-400 truncate pr-2">
@@ -821,7 +826,6 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
             </div>
           )}
 
-          {/* Search Results */}
           <div className="relative z-10 mt-3 max-h-[55vh] sm:max-h-[340px] space-y-2.5 overflow-y-auto pr-1">
             {results.length === 0 && !searching && !combinedError && (
               <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-white/[0.06] bg-white/[0.01] py-8 sm:py-10 text-center">

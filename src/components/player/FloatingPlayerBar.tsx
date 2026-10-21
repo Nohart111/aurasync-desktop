@@ -16,6 +16,7 @@ import {
   Compass,
   Library,
   CloudDownload,
+  Radio,
 } from 'lucide-react';
 import { usePlayerStore } from '@/store/usePlayerStore';
 import { useAudioPlayer } from '@/hooks/useAudioPlayer';
@@ -189,22 +190,38 @@ export function FloatingPlayerBar() {
       <nav className="fixed bottom-0 left-0 right-0 z-40 flex md:hidden h-14 items-center justify-around border-t border-white/[0.08] bg-[#080811]/95 px-2 backdrop-blur-2xl select-none font-sans">
         <button
           onClick={() => {
+            window.dispatchEvent(new CustomEvent('aurasound:switch-view', { detail: 'vault' }));
             window.scrollTo({ top: 0, behavior: 'smooth' });
           }}
-          className="flex flex-col items-center justify-center gap-1 px-3 py-1 text-neon-cyan transition active:scale-95"
+          className="flex flex-col items-center justify-center gap-1 px-2.5 py-1 text-zinc-300 transition hover:text-white active:scale-95"
         >
-          <Compass className="h-4 w-4" />
+          <Radio className="h-4 w-4 text-neon-cyan" />
           <span className="text-[10px] font-medium">Đầu Deck</span>
         </button>
 
         <button
           onClick={() => {
+            window.dispatchEvent(new CustomEvent('aurasound:switch-view', { detail: 'explore' }));
             const el = document.getElementById('catalog-section');
             if (el) {
               el.scrollIntoView({ behavior: 'smooth' });
             }
           }}
-          className="flex flex-col items-center justify-center gap-1 px-3 py-1 text-zinc-400 transition hover:text-white active:scale-95"
+          className="flex flex-col items-center justify-center gap-1 px-2.5 py-1 text-neon-cyan transition active:scale-95"
+        >
+          <Compass className="h-4 w-4" />
+          <span className="text-[10px] font-semibold">Khám phá</span>
+        </button>
+
+        <button
+          onClick={() => {
+            window.dispatchEvent(new CustomEvent('aurasound:switch-view', { detail: 'vault' }));
+            const el = document.getElementById('catalog-section');
+            if (el) {
+              el.scrollIntoView({ behavior: 'smooth' });
+            }
+          }}
+          className="flex flex-col items-center justify-center gap-1 px-2.5 py-1 text-zinc-400 transition hover:text-white active:scale-95"
         >
           <Library className="h-4 w-4" />
           <span className="text-[10px] font-medium">Kho nhạc</span>
@@ -214,7 +231,7 @@ export function FloatingPlayerBar() {
           onClick={() => {
             window.dispatchEvent(new CustomEvent('aurasound:open-ingest-modal'));
           }}
-          className="flex flex-col items-center justify-center gap-1 px-3 py-1 text-zinc-300 transition hover:text-neon-cyan active:scale-95"
+          className="flex flex-col items-center justify-center gap-1 px-2.5 py-1 text-zinc-300 transition hover:text-neon-cyan active:scale-95"
         >
           <CloudDownload className="h-4 w-4 text-neon-cyan" />
           <span className="text-[10px] font-semibold text-white">Nạp nhạc</span>
@@ -335,9 +352,16 @@ export function FloatingPlayerBar() {
                   )}
                 </div>
                 <div className="min-w-0">
-                  <h4 className="text-xs sm:text-sm font-semibold text-white truncate">
-                    {currentTrack.title}
-                  </h4>
+                  <div className="flex items-center gap-1.5">
+                    <h4 className="text-xs sm:text-sm font-semibold text-white truncate">
+                      {currentTrack.title}
+                    </h4>
+                    {currentTrack.isPreview && (
+                      <span className="shrink-0 rounded bg-amber-400/20 px-1.5 py-0.5 font-mono text-[9px] font-bold text-amber-300 border border-amber-400/40">
+                        PREVIEW
+                      </span>
+                    )}
+                  </div>
                   <p className="text-[11px] sm:text-xs text-zinc-400 truncate mt-0.5">
                     {currentTrack.artist || 'Nghệ sĩ chưa rõ'}
                   </p>
@@ -390,7 +414,7 @@ export function FloatingPlayerBar() {
               </div>
             </div>
 
-            {/* Cụm giữa: Nút điều khiển (Desktop) & Thanh Seekbar (Cả Mobile & Desktop, có touch-action: none) */}
+            {/* Cụm giữa: Nút điều khiển (Desktop) & Thanh Seekbar */}
             <div className="w-full md:flex-1 flex flex-col items-center justify-center md:max-w-xl md:px-2">
               <div className="hidden md:flex items-center gap-5 mb-1.5">
                 <button

@@ -4,6 +4,14 @@ import { useEffect, useRef, useCallback } from 'react';
 import { useMotionValue } from 'framer-motion';
 import { usePlayerStore } from '@/store/usePlayerStore';
 import { AudioEngine, audioEngine } from '@/core/audio/AudioEngine';
+import {
+  initYouTubePreviewBridge,
+  pauseYouTubePreview,
+  resumeYouTubePreview,
+  seekYouTubePreview,
+  setYouTubePreviewVolume,
+  stopYouTubePreview,
+} from '@/components/player/YouTubePreviewBridge';
 
 let consecutiveErrorCount = 0;
 let initialCatalogSynced = false;
@@ -13,6 +21,7 @@ const FALLBACK_ARTWORK_URL =
 
 export function resolveStreamUrl(rawUrl?: string): string {
   if (!rawUrl) return '';
+  if (rawUrl.startsWith('yt-preview:')) return rawUrl;
   if (rawUrl.startsWith('/api/tracks/stream')) return rawUrl;
   if (rawUrl.startsWith('http://') || rawUrl.startsWith('https://')) {
     if (rawUrl.includes('/releases/download/')) {
@@ -57,17 +66,13 @@ function updateMediaSessionPosition(positionSec: number, durationSec: number) {
   } catch {}
 }
 
-/**
- * Kích hoạt phát bài hát kế tiếp NGAY LẬP TỨC trong cùng nhịp đồng bộ (synchronous event tick)
- * để iOS Safari không đóng băng Audio Session khi màn hình đang khóa!
- */
 function triggerImmediateSyncPlaybackFromStore() {
   const nextState = usePlayerStore.getState();
   const nextTrack = nextState.currentTrack;
-  if (nextTrack && nextState.isPlaying) {
+  if (nextTrack && nextState.isPlaying && !nextTrack.isPreview) {
     const rawUrl = nextTrack.streamUrl || nextTrack.cdnUrl || '';
     const streamUrl = resolveStreamUrl(rawUrl);
-    if (streamUrl) {
+    if (streamUrl && !streamUrl.startsWith('yt-preview:')) {
       void audioEngine.loadAndPlay(streamUrl, nextState.playNonce);
     }
   }
@@ -93,8 +98,10 @@ export function useAudioPlayer() {
   const currentTimeMV = useMotionValue(0);
   const rafIdRef = useRef<number | null>(null);
 
-  // Sync catalog into usePlayerStore on initial load and when new tracks are added
+  // Pre-warm YouTube Preview Bridge & Sync catalog on initial load
   useEffect(() => {
+    initYouTubePreviewBridge();
+
     const syncCatalogToStore = async () => {
       try {
         const res = await fetch('/api/tracks/search?t=' + Date.now(), { cache: 'no-store' });
@@ -120,20 +127,25 @@ export function useAudioPlayer() {
     return () => window.removeEventListener('aurasound:track-added', onTrackAdded);
   }, []);
 
-  // 60fps loop updating MotionValues for MagneticSeekbar — tự động tạm dừng khi màn hình tắt (document.hidden)
+  // 60fps loop updating MotionValues for MagneticSeekbar
   const syncFrame = useCallback(() => {
     if (typeof document !== 'undefined' && document.hidden) {
       rafIdRef.current = null;
       return;
     }
 
-    const current = audioEngine.getCurrentTime();
     const storeState = usePlayerStore.getState();
-    const total =
-      audioEngine.getDuration() ||
-      storeState.duration ||
-      storeState.currentTrack?.duration ||
-      0;
+    const isPreviewMode = Boolean(storeState.currentTrack?.isPreview);
+
+    const current = isPreviewMode
+      ? storeState.progress || 0
+      : audioEngine.getCurrentTime();
+    const total = isPreviewMode
+      ? storeState.duration || storeState.currentTrack?.duration || 0
+      : audioEngine.getDuration() ||
+        storeState.duration ||
+        storeState.currentTrack?.duration ||
+        0;
 
     currentTimeMV.set(current);
     progressMV.set(total > 0 ? Math.min(1, Math.max(0, current / total)) : 0);
@@ -166,32 +178,33 @@ export function useAudioPlayer() {
     };
   }, [isPlaying, syncFrame]);
 
-  // Keep MotionValues in sync when progress changes via seek or track reset
   useEffect(() => {
     const total = duration || currentTrack?.duration || 0;
     currentTimeMV.set(progress);
     progressMV.set(total > 0 ? Math.min(1, Math.max(0, progress / total)) : 0);
   }, [progress, duration, currentTrack, currentTimeMV, progressMV]);
 
-  // Register singleton AudioEngine callbacks + synchronous background track hand-off
   useEffect(() => {
     audioEngine.onTimeUpdate((time) => {
       const state = usePlayerStore.getState();
+      if (state.currentTrack?.isPreview) return;
       state.setProgress(time);
       const total = audioEngine.getDuration() || state.duration || state.currentTrack?.duration || 0;
       updateMediaSessionPosition(time, total);
     });
 
     audioEngine.onDurationChange((dur) => {
+      const state = usePlayerStore.getState();
+      if (state.currentTrack?.isPreview) return;
       if (dur && !isNaN(dur) && isFinite(dur)) {
-        usePlayerStore.getState().setDuration(dur);
+        state.setDuration(dur);
         updateMediaSessionPosition(audioEngine.getCurrentTime(), dur);
       }
     });
 
-    // Đồng bộ ngược trạng thái Play/Pause khi bấm từ Màn hình khóa hoặc tai nghe AirPods
     audioEngine.onPlayStateChange((playing) => {
       const state = usePlayerStore.getState();
+      if (state.currentTrack?.isPreview) return;
       if (state.isPlaying !== playing) {
         state.setIsPlaying(playing);
       }
@@ -202,7 +215,6 @@ export function useAudioPlayer() {
       }
     });
 
-    // Chuyển bài đồng bộ ngay lập tức trong cùng event tick để không bị iOS ngắt khi khóa máy
     audioEngine.onEnded(() => {
       consecutiveErrorCount = 0;
       usePlayerStore.getState().advanceNext('ended');
@@ -211,6 +223,7 @@ export function useAudioPlayer() {
 
     audioEngine.onError(() => {
       const state = usePlayerStore.getState();
+      if (state.currentTrack?.isPreview) return;
       const totalTracks = state.queue.length || state.library.length;
       consecutiveErrorCount += 1;
       if (totalTracks > 1 && consecutiveErrorCount < Math.min(totalTracks, 3)) {
@@ -223,7 +236,7 @@ export function useAudioPlayer() {
     });
   }, []);
 
-  // Tích hợp chuẩn Media Session API cho Màn hình khóa iOS/iPadOS/Android, Dynamic Island & Tai nghe Bluetooth
+  // Media Session API integration
   useEffect(() => {
     if (typeof window === 'undefined' || typeof navigator === 'undefined' || !('mediaSession' in navigator)) {
       return;
@@ -259,34 +272,50 @@ export function useAudioPlayer() {
     safeSetHandler('play', () => {
       const state = usePlayerStore.getState();
       state.setIsPlaying(true);
+      if (state.currentTrack?.isPreview) {
+        resumeYouTubePreview();
+        return;
+      }
       const rawUrl = state.currentTrack?.streamUrl || state.currentTrack?.cdnUrl || '';
       const streamUrl = resolveStreamUrl(rawUrl);
       void audioEngine.play(streamUrl, state.playNonce);
     });
 
     safeSetHandler('pause', () => {
-      usePlayerStore.getState().setIsPlaying(false);
+      const state = usePlayerStore.getState();
+      state.setIsPlaying(false);
+      if (state.currentTrack?.isPreview) {
+        pauseYouTubePreview();
+        return;
+      }
       audioEngine.pause();
     });
 
     safeSetHandler('previoustrack', () => {
+      stopYouTubePreview();
       usePlayerStore.getState().playPrevious();
       triggerImmediateSyncPlaybackFromStore();
     });
 
     safeSetHandler('nexttrack', () => {
+      stopYouTubePreview();
       usePlayerStore.getState().playNext();
       triggerImmediateSyncPlaybackFromStore();
     });
 
     safeSetHandler('seekto', (details) => {
       if (typeof details.seekTime === 'number' && !isNaN(details.seekTime)) {
-        audioEngine.seek(details.seekTime);
-        usePlayerStore.getState().setProgress(details.seekTime);
+        const state = usePlayerStore.getState();
+        if (state.currentTrack?.isPreview) {
+          seekYouTubePreview(details.seekTime);
+        } else {
+          audioEngine.seek(details.seekTime);
+        }
+        state.setProgress(details.seekTime);
         const total =
           audioEngine.getDuration() ||
-          usePlayerStore.getState().duration ||
-          usePlayerStore.getState().currentTrack?.duration ||
+          state.duration ||
+          state.currentTrack?.duration ||
           0;
         updateMediaSessionPosition(details.seekTime, total);
       }
@@ -294,28 +323,59 @@ export function useAudioPlayer() {
 
     safeSetHandler('seekbackward', (details) => {
       const offset = details.seekOffset || 10;
-      const target = Math.max(0, audioEngine.getCurrentTime() - offset);
-      audioEngine.seek(target);
-      usePlayerStore.getState().setProgress(target);
+      const state = usePlayerStore.getState();
+      const baseTime = state.currentTrack?.isPreview ? state.progress : audioEngine.getCurrentTime();
+      const target = Math.max(0, baseTime - offset);
+      if (state.currentTrack?.isPreview) {
+        seekYouTubePreview(target);
+      } else {
+        audioEngine.seek(target);
+      }
+      state.setProgress(target);
     });
 
     safeSetHandler('seekforward', (details) => {
       const offset = details.seekOffset || 10;
-      const total = audioEngine.getDuration() || usePlayerStore.getState().duration || 0;
-      const target = total > 0 ? Math.min(total, audioEngine.getCurrentTime() + offset) : audioEngine.getCurrentTime() + offset;
-      audioEngine.seek(target);
-      usePlayerStore.getState().setProgress(target);
+      const state = usePlayerStore.getState();
+      const baseTime = state.currentTrack?.isPreview ? state.progress : audioEngine.getCurrentTime();
+      const total = audioEngine.getDuration() || state.duration || 0;
+      const target = total > 0 ? Math.min(total, baseTime + offset) : baseTime + offset;
+      if (state.currentTrack?.isPreview) {
+        seekYouTubePreview(target);
+      } else {
+        audioEngine.seek(target);
+      }
+      state.setProgress(target);
     });
   }, [currentTrack, isPlaying]);
 
-  // Unified single playback synchronization effect
+  // Unified single playback synchronization effect (handles both Vault CDN tracks & YouTube Previews)
   useEffect(() => {
     if (!currentTrack) {
       audioEngine.pause();
+      stopYouTubePreview();
       return;
     }
 
     const rawUrl = currentTrack.streamUrl || currentTrack.cdnUrl || '';
+
+    // Chế độ Nghe thử (YouTube Preview Bridge)
+    if (currentTrack.isPreview || rawUrl.startsWith('yt-preview:')) {
+      audioEngine.pause();
+      if (currentTrack.duration && currentTrack.duration > 0) {
+        setDuration(currentTrack.duration);
+      }
+      if (isPlaying) {
+        resumeYouTubePreview();
+      } else {
+        pauseYouTubePreview();
+      }
+      return;
+    }
+
+    // Chế độ Nhạc trong Kho CDN (AudioEngine) -> Tắt ngay YouTube Preview
+    stopYouTubePreview();
+
     const streamUrl = resolveStreamUrl(rawUrl);
     if (!streamUrl) return;
 
@@ -332,7 +392,7 @@ export function useAudioPlayer() {
 
   // Preload next track in queue
   useEffect(() => {
-    if (nextTrackPreview) {
+    if (nextTrackPreview && !nextTrackPreview.isPreview) {
       const nextRaw = nextTrackPreview.streamUrl || nextTrackPreview.cdnUrl || '';
       const nextUrl = resolveStreamUrl(nextRaw);
       if (nextUrl) {
@@ -341,9 +401,10 @@ export function useAudioPlayer() {
     }
   }, [nextTrackPreview]);
 
-  // Sync volume
+  // Sync volume to both AudioEngine & YouTubePreviewBridge
   useEffect(() => {
     audioEngine.setVolume(volume);
+    setYouTubePreviewVolume(volume);
   }, [volume]);
 
   const togglePlay = useCallback((..._args: any[]) => {
@@ -353,12 +414,17 @@ export function useAudioPlayer() {
   const seek = useCallback(
     (seconds?: any, ..._args: any[]) => {
       const targetSec = typeof seconds === 'number' && !isNaN(seconds) ? seconds : 0;
-      audioEngine.seek(targetSec);
+      const state = usePlayerStore.getState();
+      if (state.currentTrack?.isPreview) {
+        seekYouTubePreview(targetSec);
+      } else {
+        audioEngine.seek(targetSec);
+      }
       setProgress(targetSec);
       const total =
         audioEngine.getDuration() ||
-        usePlayerStore.getState().duration ||
-        usePlayerStore.getState().currentTrack?.duration ||
+        state.duration ||
+        state.currentTrack?.duration ||
         0;
       currentTimeMV.set(targetSec);
       progressMV.set(total > 0 ? Math.min(1, Math.max(0, targetSec / total)) : 0);
