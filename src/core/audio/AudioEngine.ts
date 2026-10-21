@@ -159,7 +159,6 @@ export class AudioEngine {
 
   private ensureAudioContext(): void {
     if (typeof window === 'undefined' || !this.primaryAudio) return;
-    if (this.isMobileDevice()) return;
     if (typeof document !== 'undefined' && document.hidden) return;
 
     try {
@@ -167,18 +166,27 @@ export class AudioEngine {
         const AudioContextClass =
           window.AudioContext ||
           (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+        if (!AudioContextClass) return;
+
         this.audioCtx = new AudioContextClass();
         this.analyser = this.audioCtx.createAnalyser();
         this.analyser.fftSize = 128;
-        this.analyser.smoothingTimeConstant = 0.82;
+        this.analyser.smoothingTimeConstant = 0.35;
         this.frequencyData = new Uint8Array(this.analyser.frequencyBinCount);
 
         this.gainNode = this.audioCtx.createGain();
+        this.gainNode.gain.value = Math.max(0, Math.min(1, this.primaryAudio.volume || 0.8));
+
         this.sourceNode = this.audioCtx.createMediaElementSource(this.primaryAudio);
 
+        // Chuỗi phát âm thanh ra loa: Audio Element -> GainNode -> Speakers (Destination)
+        // Tuyệt đối không qua bộ lọc hay nén nào, bảo toàn 100% chất lượng âm thanh gốc!
         this.sourceNode.connect(this.gainNode);
-        this.gainNode.connect(this.analyser);
-        this.analyser.connect(this.audioCtx.destination);
+        this.gainNode.connect(this.audioCtx.destination);
+
+        // Nhánh cảm biến Analyser song song: Trích xuất tín hiệu gốc độc lập (Line-Level Tap)
+        // để đo đạc cho dàn đèn VU Meter & Spectrum mà không bị suy hao khi người dùng vặn nhỏ volume!
+        this.sourceNode.connect(this.analyser);
 
         (window as any).__AURASOUND_ANALYSER__ = this.analyser;
       }
@@ -347,6 +355,9 @@ export class AudioEngine {
   public getFrequencyData(): Uint8Array {
     if (typeof document !== 'undefined' && document.hidden) {
       return this.frequencyData;
+    }
+    if (this.audioCtx && this.audioCtx.state === 'suspended') {
+      this.audioCtx.resume().catch(() => {});
     }
     if (this.analyser) {
       this.analyser.getByteFrequencyData(this.frequencyData as any);

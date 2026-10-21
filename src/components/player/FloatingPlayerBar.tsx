@@ -59,8 +59,8 @@ function DynamicSpectrumCanvas({ isPlaying }: { isPlaying: boolean }) {
           (window as any).__AURASOUND_ANALYSER__.getByteFrequencyData(dataArrayRef.current);
           const data = dataArrayRef.current;
           let sum = 0;
-          for (let i = 0; i < 20; i++) sum += data[i];
-          if (sum > 8) hasData = true;
+          for (let i = 0; i < 32; i++) sum += data[i] || 0;
+          if (sum > 4) hasData = true;
         } catch {}
       }
 
@@ -76,13 +76,15 @@ function DynamicSpectrumCanvas({ isPlaying }: { isPlaying: boolean }) {
 
         if (isPlaying) {
           if (hasData) {
-            const sampleIdx = Math.min(63, Math.floor(i * 2 + 1));
+            const sampleIdx = Math.min(63, Math.floor(i * 2.2));
             const val = dataArrayRef.current[sampleIdx] || 0;
-            const norm = Math.max(0, val - 30) / 180;
-            targetHeight = Math.max(2, Math.min(maxHeight, Math.pow(norm, 1.3) * maxHeight));
+            const norm = Math.min(1.0, Math.max(0.04, val / 120));
+            targetHeight = Math.max(2, Math.min(maxHeight, Math.pow(norm, 0.88) * maxHeight));
           } else {
-            const wave = Math.sin(phase * 1.4 + i * 0.45) * 0.5 + 0.5;
-            targetHeight = Math.max(2, wave * maxHeight * 0.85);
+            const trackTime = phase * 0.6;
+            const wave = Math.sin(trackTime * 4.0 + i * 0.4) * 0.5 + 0.5;
+            const beat = Math.pow(Math.max(0, Math.sin(trackTime * 4.0)), 3.0);
+            targetHeight = Math.max(2, (wave * 0.55 + beat * 0.45) * maxHeight * 0.9);
           }
         }
 

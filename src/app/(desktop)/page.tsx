@@ -64,13 +64,27 @@ function formatVaultStreamCount(track: Track, userPlays: number): string {
 // - Tự động kích hoạt bộ tạo sóng Analog Harmonic Groove RMS khi nghe thử YouTube
 // - Cam kết: Chỉ đọc dữ liệu cảm biến hiển thị, giữ nguyên 100% chất lượng âm thanh gốc!
 // ========================================================
+// DÀN ĐÈN VU METER CHUẨN PHÒNG THU (WIDE DYNAMIC RANGE -42 dB .. +6 dB)
+// - Lên từ từ (Attack 0.28), liền mạch không đứt nét (Continuous solid light bar)
+// - Bám chuyển động nhịp nhạc & giai điệu (Groove Sync), không bao giờ tràn hết màu đỏ
+// - Tỷ lệ chia dB rộng hơn: -42 dB đến +6 dB (Dải động 48 dB chuẩn Studio Mastering)
+// - Cam kết: Chỉ đọc dữ liệu cảm biến hiển thị, giữ nguyên 100% chất lượng âm thanh gốc!
+// ========================================================
+// DÀN ĐÈN VU METER CHUẨN PHÒNG THU (WIDE DYNAMIC RANGE -42 dB .. +6 dB)
+// - Lên từ từ (Attack 0.28), liền mạch không đứt nét (Continuous solid light bar)
+// - Bám chuyển động nhịp nhạc & giai điệu (Groove Sync), không bao giờ tràn hết màu đỏ
+// - Tỷ lệ chia dB rộng hơn: -42 dB đến +6 dB (Dải động 48 dB chuẩn Studio Mastering)
+// - Cam kết: Chỉ đọc dữ liệu cảm biến hiển thị, giữ nguyên 100% chất lượng âm thanh gốc!
+// ========================================================
 function StudioDynamicVuMeter({ isPlaying }: { isPlaying: boolean }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const dbTextRef = useRef<HTMLSpanElement>(null);
   const rafRef = useRef<number | null>(null);
   const smoothedLevelRef = useRef<number>(0);
-  const rawEnergyRef = useRef<number>(0);
-  const adaptiveCeilingRef = useRef<number>(135);
+  const avgBassRef = useRef<number>(30);
+  const avgMelodyRef = useRef<number>(35);
+  // Headroom trần tối thiểu 125..160: Đảm bảo nhạc bình thường không bị đội tràn vào vùng Đỏ
+  const peakEnergyRef = useRef<number>(125);
   const freqDataRef = useRef<Uint8Array>(new Uint8Array(64));
 
   useEffect(() => {
@@ -82,26 +96,54 @@ function StudioDynamicVuMeter({ isPlaying }: { isPlaying: boolean }) {
         return;
       }
 
-      phase += 0.032;
+      phase += 0.04;
       let hasRealAudio = false;
-      let musicalEnergy = 0;
+      let instantEnergy = 0;
 
       if (isPlaying) {
-        if (typeof window !== "undefined" && (window as any).__AURASOUND_ANALYSER__) {
+        let analyserNode: any = null;
+        if (typeof window !== "undefined") {
+          analyserNode = (window as any).__AURASOUND_ANALYSER__;
+        }
+
+        if (analyserNode) {
           try {
-            (window as any).__AURASOUND_ANALYSER__.getByteFrequencyData(freqDataRef.current);
+            analyserNode.getByteFrequencyData(freqDataRef.current);
             const data = freqDataRef.current;
 
-            let vocalSum = 0;
-            for (let i = 2; i <= 16; i++) {
-              vocalSum += data[i] || 0;
-            }
-            const vocalEnergy = vocalSum / 15;
-            const bassSupport = ((data[0] || 0) + (data[1] || 0)) * 0.5;
-            musicalEnergy = vocalEnergy * 0.68 + bassSupport * 0.32;
+            // 1. Dải Bass & Kick Drum (Bin 0..2: 40Hz - 1000Hz)
+            let bassSum = 0;
+            for (let i = 0; i <= 2; i++) bassSum += data[i] || 0;
+            const bass = bassSum / 3;
 
-            // Chỉ cần có tín hiệu nhỏ (> 4) là nhận diện được ngay cả các bản thu âm nhỏ
-            if (musicalEnergy > 4) hasRealAudio = true;
+            // 2. Dải Giai điệu Melody & Giọng hát chính (Bin 3..12: 1kHz - 4.5kHz)
+            let melodySum = 0;
+            for (let i = 3; i <= 12; i++) melodySum += data[i] || 0;
+            const melody = melodySum / 10;
+
+            // 3. Dải Nhịp phách Treble / Hi-hat (Bin 13..24: 4.5kHz - 8.5kHz)
+            let trebleSum = 0;
+            for (let i = 13; i <= 24; i++) trebleSum += data[i] || 0;
+            const treble = trebleSum / 12;
+
+            if (bass > 2.5 || melody > 2.5 || treble > 2.5) {
+              hasRealAudio = true;
+
+              // Cập nhật đường nền nhịp điệu (Rolling Averages)
+              avgBassRef.current = avgBassRef.current * 0.95 + bass * 0.05;
+              avgMelodyRef.current = avgMelodyRef.current * 0.94 + melody * 0.06;
+
+              // Bóc tách độ nảy theo nhịp trống và giai điệu
+              const bassPunch = Math.max(0, bass - avgBassRef.current);
+              const melodySwell = Math.max(0, melody - avgMelodyRef.current * 0.90);
+
+              // Tỉ trọng âm học cân bằng: chuyển động mềm mại bám sát giai điệu
+              instantEnergy =
+                melody * 0.40 +
+                bass * 0.38 +
+                treble * 0.14 +
+                (bassPunch * 0.38 + melodySwell * 0.24);
+            }
           } catch {}
         }
 
@@ -110,14 +152,32 @@ function StudioDynamicVuMeter({ isPlaying }: { isPlaying: boolean }) {
             const engine = AudioEngine.getInstance();
             const snap = engine.getFrequencySnapshot();
             if (snap && snap.length > 0) {
-              let vocalSum = 0;
-              for (let i = 2; i <= 16; i++) {
-                vocalSum += snap[i] || 0;
+              let bassSum = 0;
+              for (let i = 0; i <= 2; i++) bassSum += snap[i] || 0;
+              const bass = bassSum / 3;
+
+              let melodySum = 0;
+              for (let i = 3; i <= 12; i++) melodySum += snap[i] || 0;
+              const melody = melodySum / 10;
+
+              let trebleSum = 0;
+              for (let i = 13; i <= 24; i++) trebleSum += snap[i] || 0;
+              const treble = trebleSum / 12;
+
+              if (bass > 2.5 || melody > 2.5 || treble > 2.5) {
+                hasRealAudio = true;
+                avgBassRef.current = avgBassRef.current * 0.95 + bass * 0.05;
+                avgMelodyRef.current = avgMelodyRef.current * 0.94 + melody * 0.06;
+
+                const bassPunch = Math.max(0, bass - avgBassRef.current);
+                const melodySwell = Math.max(0, melody - avgMelodyRef.current * 0.90);
+
+                instantEnergy =
+                  melody * 0.40 +
+                  bass * 0.38 +
+                  treble * 0.14 +
+                  (bassPunch * 0.38 + melodySwell * 0.24);
               }
-              const vocalEnergy = vocalSum / 15;
-              const bassSupport = ((snap[0] || 0) + (snap[1] || 0)) * 0.5;
-              musicalEnergy = vocalEnergy * 0.68 + bassSupport * 0.32;
-              if (musicalEnergy > 4) hasRealAudio = true;
             }
           } catch {}
         }
@@ -127,43 +187,62 @@ function StudioDynamicVuMeter({ isPlaying }: { isPlaying: boolean }) {
 
       if (isPlaying) {
         if (hasRealAudio) {
-          rawEnergyRef.current = rawEnergyRef.current * 0.72 + musicalEnergy * 0.28;
-
-          // Hạ NOISE_FLOOR xuống 14 và tự động cân chỉnh trần nhạy (Auto-Gain Ceiling 75..145)
-          const NOISE_FLOOR = 14;
-          const effective = Math.max(0, rawEnergyRef.current - NOISE_FLOOR);
-
-          if (effective > adaptiveCeilingRef.current * 0.85) {
-            adaptiveCeilingRef.current = Math.min(
-              155,
-              adaptiveCeilingRef.current * 0.9 + effective * 0.15
-            );
+          // Bám trần năng lượng tự nhiên với Headroom cao (125..160)
+          if (instantEnergy > peakEnergyRef.current) {
+            peakEnergyRef.current = peakEnergyRef.current * 0.70 + instantEnergy * 0.30;
           } else {
-            // Hạ trần từ từ cho các bài thu âm nhỏ để đèn vẫn vươn tới vùng Vàng ấm áp
-            adaptiveCeilingRef.current = Math.max(75, adaptiveCeilingRef.current * 0.996);
+            peakEnergyRef.current = Math.max(125, peakEnergyRef.current * 0.998);
           }
 
-          const normalized = Math.min(1.0, effective / adaptiveCeilingRef.current);
-          targetLeds = Math.max(1.5, Math.pow(normalized, 1.45) * 24);
+          // Ngưỡng lọc tạp âm nền
+          const effective = Math.max(0, instantEnergy - 8);
+          const dynamicRange = Math.max(110, peakEnergyRef.current - 8);
+          const norm = Math.min(1.0, effective / dynamicRange);
+
+          // ĐƯỜNG CONG LŨY THỪA MỞ RỘNG (pow 1.52) KẾT HỢP DẢI CHIA dB LỚN:
+          // - Đoạn êm đềm / intro: 2 - 6 bóng (Vùng Xanh lá êm ái)
+          // - Đoạn lời hát / verse: 7 - 12 bóng (Xanh lá vươn lên chớm Vàng)
+          // - Điệp khúc / groove sôi động: 13 - 16 bóng (Vùng Vàng 0 VU nhún nhảy uyển chuyển)
+          // - Cú drop kick / cao trào mạnh nhất: 17 - 20 bóng (Chạm nhẹ vùng Đỏ rồi rút xuống ngay)
+          // - Trần tối đa giới hạn 21.5 bóng -> TUYỆT ĐỐI KHÔNG TRÀN KỊCH ĐỎ (23-24)
+          targetLeds = Math.min(21.5, Math.pow(norm, 1.52) * 23.0);
         } else {
-          // Bộ tạo nhịp sóng Analog Harmonic Groove RMS (cho YouTube Preview / Mobile Native Audio)
-          const vocalSwell = Math.sin(phase * 0.75) * 0.5 + 0.5;
-          const chordWave = Math.sin(phase * 0.38 + 1.2) * 0.5 + 0.5;
-          const beatPulse = Math.pow(Math.sin(phase * 1.85) * 0.5 + 0.5, 2.2);
-          targetLeds = 3.0 + vocalSwell * 6.5 + chordWave * 3.5 + beatPulse * 4.5;
+          // BỘ GIẢ LẬP NHỊP ĐIỆU CHUẨN TEMPO (~124 BPM) KHI NGHE THỬ YOUTUBE
+          const store = usePlayerStore.getState();
+          const trackTime =
+            typeof store.progress === "number" && store.progress > 0
+              ? store.progress
+              : phase * 0.45;
+
+          const bpm = 124;
+          const beatSec = 60 / bpm;
+          const beatPhase = (trackTime / beatSec) * Math.PI * 2;
+
+          const kickPulse = Math.pow(Math.max(0, Math.sin(beatPhase)), 3.5);
+          const snarePulse = Math.pow(Math.max(0, Math.sin(beatPhase + Math.PI)), 2.8);
+          const melodyWave = Math.sin(trackTime * 1.7) * 0.35 + Math.sin(trackTime * 0.65) * 0.25 + 0.5;
+          const hihatTick = Math.pow(Math.max(0, Math.sin(beatPhase * 2)), 4.0) * 0.20;
+
+          const grooveIntensity = melodyWave * 0.32 + kickPulse * 0.42 + snarePulse * 0.20 + hihatTick;
+          // Giới hạn ở dải 2.5 đến 16 bóng (Xanh và Vàng, nhún nhảy không tràn đỏ)
+          targetLeds = Math.min(16.5, Math.max(2.0, 2.5 + Math.pow(grooveIntensity, 1.5) * 14.0));
         }
       }
 
+      // QUY LUẬT VẬT LÝ KIM VU ANALOG:
+      // Lên từ từ (Attack 0.28 - không giật bắn) / Nhả êm đềm (Release 0.12 - nhún nhảy liền mạch)
       if (!isPlaying) {
-        smoothedLevelRef.current = Math.max(0, smoothedLevelRef.current * 0.88 - 0.15);
+        smoothedLevelRef.current = Math.max(0, smoothedLevelRef.current * 0.85 - 0.25);
       } else if (targetLeds > smoothedLevelRef.current) {
-        smoothedLevelRef.current += (targetLeds - smoothedLevelRef.current) * 0.16;
+        smoothedLevelRef.current += (targetLeds - smoothedLevelRef.current) * 0.28;
       } else {
-        smoothedLevelRef.current += (targetLeds - smoothedLevelRef.current) * 0.08;
+        smoothedLevelRef.current += (targetLeds - smoothedLevelRef.current) * 0.12;
       }
 
       const activeCount = isPlaying ? Math.max(1, Math.round(smoothedLevelRef.current)) : 0;
 
+      // CẬP NHẬT 24 BÓNG ĐÈN: LIỀN MẠCH KHÔNG ĐỨT NÉT (SOLID CONTINUOUS BAR)
+      // 12 XANH LÁ (0..11) | 6 VÀNG HỔ PHÁCH (12..17) | 6 ĐỎ PEAK (18..23)
       if (containerRef.current) {
         const leds = containerRef.current.children;
         for (let i = 0; i < 24; i++) {
@@ -171,33 +250,34 @@ function StudioDynamicVuMeter({ isPlaying }: { isPlaying: boolean }) {
           if (!led) continue;
 
           if (i < activeCount && isPlaying) {
-            if (i < 8) {
+            if (i < 12) {
               led.className =
-                "flex-1 rounded-sm bg-emerald-400 shadow-[0_0_8px_#10B981] transition-all duration-150 ease-out";
-            } else if (i < 17) {
+                "flex-1 rounded-sm bg-emerald-400 shadow-[0_0_8px_#10B981] transition-colors duration-100 ease-out";
+            } else if (i < 18) {
               led.className =
-                "flex-1 rounded-sm bg-amber-400 shadow-[0_0_8px_#F59E0B] transition-all duration-150 ease-out";
+                "flex-1 rounded-sm bg-amber-400 shadow-[0_0_10px_#F59E0B] transition-colors duration-100 ease-out";
             } else {
               led.className =
-                "flex-1 rounded-sm bg-rose-500 shadow-[0_0_10px_#EF4444] transition-all duration-150 ease-out";
+                "flex-1 rounded-sm bg-rose-500 shadow-[0_0_12px_#EF4444] transition-colors duration-100 ease-out";
             }
           } else {
             led.className =
-              "flex-1 rounded-sm bg-zinc-800/40 transition-all duration-200 ease-out";
+              "flex-1 rounded-sm bg-zinc-800/40 transition-colors duration-150 ease-out";
           }
         }
       }
 
+      // HIỂN THỊ TỶ LỆ CHIA dB LỚN HƠN: -42 dB ĐẾN +6 dB (DẢI ĐỘNG 48 dB CHUẨN PHÒNG THU)
       if (dbTextRef.current) {
         if (!isPlaying || activeCount === 0) {
           dbTextRef.current.innerText = "-∞ dB (STANDBY)";
           dbTextRef.current.className = "text-zinc-600 font-bold shrink-0";
         } else {
-          const dbVal = Math.round((activeCount / 24) * 30 - 24);
-          if (activeCount >= 17) {
+          const dbVal = Math.round((activeCount / 24) * 48 - 42);
+          if (activeCount >= 18) {
             dbTextRef.current.innerText = `+${Math.max(1, dbVal)} dB (PEAK)`;
             dbTextRef.current.className = "text-rose-400 font-bold shrink-0";
-          } else if (activeCount >= 8) {
+          } else if (activeCount >= 12) {
             dbTextRef.current.innerText = `${dbVal >= 0 ? "+" : ""}${dbVal} dB (0 VU)`;
             dbTextRef.current.className = "text-amber-400 font-bold shrink-0";
           } else {
@@ -238,9 +318,9 @@ function StudioDynamicVuMeter({ isPlaying }: { isPlaying: boolean }) {
       <div className="flex items-center justify-between gap-2 text-[9px] sm:text-[10px] font-mono text-zinc-500">
         <span className="truncate">
           <span className="hidden sm:inline">
-            VU METER (AUTO-GAIN RMS BALLISTICS) [8 NORM / 9 GROOVE / 7 PEAK]
+            VU METER (WIDE DYNAMIC RANGE [-42 dB ... 0 VU ... +6 dB]) [12 NORM / 6 GROOVE / 6 PEAK]
           </span>
-          <span className="sm:hidden">VU METER [8 NORM / 9 GROOVE / 7 PEAK]</span>
+          <span className="sm:hidden">VU METER [-42 dB ... +6 dB] [12 GREEN / 6 AMBER / 6 RED]</span>
         </span>
         <span ref={dbTextRef} className="text-zinc-600 font-bold shrink-0">
           -∞ dB (STANDBY)
