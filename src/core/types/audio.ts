@@ -10,6 +10,10 @@ export interface Track {
   coverUrl?: string;
   thumbnail?: string;
   dominantColors?: [string, string];
+  videoId?: string;
+  isPreview?: boolean;
+  streamCount?: number;
+  viewCountText?: string;
   [key: string]: any;
 }
 

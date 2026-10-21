@@ -28,7 +28,7 @@ import {
   X,
   Check,
 } from "lucide-react";
-import { Track } from "@/core/algorithms/DoublyLinkedQueue";
+import type { Track } from "@/store/usePlayerStore";
 
 /**
  * Tạo số lượt stream gốc ổn định cho bài hát trong kho kết hợp với số lượt nghe thực tế của người dùng
@@ -43,7 +43,8 @@ function formatVaultStreamCount(track: Track, userPlays: number): string {
     return `${total.toLocaleString("en-US")} streams`;
   }
   // Tính mốc base ổn định từ ID/Title của bài hát để hiển thị đồng nhất
-  const seedStr = String(track.videoId || track.title || track.id || "aurasound");
+  const trackVid = (track as any)?.videoId;
+  const seedStr = String(trackVid || track.title || track.id || "aurasound");
   let hash = 0;
   for (let i = 0; i < seedStr.length; i++) {
     hash = (hash * 31 + seedStr.charCodeAt(i)) >>> 0;
@@ -723,10 +724,11 @@ export default function RetroCyberDeckPage() {
               const isThisPlaying = currentTrack?.id === track.id && isPlaying;
               const isThisActive = currentTrack?.id === track.id;
               const isLiked = (likedTrackIds || []).includes(track.id);
+              const trackVid = (track as any)?.videoId;
               const userPlays =
                 (streamCounts?.[track.id] || 0) +
-                (track.videoId && track.videoId !== track.id
-                  ? streamCounts?.[track.videoId] || 0
+                (trackVid && trackVid !== track.id
+                  ? streamCounts?.[trackVid] || 0
                   : 0);
               const streamLabel = formatVaultStreamCount(track, userPlays);
               const isMenuOpen = playlistMenuTrackId === track.id;
