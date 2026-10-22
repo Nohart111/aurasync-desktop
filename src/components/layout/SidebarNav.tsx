@@ -1,7 +1,8 @@
-﻿'use client';
+'use client';
 
 import React, { useState, useEffect } from 'react';
 import {
+  Radio,
   Compass,
   Library,
   Disc3,
@@ -19,13 +20,7 @@ import {
 } from 'lucide-react';
 import { SmartIngestModal } from '@/components/modals/SmartIngestModal';
 import { usePlayerStore } from '@/store/usePlayerStore';
-
-export interface CustomPlaylist {
-  id: string;
-  name: string;
-  trackIds: string[];
-  createdAt: string;
-}
+import { playMechanicalSound } from '@/core/audio/SoundEffects';
 
 interface SidebarNavProps {
   currentView?: string;
@@ -34,9 +29,7 @@ interface SidebarNavProps {
 }
 
 export function SidebarNav({ onViewChange, onFileUpload }: SidebarNavProps) {
-  const [activeView, setActiveView] = useState<'deck' | 'library'>('deck');
-  const [activePlaylistId, setActivePlaylistId] = useState<string | null>(null);
-  const [playlists, setPlaylists] = useState<CustomPlaylist[]>([]);
+  const [activeView, setActiveView] = useState<string>('vault');
   const [isPlaylistOpen, setIsPlaylistOpen] = useState(true);
   const [isQuickCreating, setIsQuickCreating] = useState(false);
   const [quickName, setQuickName] = useState('');
@@ -44,12 +37,22 @@ export function SidebarNav({ onViewChange, onFileUpload }: SidebarNavProps) {
   const [isIngestOpen, setIsIngestOpen] = useState(false);
   const [isUploadingLocal, setIsUploadingLocal] = useState(false);
 
-  const { isSidebarCollapsed, toggleSidebar } = usePlayerStore();
+  const {
+    isSidebarCollapsed,
+    toggleSidebar,
+    customPlaylists,
+    likedTrackIds,
+    createPlaylist,
+  } = usePlayerStore();
 
+  const playlists = customPlaylists || [];
+
+  // Lắng nghe phím tắt Ctrl+B để mở/thu gọn thanh bên
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
         e.preventDefault();
+        playMechanicalSound('toggle');
         toggleSidebar();
       }
     };
@@ -57,40 +60,71 @@ export function SidebarNav({ onViewChange, onFileUpload }: SidebarNavProps) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [toggleSidebar]);
 
+  // Đồng bộ view active với page.tsx qua CustomEvent
   useEffect(() => {
-    const loadPlaylists = () => {
-      try {
-        const raw = localStorage.getItem('aurasound_playlists_v1');
-        if (raw) setPlaylists(JSON.parse(raw));
-      } catch {}
+    const handleSwitchView = (e: Event) => {
+      const detail = (e as CustomEvent<string>).detail;
+      if (detail) {
+        setActiveView(detail);
+      }
     };
-    loadPlaylists();
-
-    const handlePlaylistUpdated = () => loadPlaylists();
-    const handleExternalViewChange = (e: Event) => {
-      const detail = (e as CustomEvent).detail;
-      if (detail?.view) setActiveView(detail.view);
-      if (detail?.playlistId !== undefined) setActivePlaylistId(detail.playlistId);
-    };
-
-    window.addEventListener('aurasound:playlists-updated', handlePlaylistUpdated);
-    window.addEventListener('aurasound:navigate', handleExternalViewChange);
+    window.addEventListener('aurasound:switch-view', handleSwitchView);
     return () => {
-      window.removeEventListener('aurasound:playlists-updated', handlePlaylistUpdated);
-      window.removeEventListener('aurasound:navigate', handleExternalViewChange);
+      window.removeEventListener('aurasound:switch-view', handleSwitchView);
     };
   }, []);
 
-  const switchView = (view: 'deck' | 'library', playlistId: string | null = null) => {
-    setActiveView(view);
-    setActivePlaylistId(playlistId);
-    if (onViewChange) onViewChange(view);
+  const handleDeckClick = () => {
+    playMechanicalSound('switch');
+    setActiveView('vault');
+    if (onViewChange) onViewChange('vault');
     if (typeof window !== 'undefined') {
-      window.dispatchEvent(
-        new CustomEvent('aurasound:view-change', {
-          detail: { view, playlistId },
-        })
-      );
+      window.dispatchEvent(new CustomEvent('aurasound:switch-view', { detail: 'vault' }));
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
+  const handleExploreClick = () => {
+    playMechanicalSound('switch');
+    setActiveView('explore');
+    if (onViewChange) onViewChange('explore');
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('aurasound:switch-view', { detail: 'explore' }));
+      const el = document.getElementById('catalog-section');
+      if (el) el.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
+  const handleVaultClick = () => {
+    playMechanicalSound('switch');
+    setActiveView('vault');
+    if (onViewChange) onViewChange('vault');
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('aurasound:switch-view', { detail: 'vault' }));
+      const el = document.getElementById('catalog-section');
+      if (el) el.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
+  const handleFavoritesClick = () => {
+    playMechanicalSound('switch');
+    setActiveView('favorites');
+    if (onViewChange) onViewChange('favorites');
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('aurasound:switch-view', { detail: 'favorites' }));
+      const el = document.getElementById('catalog-section');
+      if (el) el.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
+  const handlePlaylistClick = (playlistId: string) => {
+    playMechanicalSound('switch');
+    setActiveView(playlistId);
+    if (onViewChange) onViewChange(playlistId);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('aurasound:switch-view', { detail: playlistId }));
+      const el = document.getElementById('catalog-section');
+      if (el) el.scrollIntoView({ behavior: 'smooth' });
     }
   };
 
@@ -99,25 +133,16 @@ export function SidebarNav({ onViewChange, onFileUpload }: SidebarNavProps) {
     const trimmed = quickName.trim();
     if (!trimmed) return;
 
-    const newPl: CustomPlaylist = {
-      id: `pl-${Date.now()}`,
-      name: trimmed,
-      trackIds: [],
-      createdAt: new Date().toISOString(),
-    };
-    const updated = [newPl, ...playlists];
-    setPlaylists(updated);
-    try {
-      localStorage.setItem('aurasound_playlists_v1', JSON.stringify(updated));
-      window.dispatchEvent(new CustomEvent('aurasound:playlists-updated'));
-    } catch {}
+    playMechanicalSound('toggle');
+    const newId = createPlaylist(trimmed);
     setQuickName('');
     setIsQuickCreating(false);
     setIsPlaylistOpen(true);
-    switchView('library', newPl.id);
+    handlePlaylistClick(newId);
   };
 
   const handleLocalFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    playMechanicalSound('switch');
     if (onFileUpload) {
       onFileUpload(e);
       return;
@@ -135,6 +160,7 @@ export function SidebarNav({ onViewChange, onFileUpload }: SidebarNavProps) {
       });
       if (res.ok) {
         const data = await res.json();
+        playMechanicalSound('beep');
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new CustomEvent('aurasound:track-added', { detail: data.track }));
         }
@@ -152,18 +178,19 @@ export function SidebarNav({ onViewChange, onFileUpload }: SidebarNavProps) {
       <aside
         className={`${
           isSidebarCollapsed ? 'w-20 px-3' : 'w-64 px-4'
-        } shrink-0 border-r border-zinc-800/80 bg-[#050508] py-5 hidden md:flex flex-col justify-between select-none transition-all duration-300 ease-in-out z-30`}
+        } shrink-0 border-r border-white/[0.08] bg-[#050508]/95 backdrop-blur-xl py-5 hidden md:flex flex-col justify-between select-none transition-all duration-300 ease-in-out z-30`}
       >
         <div className="space-y-5 overflow-y-auto overflow-x-hidden pr-0.5">
+          {/* Header & Logo */}
           <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center' : 'justify-between px-1'}`}>
             {!isSidebarCollapsed && (
               <div className="flex items-center gap-2.5">
-                <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900 text-zinc-200 shrink-0">
+                <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-neon-cyan shrink-0 shadow-[0_0_12px_rgba(0,240,255,0.2)]">
                   <Disc3 className="h-4 w-4" />
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <span className="text-sm font-semibold tracking-tight text-white">AuraSound</span>
-                  <span className="rounded bg-zinc-900 px-1.5 py-0.5 text-[9px] font-mono text-zinc-400 border border-zinc-800">
+                  <span className="text-sm font-semibold tracking-tight text-white font-display">AuraSound</span>
+                  <span className="rounded bg-white/5 px-1.5 py-0.5 text-[9px] font-mono text-neon-cyan border border-neon-cyan/30 shadow-[0_0_8px_rgba(0,240,255,0.15)]">
                     HI-FI
                   </span>
                 </div>
@@ -171,8 +198,11 @@ export function SidebarNav({ onViewChange, onFileUpload }: SidebarNavProps) {
             )}
 
             <button
-              onClick={toggleSidebar}
-              className="flex h-8 w-8 items-center justify-center rounded-xl border border-zinc-800/80 bg-zinc-900/50 text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors shrink-0"
+              onClick={() => {
+                playMechanicalSound('toggle');
+                toggleSidebar();
+              }}
+              className="flex h-8 w-8 items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.03] text-zinc-400 hover:text-white hover:bg-white/[0.08] transition-colors shrink-0 active:scale-95"
               title={isSidebarCollapsed ? 'Mở rộng thanh bên (Ctrl+B)' : 'Thu gọn thanh bên (Ctrl+B)'}
             >
               {isSidebarCollapsed ? (
@@ -183,49 +213,72 @@ export function SidebarNav({ onViewChange, onFileUpload }: SidebarNavProps) {
             </button>
           </div>
 
+          {/* Navigation Items */}
           <nav className="space-y-1">
+            {/* 1. Bàn phát nhạc (Deck) */}
             <button
-              onClick={() => switchView('deck', null)}
+              onClick={handleDeckClick}
               title="Bàn phát nhạc"
               className={`w-full flex items-center ${
                 isSidebarCollapsed ? 'justify-center px-0 py-3' : 'gap-3 px-3.5 py-2.5'
-              } rounded-xl text-xs font-medium transition-all ${
-                activeView === 'deck'
-                  ? 'border border-zinc-800 bg-zinc-900/90 text-white'
-                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/40'
+              } rounded-xl text-xs font-mono font-medium transition-all active:scale-95 cursor-pointer ${
+                activeView === 'vault'
+                  ? 'border border-neon-cyan/40 bg-neon-cyan/10 text-neon-cyan shadow-[0_0_16px_rgba(0,240,255,0.15)]'
+                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.04]'
               }`}
             >
-              <Compass className="h-4 w-4 shrink-0" />
+              <Radio className="h-4 w-4 shrink-0" />
               {!isSidebarCollapsed && <span>Bàn phát nhạc</span>}
             </button>
 
+            {/* 2. Khám phá (Explore) */}
             <button
-              onClick={() => switchView('library', null)}
-              title="Thư viện"
+              onClick={handleExploreClick}
+              title="Khám phá Thịnh hành"
+              className={`w-full flex items-center ${
+                isSidebarCollapsed ? 'justify-center px-0 py-3' : 'gap-3 px-3.5 py-2.5'
+              } rounded-xl text-xs font-mono font-medium transition-all active:scale-95 cursor-pointer ${
+                activeView === 'explore'
+                  ? 'border border-neon-cyan bg-neon-cyan text-black font-bold shadow-[0_0_20px_rgba(0,240,255,0.35)]'
+                  : 'text-zinc-400 hover:text-neon-cyan hover:bg-white/[0.04]'
+              }`}
+            >
+              <Compass className="h-4 w-4 shrink-0" />
+              {!isSidebarCollapsed && <span>Khám phá</span>}
+            </button>
+
+            {/* 3. Kho nhạc (Library / Vault) */}
+            <button
+              onClick={handleVaultClick}
+              title="Kho nhạc lưu trữ"
               className={`w-full flex items-center ${
                 isSidebarCollapsed ? 'justify-center px-0 py-3' : 'justify-between px-3.5 py-2.5'
-              } rounded-xl text-xs font-medium transition-all ${
-                activeView === 'library' && !activePlaylistId
-                  ? 'border border-zinc-800 bg-zinc-900/90 text-white'
-                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/40'
+              } rounded-xl text-xs font-mono font-medium transition-all active:scale-95 cursor-pointer ${
+                activeView === 'vault'
+                  ? 'border border-white/20 bg-white/[0.08] text-white shadow-sm'
+                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.04]'
               }`}
             >
               <span className="flex items-center gap-3">
                 <Library className="h-4 w-4 shrink-0" />
-                {!isSidebarCollapsed && <span>Thư viện</span>}
+                {!isSidebarCollapsed && <span>Kho nhạc</span>}
               </span>
               {!isSidebarCollapsed && playlists.length > 0 && (
-                <span className="text-[10px] font-mono text-zinc-500">{playlists.length}</span>
+                <span className="text-[10px] font-mono text-zinc-500">{playlists.length} PL</span>
               )}
             </button>
           </nav>
 
+          {/* Playlist Section */}
           {!isSidebarCollapsed ? (
             <div className="space-y-1 pt-1">
               <div className="flex items-center justify-between px-2 py-1">
                 <button
-                  onClick={() => setIsPlaylistOpen(!isPlaylistOpen)}
-                  className="flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-wider text-zinc-400 hover:text-zinc-200 transition"
+                  onClick={() => {
+                    playMechanicalSound('toggle');
+                    setIsPlaylistOpen(!isPlaylistOpen);
+                  }}
+                  className="flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-wider text-zinc-400 hover:text-zinc-200 transition cursor-pointer"
                 >
                   {isPlaylistOpen ? (
                     <ChevronDown className="h-3.5 w-3.5 text-zinc-500" />
@@ -237,10 +290,11 @@ export function SidebarNav({ onViewChange, onFileUpload }: SidebarNavProps) {
 
                 <button
                   onClick={() => {
+                    playMechanicalSound('toggle');
                     setIsQuickCreating(!isQuickCreating);
                     setIsPlaylistOpen(true);
                   }}
-                  className="p-1 rounded-md text-zinc-400 hover:text-white hover:bg-zinc-800 transition"
+                  className="p-1 rounded-md text-zinc-400 hover:text-white hover:bg-white/10 transition cursor-pointer active:scale-95"
                   title="Tạo nhanh Playlist"
                 >
                   <Plus className="h-3.5 w-3.5" />
@@ -255,12 +309,12 @@ export function SidebarNav({ onViewChange, onFileUpload }: SidebarNavProps) {
                     onChange={(e) => setQuickName(e.target.value)}
                     placeholder="Tên playlist mới..."
                     autoFocus
-                    className="w-full px-2.5 py-1.5 rounded-lg border border-zinc-700 bg-zinc-900 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-500"
+                    className="w-full px-2.5 py-1.5 rounded-lg border border-neon-cyan/40 bg-black/60 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-neon-cyan shadow-[0_0_12px_rgba(0,240,255,0.15)] font-mono"
                   />
                   <button
                     type="submit"
                     disabled={!quickName.trim()}
-                    className="p-1.5 rounded-lg bg-zinc-200 text-black hover:bg-white disabled:opacity-40 shrink-0"
+                    className="p-1.5 rounded-lg bg-neon-cyan text-black hover:opacity-90 disabled:opacity-40 shrink-0 cursor-pointer transition active:scale-95"
                   >
                     <Check className="h-3.5 w-3.5" />
                   </button>
@@ -269,34 +323,39 @@ export function SidebarNav({ onViewChange, onFileUpload }: SidebarNavProps) {
 
               {isPlaylistOpen && (
                 <div className="space-y-0.5 max-h-48 overflow-y-auto pr-0.5">
+                  {/* Bài hát yêu thích */}
                   <button
-                    onClick={() => switchView('library', 'LIKED')}
-                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs transition-all ${
-                      activeView === 'library' && activePlaylistId === 'LIKED'
-                        ? 'bg-zinc-800/90 text-white font-medium'
-                        : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/50'
+                    onClick={handleFavoritesClick}
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-mono transition-all cursor-pointer active:scale-95 ${
+                      activeView === 'favorites'
+                        ? 'border border-rose-500/40 bg-rose-500/15 text-rose-300 font-semibold shadow-[0_0_12px_rgba(244,63,94,0.2)]'
+                        : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.04]'
                     }`}
                   >
                     <span className="flex items-center gap-2 truncate">
                       <Heart className="h-3.5 w-3.5 shrink-0 text-rose-500 fill-rose-500" />
                       <span className="truncate">Yêu thích</span>
                     </span>
+                    <span className="text-[10px] font-mono text-zinc-500 shrink-0">
+                      {(likedTrackIds || []).length}
+                    </span>
                   </button>
 
+                  {/* Playlists cá nhân */}
                   {playlists.map((pl) => {
-                    const isSelected = activeView === 'library' && activePlaylistId === pl.id;
+                    const isSelected = activeView === pl.id;
                     return (
                       <button
                         key={pl.id}
-                        onClick={() => switchView('library', pl.id)}
-                        className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs transition-all ${
+                        onClick={() => handlePlaylistClick(pl.id)}
+                        className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-mono transition-all cursor-pointer active:scale-95 ${
                           isSelected
-                            ? 'bg-zinc-800/90 text-white font-medium'
-                            : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/50'
+                            ? 'border border-neon-violet/40 bg-neon-violet/15 text-purple-200 font-semibold shadow-[0_0_12px_rgba(168,85,247,0.2)]'
+                            : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.04]'
                         }`}
                       >
                         <span className="flex items-center gap-2 truncate pr-2">
-                          <ListMusic className="h-3.5 w-3.5 shrink-0 text-zinc-500" />
+                          <ListMusic className="h-3.5 w-3.5 shrink-0 text-neon-violet" />
                           <span className="truncate">{pl.name}</span>
                         </span>
                         <span className="text-[10px] font-mono text-zinc-500 shrink-0">
@@ -310,42 +369,46 @@ export function SidebarNav({ onViewChange, onFileUpload }: SidebarNavProps) {
             </div>
           ) : (
             <button
-              onClick={() => switchView('library', 'LIKED')}
+              onClick={handleFavoritesClick}
               title="Bài hát yêu thích"
-              className={`w-full flex items-center justify-center py-3 rounded-xl transition-all ${
-                activeView === 'library' && activePlaylistId === 'LIKED'
-                  ? 'border border-zinc-800 bg-zinc-900/90 text-rose-500'
-                  : 'text-zinc-400 hover:text-rose-400 hover:bg-zinc-900/40'
+              className={`w-full flex items-center justify-center py-3 rounded-xl transition-all cursor-pointer active:scale-95 ${
+                activeView === 'favorites'
+                  ? 'border border-rose-500/40 bg-rose-500/20 text-rose-400 shadow-[0_0_12px_rgba(244,63,94,0.3)]'
+                  : 'text-zinc-400 hover:text-rose-400 hover:bg-white/[0.04]'
               }`}
             >
-              <Heart className="h-4 w-4 fill-current" />
+              <Heart className="h-4 w-4 fill-current text-rose-500" />
             </button>
           )}
 
-          <div className="h-px bg-zinc-800/70" />
+          <div className="h-px bg-white/[0.08]" />
 
+          {/* Action Buttons: Tải nhạc YouTube & Upload File */}
           <div className="space-y-2">
             <button
-              onClick={() => setIsIngestOpen(true)}
+              onClick={() => {
+                playMechanicalSound('switch');
+                setIsIngestOpen(true);
+              }}
               title="Tải nhạc YouTube"
-              className={`w-full flex items-center ${
+              className={`btn-cyberdeck w-full flex items-center ${
                 isSidebarCollapsed ? 'justify-center px-0 py-3' : 'gap-2.5 px-3.5 py-2.5'
-              } rounded-xl text-xs font-medium transition-all border border-zinc-800 bg-zinc-900/70 hover:bg-zinc-800 text-zinc-200 hover:text-white`}
+              } rounded-xl text-xs font-mono font-medium transition-all text-zinc-200 hover:text-white cursor-pointer`}
             >
-              <CloudDownload className="h-4 w-4 text-zinc-400 shrink-0" />
+              <CloudDownload className="h-4 w-4 text-neon-cyan shrink-0" />
               {!isSidebarCollapsed && <span>Tải nhạc YouTube</span>}
             </button>
 
             <label
               title="Tải file từ máy"
-              className={`w-full flex items-center ${
+              className={`btn-cyberdeck w-full flex items-center ${
                 isSidebarCollapsed ? 'justify-center px-0 py-3' : 'gap-2.5 px-3.5 py-2.5'
-              } rounded-xl text-xs font-medium transition-all border border-zinc-800/60 bg-zinc-950/50 hover:bg-zinc-900 text-zinc-400 hover:text-zinc-200 cursor-pointer`}
+              } rounded-xl text-xs font-mono font-medium transition-all text-zinc-400 hover:text-zinc-200 cursor-pointer`}
             >
               {isUploadingLocal ? (
-                <Loader2 className="h-4 w-4 animate-spin text-zinc-400 shrink-0" />
+                <Loader2 className="h-4 w-4 animate-spin text-neon-cyan shrink-0" />
               ) : (
-                <Upload className="h-4 w-4 text-zinc-500 shrink-0" />
+                <Upload className="h-4 w-4 text-zinc-400 shrink-0" />
               )}
               {!isSidebarCollapsed && (
                 <span>{isUploadingLocal ? 'Đang tải lên...' : 'Tải file từ máy'}</span>
@@ -361,15 +424,16 @@ export function SidebarNav({ onViewChange, onFileUpload }: SidebarNavProps) {
           </div>
         </div>
 
+        {/* Footer: CLOUD CDN Indicator */}
         <div
-          className={`pt-4 border-t border-zinc-900 flex items-center ${
+          className={`pt-4 border-t border-white/[0.08] flex items-center ${
             isSidebarCollapsed ? 'justify-center' : 'justify-between px-1'
           } text-[11px] font-mono text-zinc-500`}
         >
-          {!isSidebarCollapsed && <span>CLOUD CDN</span>}
-          <span className="flex items-center gap-1.5 text-emerald-400" title="Cloud CDN Online">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-            {!isSidebarCollapsed && <span>ONLINE</span>}
+          {!isSidebarCollapsed && <span className="tracking-wider">CLOUD CDN</span>}
+          <span className="flex items-center gap-1.5 text-emerald-400" title="Cloud CDN Online (44.1kHz High-Fidelity)">
+            <span className="led-status text-emerald-400" />
+            {!isSidebarCollapsed && <span className="text-[10px] tracking-wider font-bold">ONLINE</span>}
           </span>
         </div>
       </aside>

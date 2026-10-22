@@ -34,6 +34,7 @@ import {
   Maximize2,
   HelpCircle,
   AlignLeft,
+  Trash2,
 } from "lucide-react";
 import type { Track } from "@/store/usePlayerStore";
 import { playMechanicalSound } from "@/core/audio/SoundEffects";
@@ -359,7 +360,7 @@ export default function RetroCyberDeckPage() {
   const [sortMode, setSortMode] = useState<'default' | 'streams' | 'alphabet'>('default');
   const [interactionToast, setInteractionToast] = useState<{
     message: string;
-    type: "heart" | "playlist" | "queue";
+    type: "heart" | "playlist" | "queue" | "delete";
   } | null>(null);
 
   const {
@@ -571,6 +572,39 @@ export default function RetroCyberDeckPage() {
     setTimeout(() => setInteractionToast(null), 2400);
   };
 
+  const handleDeleteTrack = async (track: Track) => {
+    if (!window.confirm(`Xác nhận xóa bài hát "${track.title}" khỏi kho nhạc?`)) return;
+    playMechanicalSound('toggle');
+    try {
+      const res = await fetch('/api/tracks/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: track.id, title: track.title }),
+      });
+      if (res.ok) {
+        setTracks((prev) => prev.filter((t) => t.id !== track.id));
+        playMechanicalSound('beep');
+        setInteractionToast({
+          message: `Đã xóa "${track.title}" khỏi kho nhạc`,
+          type: "delete",
+        });
+        setTimeout(() => setInteractionToast(null), 2400);
+      } else {
+        setInteractionToast({
+          message: 'Không thể xóa bài hát, vui lòng thử lại',
+          type: "delete",
+        });
+        setTimeout(() => setInteractionToast(null), 2400);
+      }
+    } catch {
+      setInteractionToast({
+        message: 'Lỗi kết nối khi xóa bài hát',
+        type: "delete",
+      });
+      setTimeout(() => setInteractionToast(null), 2400);
+    }
+  };
+
   const formatDuration = (seconds?: number) => {
     const s = Math.floor(seconds || 180);
     const m = Math.floor(s / 60);
@@ -598,12 +632,14 @@ export default function RetroCyberDeckPage() {
         </div>
       )}
 
-      {/* THÔNG BÁO TƯƠNG TÁC TỨC THÌ (LIKE / PLAYLIST / QUEUE) */}
+      {/* THÔNG BÁO TƯƠNG TÁC TỨC THÌ (LIKE / PLAYLIST / QUEUE / DELETE) */}
       {interactionToast && (
         <div className="fixed top-4 right-3 sm:right-6 z-50 flex items-center gap-3 rounded-2xl border border-white/10 bg-[#0b0b16]/95 px-4 sm:px-5 py-2.5 shadow-[0_12px_40px_rgba(0,0,0,0.85),0_0_16px_rgba(0,240,255,0.18)] backdrop-blur-xl toast-enter max-w-[92vw]">
           <div
             className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border ${
               interactionToast.type === "heart"
+                ? "bg-rose-500/20 border-rose-500/40 text-rose-400"
+                : interactionToast.type === "delete"
                 ? "bg-rose-500/20 border-rose-500/40 text-rose-400"
                 : interactionToast.type === "playlist"
                 ? "bg-neon-violet/20 border-neon-violet/40 text-neon-violet"
@@ -612,6 +648,8 @@ export default function RetroCyberDeckPage() {
           >
             {interactionToast.type === "heart" ? (
               <Heart className="h-4 w-4 fill-rose-500 text-rose-500 animate-spring-pop" />
+            ) : interactionToast.type === "delete" ? (
+              <Trash2 className="h-4 w-4 text-rose-400" />
             ) : interactionToast.type === "playlist" ? (
               <FolderHeart className="h-4 w-4" />
             ) : (
@@ -1243,6 +1281,19 @@ export default function RetroCyberDeckPage() {
                               </button>
                             );
                           })}
+
+                          <div className="my-1 border-t border-white/10" />
+
+                          <button
+                            onClick={() => {
+                              setPlaylistMenuTrackId(null);
+                              handleDeleteTrack(track);
+                            }}
+                            className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left text-rose-400 hover:bg-rose-500/10 hover:text-rose-300 cursor-pointer transition active:scale-95"
+                          >
+                            <Trash2 className="h-3.5 w-3.5 text-rose-400 shrink-0" />
+                            <span>Xóa khỏi kho nhạc</span>
+                          </button>
                         </div>
                       )}
                     </div>

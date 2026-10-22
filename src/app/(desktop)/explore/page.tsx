@@ -20,6 +20,7 @@ import {
   subscribeIngestController,
   type YouTubeResult,
 } from '@/components/modals/SmartIngestModal';
+import { playMechanicalSound } from '@/core/audio/SoundEffects';
 
 export interface TrendingCategory {
   id: 'trending' | 'vpop' | 'rap' | 'indie' | 'usuk';
@@ -121,8 +122,11 @@ export function ExploreTrendingSection() {
             return (
               <button
                 key={cat.id}
-                onClick={() => setActiveCategory(cat.id)}
-                className={`rounded-full px-4 py-1.5 text-xs font-semibold transition-all cursor-pointer shrink-0 ${
+                onClick={() => {
+                  playMechanicalSound('switch');
+                  setActiveCategory(cat.id);
+                }}
+                className={`rounded-full px-4 py-1.5 text-xs font-semibold transition-all cursor-pointer shrink-0 active:scale-95 ${
                   isActive
                     ? 'bg-neon-cyan text-black shadow-[0_0_20px_rgba(0,240,255,0.35)] font-bold'
                     : 'border border-white/[0.08] bg-white/[0.03] text-zinc-400 hover:border-white/20 hover:bg-white/[0.07] hover:text-white'
@@ -190,7 +194,10 @@ export function ExploreTrendingSection() {
               return (
                 <div
                   key={key}
-                  onClick={() => playYouTubePreview(item)}
+                  onClick={() => {
+                    playMechanicalSound('toggle');
+                    playYouTubePreview(item);
+                  }}
                   className={`group relative flex items-center justify-between gap-3 rounded-2xl p-3 sm:p-3.5 transition-all duration-200 cursor-pointer border ${
                     isPreviewingThis
                       ? 'border-neon-cyan/50 bg-gradient-to-r from-neon-cyan/15 via-[#121222] to-[#0a0a14] shadow-[0_4px_24px_rgba(0,240,255,0.12)]'
@@ -267,7 +274,10 @@ export function ExploreTrendingSection() {
                       </span>
                     ) : isDownloading || isPending ? (
                       <button
-                        onClick={() => cancelIngestTask(key)}
+                        onClick={() => {
+                          playMechanicalSound('toggle');
+                          cancelIngestTask(key);
+                        }}
                         className="inline-flex items-center gap-1.5 rounded-xl border border-neon-cyan/40 bg-neon-cyan/15 px-3 py-2 text-xs font-semibold text-neon-cyan transition hover:border-rose-500/40 hover:bg-rose-500/20 hover:text-rose-200 active:scale-95 cursor-pointer"
                         title="Bấm để hủy tải"
                       >
@@ -276,7 +286,10 @@ export function ExploreTrendingSection() {
                       </button>
                     ) : (
                       <button
-                        onClick={() => enqueueIngestTask(item)}
+                        onClick={() => {
+                          playMechanicalSound('beep');
+                          enqueueIngestTask(item);
+                        }}
                         className="btn-cyberdeck inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-semibold text-zinc-200 hover:border-neon-cyan/50 hover:bg-neon-cyan hover:text-black active:scale-95 cursor-pointer"
                         title="Lưu bài hát này vào kho lưu trữ cá nhân"
                       >
@@ -294,7 +307,10 @@ export function ExploreTrendingSection() {
           {hasMore && (
             <div className="flex justify-center pt-2">
               <button
-                onClick={() => setVisibleCount((prev) => prev + 16)}
+                onClick={() => {
+                  playMechanicalSound('switch');
+                  setVisibleCount((prev) => prev + 16);
+                }}
                 className="btn-cyberdeck flex items-center gap-2 rounded-2xl px-6 py-2.5 text-xs font-semibold text-zinc-300 hover:border-neon-cyan/40 hover:bg-neon-cyan/10 hover:text-neon-cyan active:scale-95 cursor-pointer"
               >
                 <ChevronDown className="h-4 w-4 text-neon-cyan" />
