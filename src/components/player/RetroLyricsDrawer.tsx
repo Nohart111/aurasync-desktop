@@ -13,13 +13,25 @@ import {
   Headphones,
   CheckCircle2,
   Layers,
+  Plus,
+  Minus,
+  RefreshCw,
 } from 'lucide-react';
 import { usePlayerStore } from '@/store/usePlayerStore';
 import { useAudioPlayer } from '@/hooks/useAudioPlayer';
 import { playMechanicalSound } from '@/core/audio/SoundEffects';
 
+function YouTubeIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+    </svg>
+  );
+}
+
 interface LyricLine {
   time: number;
+  duration?: number;
   text: string;
 }
 
@@ -39,57 +51,93 @@ export function RetroLyricsDrawer() {
   const [isLoading, setIsLoading] = useState(false);
   const [onlineSyncedLyrics, setOnlineSyncedLyrics] = useState<string | null>(null);
   const [onlinePlainLyrics, setOnlinePlainLyrics] = useState<string | null>(null);
+  const [segments, setSegments] = useState<LyricLine[] | null>(null);
   const [isInstrumental, setIsInstrumental] = useState(false);
+  const [source, setSource] = useState<'youtube' | 'lrclib' | 'local' | null>(null);
+  const [subLang, setSubLang] = useState<string | null>(null);
   const [fetchError, setFetchError] = useState(false);
 
-  // Hàm tải lời bài hát từ backend API
-  const fetchLyrics = useCallback(async (title: string, artist?: string, duration?: number) => {
-    if (!title.trim()) return;
-    setIsLoading(true);
-    setFetchError(false);
-    try {
-      const params = new URLSearchParams({
-        title,
-        artist: artist || '',
-        duration: duration ? String(Math.round(duration)) : '',
-      });
-      const res = await fetch(`/api/tracks/lyrics?${params.toString()}`);
-      if (!res.ok) throw new Error('API failed');
+  // Bộ tinh chỉnh độ lệch thời gian (Sync Offset calibration: +/- giây)
+  const [syncOffset, setSyncOffset] = useState<number>(0);
+  const [showOffsetControls, setShowOffsetControls] = useState(false);
 
-      const data = await res.json();
-      if (data?.success && data?.lyrics) {
-        setOnlineSyncedLyrics(data.lyrics.syncedLyrics || null);
-        setOnlinePlainLyrics(data.lyrics.plainLyrics || null);
-        setIsInstrumental(Boolean(data.lyrics.instrumental));
-      } else {
+  // Trích xuất videoId nếu track xuất phát từ YouTube
+  const trackVideoId = useMemo(() => {
+    if (!currentTrack) return '';
+    if (currentTrack.videoId) return currentTrack.videoId;
+    const stream = currentTrack.streamUrl || '';
+    if (stream.startsWith('yt-preview:')) return stream.replace('yt-preview:', '');
+    if (currentTrack.id?.startsWith('preview-')) return currentTrack.id.replace('preview-', '');
+    return '';
+  }, [currentTrack]);
+
+  // Hàm tải lời bài hát từ backend API
+  const fetchLyrics = useCallback(
+    async (title: string, artist?: string, duration?: number, videoId?: string) => {
+      if (!title.trim() && !videoId) return;
+      setIsLoading(true);
+      setFetchError(false);
+      try {
+        const params = new URLSearchParams({
+          title: title || '',
+          artist: artist || '',
+          duration: duration ? String(Math.round(duration)) : '',
+          videoId: videoId || '',
+        });
+        const res = await fetch(`/api/tracks/lyrics?${params.toString()}`);
+        if (!res.ok) throw new Error('API failed');
+
+        const data = await res.json();
+        if (data?.success && data?.lyrics) {
+          setOnlineSyncedLyrics(data.lyrics.syncedLyrics || null);
+          setOnlinePlainLyrics(data.lyrics.plainLyrics || null);
+          setSegments(data.lyrics.segments || null);
+          setIsInstrumental(Boolean(data.lyrics.instrumental));
+          setSource(data.lyrics.source || null);
+          setSubLang(data.lyrics.lang || null);
+        } else {
+          setOnlineSyncedLyrics(null);
+          setOnlinePlainLyrics(null);
+          setSegments(null);
+          setIsInstrumental(false);
+          setSource(null);
+          setSubLang(null);
+          setFetchError(true);
+        }
+      } catch {
         setOnlineSyncedLyrics(null);
         setOnlinePlainLyrics(null);
+        setSegments(null);
         setIsInstrumental(false);
+        setSource(null);
+        setSubLang(null);
         setFetchError(true);
+      } finally {
+        setIsLoading(false);
       }
-    } catch {
-      setOnlineSyncedLyrics(null);
-      setOnlinePlainLyrics(null);
-      setFetchError(true);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+    },
+    []
+  );
 
   // Tự động fetch lời bài hát khi mở Drawer hoặc khi chuyển Track
   useEffect(() => {
     if (!currentTrack || !isLyricsOpen) return;
 
-    // Nếu bài hát đã có sẵn lyricsText trong metadata
+    // Reset sync offset khi đổi bài hát
+    setSyncOffset(0);
+
+    // Nếu bài hát đã có sẵn lyricsText trong metadata local
     if (typeof (currentTrack as any).lyricsText === 'string') {
       setOnlineSyncedLyrics((currentTrack as any).lyricsText);
       setOnlinePlainLyrics(null);
+      setSegments(null);
       setIsInstrumental(false);
+      setSource('local');
       return;
     }
 
-    fetchLyrics(currentTrack.title, currentTrack.artist, currentTrack.duration);
-  }, [currentTrack?.id, currentTrack?.title, isLyricsOpen, fetchLyrics]);
+    fetchLyrics(currentTrack.title, currentTrack.artist, currentTrack.duration, trackVideoId);
+  }, [currentTrack?.id, currentTrack?.title, trackVideoId, isLyricsOpen, fetchLyrics]);
 
   // Bộ tạo lời mô phỏng âm học VFD nếu không tìm thấy lời online hoặc khi người dùng chọn chế độ mô phỏng
   const simulatedVfdLines: LyricLine[] = useMemo(() => {
@@ -116,8 +164,11 @@ export function RetroLyricsDrawer() {
     ];
   }, [currentTrack]);
 
-  // Parse chuỗi LRC thành danh sách các dòng có timestamp
+  // Parse chuỗi LRC thành danh sách các dòng có timestamp nếu chưa có segments
   const parsedSyncedLyrics: LyricLine[] = useMemo(() => {
+    if (segments && segments.length > 0) {
+      return segments;
+    }
     const raw = onlineSyncedLyrics;
     if (!raw) return [];
 
@@ -136,7 +187,7 @@ export function RetroLyricsDrawer() {
     });
 
     return result.sort((a, b) => a.time - b.time);
-  }, [onlineSyncedLyrics]);
+  }, [segments, onlineSyncedLyrics]);
 
   // Danh sách dòng lyric đang hiển thị
   const activeLyrics: LyricLine[] = useMemo(() => {
@@ -146,26 +197,45 @@ export function RetroLyricsDrawer() {
     if (parsedSyncedLyrics.length > 0) {
       return parsedSyncedLyrics;
     }
-    // Nếu chế độ tự động nhưng không có synced lrc và không có plain lyrics
     if (fetchError && !onlinePlainLyrics && !isInstrumental) {
       return simulatedVfdLines;
     }
     return [];
   }, [lyricsMode, parsedSyncedLyrics, simulatedVfdLines, fetchError, onlinePlainLyrics, isInstrumental]);
 
+  // Thời gian thực tế đã cộng thêm độ bù trừ Offset (Calibrated Time)
+  const effectiveTime = useMemo(() => {
+    return Math.max(0, currentTime + syncOffset);
+  }, [currentTime, syncOffset]);
+
   // Xác định câu hát đang phát
   const activeIndex = useMemo(() => {
     if (activeLyrics.length === 0) return -1;
     let currentIdx = 0;
     for (let i = 0; i < activeLyrics.length; i++) {
-      if (currentTime >= activeLyrics[i].time) {
+      if (effectiveTime >= activeLyrics[i].time) {
         currentIdx = i;
       } else {
         break;
       }
     }
     return currentIdx;
-  }, [currentTime, activeLyrics]);
+  }, [effectiveTime, activeLyrics]);
+
+  // Tính phần trăm tiến trình của câu hát đang phát (karaoke progress highlight)
+  const activeLineProgress = useMemo(() => {
+    if (activeIndex < 0 || activeIndex >= activeLyrics.length) return 0;
+    const currentLine = activeLyrics[activeIndex];
+    const duration =
+      currentLine.duration ||
+      (activeLyrics[activeIndex + 1]
+        ? Math.min(6, activeLyrics[activeIndex + 1].time - currentLine.time)
+        : 3.5);
+
+    const elapsed = effectiveTime - currentLine.time;
+    if (elapsed <= 0) return 0;
+    return Math.min(1, elapsed / duration);
+  }, [activeIndex, activeLyrics, effectiveTime]);
 
   // Phát hiện người dùng tương tác cuộn để tạm ngắt auto-scroll 4 giây
   const handleScroll = () => {
@@ -192,6 +262,15 @@ export function RetroLyricsDrawer() {
     seekTo(timeSec);
   };
 
+  // Điều chỉnh độ lệch Sync Offset (+/- 0.5s)
+  const adjustOffset = (delta: number) => {
+    playMechanicalSound('switch');
+    setSyncOffset((prev) => {
+      const next = Math.round((prev + delta) * 10) / 10;
+      return Math.max(-10, Math.min(10, next));
+    });
+  };
+
   return (
     <AnimatePresence>
       {isLyricsOpen && (
@@ -209,20 +288,36 @@ export function RetroLyricsDrawer() {
                 <AlignLeft className="h-4 w-4" />
               </div>
               <div>
-                <h3 className="font-mono text-xs sm:text-sm font-bold text-white tracking-wide">
+                <h3 className="font-mono text-xs sm:text-sm font-bold text-white tracking-wide flex items-center gap-1.5">
                   VFD_LYRICS // PHOSPHOR
                 </h3>
                 <p className="text-[10px] font-mono text-zinc-400">
-                  {lyricsMode === 'simulation'
-                    ? 'Mô phỏng đo lường âm học VFD'
-                    : parsedSyncedLyrics.length > 0
-                    ? 'Karaoke đồng bộ thời gian thực (LRCLIB)'
+                  {source === 'youtube'
+                    ? `Phụ đề YouTube chuẩn thời gian thực ${subLang ? `[${subLang.toUpperCase()}]` : ''}`
+                    : source === 'lrclib'
+                    ? 'Đồng bộ LRCLIB Studio Karaoke'
                     : 'Đồng bộ lời bài hát'}
                 </p>
               </div>
             </div>
 
             <div className="flex items-center gap-1">
+              {/* Nút bật/tắt bảng chỉnh Offset */}
+              <button
+                onClick={() => {
+                  playMechanicalSound('toggle');
+                  setShowOffsetControls((prev) => !prev);
+                }}
+                className={`p-1.5 rounded-xl border transition cursor-pointer ${
+                  showOffsetControls || syncOffset !== 0
+                    ? 'border-amber-500/40 bg-amber-500/10 text-amber-300'
+                    : 'border-white/10 bg-white/[0.04] text-zinc-400 hover:text-white'
+                }`}
+                title="Căn chỉnh độ trễ / lệch giờ (Sync Calibration)"
+              >
+                <SlidersHorizontal className="h-3.5 w-3.5" />
+              </button>
+
               {/* Nút chuyển đổi Mode (Auto Lời thật vs VFD Analog Simulation) */}
               <button
                 onClick={() => {
@@ -247,7 +342,12 @@ export function RetroLyricsDrawer() {
                 onClick={() => {
                   playMechanicalSound('toggle');
                   if (currentTrack) {
-                    fetchLyrics(currentTrack.title, currentTrack.artist, currentTrack.duration);
+                    fetchLyrics(
+                      currentTrack.title,
+                      currentTrack.artist,
+                      currentTrack.duration,
+                      trackVideoId
+                    );
                   }
                 }}
                 disabled={isLoading}
@@ -271,6 +371,55 @@ export function RetroLyricsDrawer() {
             </div>
           </div>
 
+          {/* Thanh công cụ Căn chỉnh lệch giờ (Sync Offset Toolbar) */}
+          <AnimatePresence>
+            {showOffsetControls && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                className="overflow-hidden border-b border-white/10"
+              >
+                <div className="py-2.5 px-3 bg-amber-500/5 rounded-2xl my-2 border border-amber-500/15 flex items-center justify-between text-xs font-mono">
+                  <div className="flex items-center gap-1.5 text-amber-300">
+                    <SlidersHorizontal className="h-3.5 w-3.5 text-amber-400" />
+                    <span>LỆCH GIỜ:</span>
+                    <span className="font-bold tabular-nums">
+                      {syncOffset > 0 ? `+${syncOffset.toFixed(1)}s` : `${syncOffset.toFixed(1)}s`}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => adjustOffset(-0.5)}
+                      className="px-2 py-0.5 rounded-lg bg-white/10 hover:bg-white/20 text-white font-bold cursor-pointer active:scale-95 transition"
+                      title="Nhanh hơn 0.5s"
+                    >
+                      -0.5s
+                    </button>
+                    <button
+                      onClick={() => {
+                        playMechanicalSound('switch');
+                        setSyncOffset(0);
+                      }}
+                      className="px-2 py-0.5 rounded-lg bg-white/5 hover:bg-white/15 text-zinc-300 text-[10px] cursor-pointer transition"
+                      title="Đặt lại về 0s"
+                    >
+                      RESET
+                    </button>
+                    <button
+                      onClick={() => adjustOffset(0.5)}
+                      className="px-2 py-0.5 rounded-lg bg-white/10 hover:bg-white/20 text-white font-bold cursor-pointer active:scale-95 transition"
+                      title="Chậm hơn 0.5s"
+                    >
+                      +0.5s
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           {/* Track Header Pill */}
           <div className="my-3 flex items-center justify-between rounded-xl bg-white/[0.03] border border-white/[0.06] px-3 py-2 text-xs">
             <div className="truncate pr-2">
@@ -293,6 +442,11 @@ export function RetroLyricsDrawer() {
                 <span className="flex items-center gap-1 text-cyan-400 bg-cyan-500/10 px-2 py-0.5 rounded border border-cyan-500/20">
                   <Headphones className="h-3 w-3" />
                   <span>INSTRUMENTAL</span>
+                </span>
+              ) : source === 'youtube' && lyricsMode === 'auto' ? (
+                <span className="flex items-center gap-1 text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/20 shadow-[0_0_8px_rgba(244,63,94,0.25)]">
+                  <YouTubeIcon className="h-3 w-3 text-rose-400" />
+                  <span>YT_CAPTIONS{subLang ? `:${subLang.toUpperCase()}` : ''}</span>
                 </span>
               ) : parsedSyncedLyrics.length > 0 && lyricsMode === 'auto' ? (
                 <span className="flex items-center gap-1 text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 shadow-[0_0_8px_rgba(16,185,129,0.2)]">
@@ -326,7 +480,7 @@ export function RetroLyricsDrawer() {
                   <Radio className="h-4 w-4 absolute text-amber-400/80 animate-pulse" />
                 </div>
                 <span className="tracking-wider text-amber-300/80 text-[11px]">
-                  KẾT NỐI VỆ TINH PHỤC HỒI LỜI CA KHÚC...
+                  KẾT NỐI VỆ TINH PHỤC HỒI PHỤ ĐỀ YOUTUBE...
                 </span>
               </div>
             ) : isInstrumental && lyricsMode === 'auto' ? (
@@ -345,15 +499,23 @@ export function RetroLyricsDrawer() {
                     key={idx}
                     ref={isActive ? activeLineRef : null}
                     onClick={() => handleLineClick(line.time)}
-                    className={`cursor-pointer py-1.5 px-3 rounded-xl transition-all duration-300 font-display ${
+                    className={`relative overflow-hidden cursor-pointer py-2 px-3.5 rounded-2xl transition-all duration-300 font-display ${
                       isActive
-                        ? 'text-amber-300 font-bold text-sm sm:text-base scale-105 drop-shadow-[0_0_12px_rgba(245,158,11,0.6)] bg-amber-500/10 border border-amber-500/20'
+                        ? 'text-amber-200 font-bold text-sm sm:text-base scale-105 drop-shadow-[0_0_14px_rgba(245,158,11,0.7)] bg-amber-500/10 border border-amber-500/30'
                         : Math.abs(idx - activeIndex) <= 2
-                        ? 'text-zinc-200/90 text-xs sm:text-sm hover:text-amber-200 hover:bg-white/[0.03]'
+                        ? 'text-zinc-200/90 text-xs sm:text-sm hover:text-amber-200 hover:bg-white/[0.04]'
                         : 'text-zinc-500/40 text-xs hover:text-zinc-300'
                     }`}
                   >
-                    <p className="leading-relaxed">{line.text}</p>
+                    {/* Hiệu ứng tiến trình Karaoke Fill bám theo duration của YouTube Captions */}
+                    {isActive && (
+                      <div
+                        className="absolute inset-y-0 left-0 bg-gradient-to-r from-amber-500/15 via-amber-400/20 to-transparent pointer-events-none transition-all duration-150 ease-linear rounded-2xl"
+                        style={{ width: `${Math.round(activeLineProgress * 100)}%` }}
+                      />
+                    )}
+
+                    <p className="relative z-10 leading-relaxed">{line.text}</p>
                   </div>
                 );
               })
@@ -376,7 +538,11 @@ export function RetroLyricsDrawer() {
           <div className="pt-3 border-t border-white/10 flex items-center justify-between text-[10px] font-mono text-zinc-500">
             <span className="flex items-center gap-1 text-amber-400">
               <Sparkles className="h-3 w-3 text-amber-400" />
-              <span>VFD FLUORESCENT MATRIX</span>
+              <span>
+                {source === 'youtube'
+                  ? 'YOUTUBE CAPTIONS SYNC'
+                  : 'VFD FLUORESCENT MATRIX'}
+              </span>
             </span>
             <span className="flex items-center gap-2">
               <span className="text-zinc-400">CLICK ĐỂ NHẢY ĐOẠN</span>
