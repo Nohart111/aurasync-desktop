@@ -247,6 +247,12 @@ export function useAudioPlayer() {
       triggerImmediateSyncPlaybackFromStore();
     });
 
+    audioEngine.onCrossfade(() => {
+      consecutiveErrorCount = 0;
+      usePlayerStore.getState().advanceNext('crossfade');
+      triggerImmediateSyncPlaybackFromStore();
+    });
+
     audioEngine.onError(() => {
       const state = usePlayerStore.getState();
       if (state.currentTrack?.isPreview) return;
@@ -455,6 +461,19 @@ export function useAudioPlayer() {
       }
     }
   }, [nextTrackPreview]);
+
+  const crossfadeDuration = usePlayerStore((s) => s.crossfadeDuration);
+  const stereoWidth = usePlayerStore((s) => s.stereoWidth);
+  const isSpatialAudioEnabled = usePlayerStore((s) => s.isSpatialAudioEnabled);
+
+  useEffect(() => {
+    audioEngine.setCrossfadeSec(crossfadeDuration);
+  }, [crossfadeDuration]);
+
+  useEffect(() => {
+    audioEngine.setStereoWidth(stereoWidth);
+    audioEngine.setSpatialAudioEnabled(isSpatialAudioEnabled);
+  }, [stereoWidth, isSpatialAudioEnabled]);
 
   useEffect(() => {
     audioEngine.setVolume(volume);

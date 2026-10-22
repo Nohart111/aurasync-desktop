@@ -157,6 +157,9 @@ export interface PlayerState {
   eqGains: number[];
   eqPreset: string;
   isEqBypassed: boolean;
+  crossfadeDuration: number;
+  stereoWidth: number;
+  isSpatialAudioEnabled: boolean;
   toggleSfx: () => void;
   toggleFocusMode: (val?: boolean) => void;
   toggleShortcuts: (val?: boolean) => void;
@@ -166,6 +169,9 @@ export interface PlayerState {
   setEqPreset: (presetName: string, gains: number[]) => void;
   toggleEqBypass: () => void;
   resetEq: () => void;
+  setCrossfadeDuration: (sec: number) => void;
+  setStereoWidth: (w: number) => void;
+  toggleSpatialAudio: () => void;
 }
 
 export const usePlayerStore = create<PlayerState>()(
@@ -205,6 +211,9 @@ export const usePlayerStore = create<PlayerState>()(
       eqGains: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
       eqPreset: 'Flat',
       isEqBypassed: false,
+      crossfadeDuration: 3,
+      stereoWidth: 1.3,
+      isSpatialAudioEnabled: true,
 
       toggleSfx: () => set((s) => ({ isSfxEnabled: !s.isSfxEnabled })),
       toggleFocusMode: (val?: boolean) =>
@@ -232,6 +241,12 @@ export const usePlayerStore = create<PlayerState>()(
           eqPreset: 'Flat',
           isEqBypassed: false,
         }),
+      setCrossfadeDuration: (sec: number) =>
+        set({ crossfadeDuration: Math.max(0, Math.min(10, sec)) }),
+      setStereoWidth: (w: number) =>
+        set({ stereoWidth: Math.max(0, Math.min(2.0, Math.round(w * 100) / 100)) }),
+      toggleSpatialAudio: () =>
+        set((s) => ({ isSpatialAudioEnabled: !s.isSpatialAudioEnabled })),
 
       toggleSidebar: (..._args: any[]) => set((s) => ({ isSidebarCollapsed: !s.isSidebarCollapsed })),
       setSidebarCollapsed: (collapsed?: any, ..._args: any[]) =>
@@ -864,6 +879,9 @@ export const usePlayerStore = create<PlayerState>()(
         eqGains: state.eqGains,
         eqPreset: state.eqPreset,
         isEqBypassed: state.isEqBypassed,
+        crossfadeDuration: state.crossfadeDuration,
+        stereoWidth: state.stereoWidth,
+        isSpatialAudioEnabled: state.isSpatialAudioEnabled,
       }),
     }
   )

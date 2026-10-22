@@ -47,6 +47,23 @@ export class AudioEngine {
   private compressorNode: DynamicsCompressorNode | null = null;
   private currentEqGains: number[] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
   private isEqBypassed: boolean = false;
+
+  // 3D Spatial Audio Widener Nodes
+  private spatialSplitter: ChannelSplitterNode | null = null;
+  private spatialMerger: ChannelMergerNode | null = null;
+  private midGain: GainNode | null = null;
+  private sideGainL: GainNode | null = null;
+  private sideGainR: GainNode | null = null;
+  private sideWidthGain: GainNode | null = null;
+  private sideInvertGain: GainNode | null = null;
+  private isSpatialAudioEnabled: boolean = true;
+  private currentStereoWidth: number = 1.3;
+
+  // Crossfade Transition
+  private crossfadeSec: number = 3;
+  private hasTriggeredCrossfade: boolean = false;
+  private crossfadeCallback: (() => void) | null = null;
+
   private frequencyData: Uint8Array = new Uint8Array(64);
 
   private currentUrl: string = '';
@@ -170,6 +187,22 @@ export class AudioEngine {
         this.triggerPreloadFetch(this.nextPreloadUrl);
       }
 
+      // KÍCH HOẠT CHUYỂN BÀI MƯỢT (CROSSFADE TRANSITION) KHI BÀI HÁT SẮP HẾT
+      const remaining = dur - curr;
+      if (
+        this.crossfadeSec > 0 &&
+        dur > 0 &&
+        isFinite(dur) &&
+        remaining <= this.crossfadeSec &&
+        curr >= 5 &&
+        !this.hasTriggeredCrossfade
+      ) {
+        this.hasTriggeredCrossfade = true;
+        if (this.crossfadeCallback) {
+          this.crossfadeCallback();
+        }
+      }
+
       if (this.timeUpdateCallback) {
         this.timeUpdateCallback(curr);
       }
@@ -265,13 +298,52 @@ export class AudioEngine {
         this.compressorNode.release.value = 0.15;
 
         // Chuỗi phát âm thanh chuẩn phòng thu:
-        // Source -> Filter[0] -> Filter[1] -> ... -> Filter[9] -> Limiter Compressor -> GainNode -> Speakers
+        // Source -> Filter[0] -> Filter[1] -> ... -> Filter[9] -> 3D Spatial Matrix -> Limiter Compressor -> GainNode -> Speakers
         let prevNode: AudioNode = this.sourceNode;
         for (const filter of this.eqFilters) {
           prevNode.connect(filter);
           prevNode = filter;
         }
-        prevNode.connect(this.compressorNode);
+
+        // 2b. BỘ MỞ RỘNG TRƯỜNG ÂM THANH LẬP THỂ 3D (MID-SIDE STEREO WIDENER MATRIX)
+        this.spatialSplitter = this.audioCtx.createChannelSplitter(2);
+        this.spatialMerger = this.audioCtx.createChannelMerger(2);
+
+        // Kênh Mid: (L + R) * 0.5
+        this.midGain = this.audioCtx.createGain();
+        this.midGain.gain.value = 0.5;
+        this.spatialSplitter.connect(this.midGain, 0);
+        this.spatialSplitter.connect(this.midGain, 1);
+
+        // Kênh Side: (L - R) * 0.5
+        this.sideGainL = this.audioCtx.createGain();
+        this.sideGainL.gain.value = 0.5;
+        this.sideGainR = this.audioCtx.createGain();
+        this.sideGainR.gain.value = -0.5;
+        this.spatialSplitter.connect(this.sideGainL, 0);
+        this.spatialSplitter.connect(this.sideGainR, 1);
+
+        // Bộ nhân hệ số Stereo Width
+        this.sideWidthGain = this.audioCtx.createGain();
+        const initialWidth = this.isSpatialAudioEnabled ? this.currentStereoWidth : 1.0;
+        this.sideWidthGain.gain.value = initialWidth;
+        this.sideGainL.connect(this.sideWidthGain);
+        this.sideGainR.connect(this.sideWidthGain);
+
+        // Đảo pha Side cho kênh phải (Right = Mid - Side)
+        this.sideInvertGain = this.audioCtx.createGain();
+        this.sideInvertGain.gain.value = -1.0;
+        this.sideWidthGain.connect(this.sideInvertGain);
+
+        // Tái tổ hợp Left = Mid + Side, Right = Mid - Side
+        this.midGain.connect(this.spatialMerger, 0, 0);
+        this.sideWidthGain.connect(this.spatialMerger, 0, 0);
+        this.midGain.connect(this.spatialMerger, 0, 1);
+        this.sideInvertGain.connect(this.spatialMerger, 0, 1);
+
+        // Đưa tín hiệu qua Ma trận Không gian 3D
+        prevNode.connect(this.spatialSplitter);
+        this.spatialMerger.connect(this.compressorNode);
         this.compressorNode.connect(this.gainNode);
         this.gainNode.connect(this.audioCtx.destination);
 
@@ -326,6 +398,38 @@ export class AudioEngine {
 
   public getEqGains(): number[] {
     return [...this.currentEqGains];
+  }
+
+  public setStereoWidth(width: number): void {
+    this.currentStereoWidth = Math.max(0, Math.min(2.0, width));
+    if (this.sideWidthGain) {
+      const target = this.isSpatialAudioEnabled ? this.currentStereoWidth : 1.0;
+      if (this.audioCtx && this.audioCtx.state === 'running') {
+        this.sideWidthGain.gain.setTargetAtTime(target, this.audioCtx.currentTime, 0.03);
+      } else {
+        this.sideWidthGain.gain.value = target;
+      }
+    }
+  }
+
+  public setSpatialAudioEnabled(enabled: boolean): void {
+    this.isSpatialAudioEnabled = Boolean(enabled);
+    if (this.sideWidthGain) {
+      const target = this.isSpatialAudioEnabled ? this.currentStereoWidth : 1.0;
+      if (this.audioCtx && this.audioCtx.state === 'running') {
+        this.sideWidthGain.gain.setTargetAtTime(target, this.audioCtx.currentTime, 0.03);
+      } else {
+        this.sideWidthGain.gain.value = target;
+      }
+    }
+  }
+
+  public setCrossfadeSec(sec: number): void {
+    this.crossfadeSec = Math.max(0, Math.min(10, sec));
+  }
+
+  public onCrossfade(cb: () => void): void {
+    this.crossfadeCallback = cb;
   }
 
   public async loadAndPlay(url: string, nonce?: number): Promise<void> {
@@ -391,6 +495,15 @@ export class AudioEngine {
       this.resumeContext();
 
       if (loadId !== this.activeLoadId) return;
+
+      if (this.gainNode && this.audioCtx && this.audioCtx.state === 'running') {
+        const targetVol = Math.max(0.001, Math.min(1, this.primaryAudio.volume || 0.8));
+        const fadeDuration = this.crossfadeSec > 0 ? Math.min(2.0, this.crossfadeSec) : 0.04;
+        try {
+          this.gainNode.gain.setValueAtTime(0.0001, this.audioCtx.currentTime);
+          this.gainNode.gain.exponentialRampToValueAtTime(targetVol, this.audioCtx.currentTime + fadeDuration);
+        } catch {}
+      }
 
       await this.primaryAudio.play();
     } catch (err: any) {
