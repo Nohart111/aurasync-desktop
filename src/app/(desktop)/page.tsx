@@ -27,8 +27,16 @@ import {
   FolderHeart,
   X,
   Check,
+  Flame,
+  History,
+  Music2,
+  ArrowUpDown,
+  Maximize2,
+  HelpCircle,
+  AlignLeft,
 } from "lucide-react";
 import type { Track } from "@/store/usePlayerStore";
+import { playMechanicalSound } from "@/core/audio/SoundEffects";
 
 /**
  * Tạo số lượt stream gốc ổn định cho bài hát trong kho kết hợp với số lượt nghe thực tế của người dùng
@@ -314,7 +322,7 @@ function StudioDynamicVuMeter({ isPlaying }: { isPlaying: boolean }) {
   }, [isPlaying]);
 
   return (
-    <div className="space-y-1.5 rounded-2xl border border-white/[0.08] bg-black/40 p-3 sm:p-4 backdrop-blur-md">
+    <div className="space-y-1.5 rounded-2xl border border-white/[0.08] bg-black/40 p-3 sm:p-4 backdrop-blur-md shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)]">
       <div className="flex items-center justify-between gap-2 text-[9px] sm:text-[10px] font-mono text-zinc-500">
         <span className="truncate">
           <span className="hidden sm:inline">
@@ -347,6 +355,12 @@ export default function RetroCyberDeckPage() {
   const [isCreatingPlaylist, setIsCreatingPlaylist] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState("");
   const [playlistMenuTrackId, setPlaylistMenuTrackId] = useState<string | null>(null);
+  const [activeChip, setActiveChip] = useState<'all' | 'liked' | 'popular' | 'recent' | 'longplay'>('all');
+  const [sortMode, setSortMode] = useState<'default' | 'streams' | 'alphabet'>('default');
+  const [interactionToast, setInteractionToast] = useState<{
+    message: string;
+    type: "heart" | "playlist" | "queue";
+  } | null>(null);
 
   const {
     currentTrack,
@@ -358,6 +372,11 @@ export default function RetroCyberDeckPage() {
     customPlaylists,
     likedTrackIds,
     streamCounts,
+    isSfxEnabled,
+    toggleSfx,
+    toggleFocusMode,
+    toggleShortcuts,
+    toggleLyrics,
     createPlaylist,
     deletePlaylist,
     addTrackToPlaylist,
@@ -437,6 +456,32 @@ export default function RetroCyberDeckPage() {
         .filter((t): t is Track => Boolean(t));
     }
 
+    // Filter Chips
+    if (activeChip === 'liked') {
+      baseList = baseList.filter((t) => (likedTrackIds || []).includes(t.id));
+    } else if (activeChip === 'popular') {
+      baseList = [...baseList].sort((a, b) => {
+        const aCount = (streamCounts?.[a.id] || 0) + (a.streamCount || 0);
+        const bCount = (streamCounts?.[b.id] || 0) + (b.streamCount || 0);
+        return bCount - aCount;
+      });
+    } else if (activeChip === 'recent') {
+      baseList = [...baseList].reverse();
+    } else if (activeChip === 'longplay') {
+      baseList = baseList.filter((t) => (t.duration || 0) >= 240);
+    }
+
+    // Sort Mode
+    if (sortMode === 'streams') {
+      baseList = [...baseList].sort((a, b) => {
+        const aCount = (streamCounts?.[a.id] || 0) + (a.streamCount || 0);
+        const bCount = (streamCounts?.[b.id] || 0) + (b.streamCount || 0);
+        return bCount - aCount;
+      });
+    } else if (sortMode === 'alphabet') {
+      baseList = [...baseList].sort((a, b) => a.title.localeCompare(b.title));
+    }
+
     if (!searchQuery.trim()) return baseList;
     const q = searchQuery.toLowerCase();
     return baseList.filter(
@@ -444,9 +489,10 @@ export default function RetroCyberDeckPage() {
         t.title.toLowerCase().includes(q) ||
         (t.artist && t.artist.toLowerCase().includes(q))
     );
-  }, [tracks, activeView, likedTrackIds, activeCustomPlaylist, searchQuery]);
+  }, [tracks, activeView, likedTrackIds, activeCustomPlaylist, searchQuery, activeChip, sortMode, streamCounts]);
 
   const handlePlayTrack = (track: Track) => {
+    playMechanicalSound('switch');
     if (currentTrack?.id === track.id) {
       setPlaying(!isPlaying);
     } else {
@@ -458,6 +504,7 @@ export default function RetroCyberDeckPage() {
   };
 
   const handlePlayAll = () => {
+    playMechanicalSound('tape');
     const targetList = displayedTracks.length > 0 ? displayedTracks : tracks;
     if (targetList.length === 0) return;
     usePlayerStore.getState().setQueue(targetList);
@@ -466,6 +513,7 @@ export default function RetroCyberDeckPage() {
   };
 
   const handleShuffle = () => {
+    playMechanicalSound('switch');
     const targetList = displayedTracks.length > 0 ? displayedTracks : tracks;
     if (targetList.length === 0) return;
     const shuffled = [...targetList].sort(() => Math.random() - 0.5);
@@ -484,6 +532,45 @@ export default function RetroCyberDeckPage() {
     setActiveView(newId);
   };
 
+  const handleToggleLike = (track: Track) => {
+    const isLiked = (likedTrackIds || []).includes(track.id);
+    toggleLikeTrack(track.id);
+    setInteractionToast({
+      message: isLiked ? `Đã bỏ thích: ${track.title}` : `Đã lưu vào Yêu thích: ${track.title}`,
+      type: "heart",
+    });
+    setTimeout(() => {
+      setInteractionToast((curr) => (curr?.message.includes(track.title) ? null : curr));
+    }, 2400);
+  };
+
+  const handleEnqueue = (track: Track) => {
+    enqueueTrack(track);
+    setInteractionToast({
+      message: `Đã thêm vào Hàng đợi: ${track.title}`,
+      type: "queue",
+    });
+    setTimeout(() => setInteractionToast(null), 2400);
+  };
+
+  const handlePlaylistAddToggle = (playlist: { id: string; name: string; trackIds: string[] }, track: Track) => {
+    const inPl = playlist.trackIds.includes(track.id);
+    if (inPl) {
+      removeTrackFromPlaylist(playlist.id, track.id);
+      setInteractionToast({
+        message: `Đã xóa khỏi playlist "${playlist.name}"`,
+        type: "playlist",
+      });
+    } else {
+      addTrackToPlaylist(playlist.id, track);
+      setInteractionToast({
+        message: `Đã thêm vào playlist "${playlist.name}"`,
+        type: "playlist",
+      });
+    }
+    setTimeout(() => setInteractionToast(null), 2400);
+  };
+
   const formatDuration = (seconds?: number) => {
     const s = Math.floor(seconds || 180);
     const m = Math.floor(s / 60);
@@ -495,7 +582,7 @@ export default function RetroCyberDeckPage() {
     <div className="space-y-6 sm:space-y-8 pb-40 md:pb-24 select-none font-sans relative overflow-x-hidden">
       {/* THÔNG BÁO NỔI KHI TẢI XONG NHẠC TỪ CLOUD / MÁY TÍNH */}
       {newlyAddedTrack && (
-        <div className="fixed top-4 right-3 sm:right-6 z-50 flex items-center gap-3 rounded-2xl border border-emerald-400/50 bg-[#071a14]/95 px-4 sm:px-5 py-3 shadow-[0_0_30px_rgba(16,185,129,0.3)] backdrop-blur-xl animate-bounce max-w-[92vw]">
+        <div className="fixed top-4 right-3 sm:right-6 z-50 flex items-center gap-3 rounded-2xl border border-emerald-400/50 bg-[#071a14]/95 px-4 sm:px-5 py-3 shadow-[0_0_30px_rgba(16,185,129,0.3)] backdrop-blur-xl toast-enter max-w-[92vw]">
           <div className="flex h-8 w-8 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20 border border-emerald-400/40 text-emerald-400">
             <CheckCircle2 className="h-5 w-5" />
           </div>
@@ -506,6 +593,34 @@ export default function RetroCyberDeckPage() {
             </div>
             <p className="text-xs font-bold text-white truncate max-w-[220px] sm:max-w-[260px]">
               {newlyAddedTrack.title}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* THÔNG BÁO TƯƠNG TÁC TỨC THÌ (LIKE / PLAYLIST / QUEUE) */}
+      {interactionToast && (
+        <div className="fixed top-4 right-3 sm:right-6 z-50 flex items-center gap-3 rounded-2xl border border-white/10 bg-[#0b0b16]/95 px-4 sm:px-5 py-2.5 shadow-[0_12px_40px_rgba(0,0,0,0.85),0_0_16px_rgba(0,240,255,0.18)] backdrop-blur-xl toast-enter max-w-[92vw]">
+          <div
+            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border ${
+              interactionToast.type === "heart"
+                ? "bg-rose-500/20 border-rose-500/40 text-rose-400"
+                : interactionToast.type === "playlist"
+                ? "bg-neon-violet/20 border-neon-violet/40 text-neon-violet"
+                : "bg-neon-cyan/20 border-neon-cyan/40 text-neon-cyan"
+            }`}
+          >
+            {interactionToast.type === "heart" ? (
+              <Heart className="h-4 w-4 fill-rose-500 text-rose-500 animate-spring-pop" />
+            ) : interactionToast.type === "playlist" ? (
+              <FolderHeart className="h-4 w-4" />
+            ) : (
+              <ListPlus className="h-4 w-4" />
+            )}
+          </div>
+          <div className="min-w-0 pr-1">
+            <p className="text-xs font-semibold text-white truncate max-w-[240px] sm:max-w-[280px]">
+              {interactionToast.message}
             </p>
           </div>
         </div>
@@ -532,10 +647,10 @@ export default function RetroCyberDeckPage() {
             <div className="relative my-3 sm:my-4 flex h-24 sm:h-32 w-full items-center justify-around rounded-xl border border-black/80 bg-[#06060c] px-3 sm:px-4 shadow-[inset_0_4px_12px_rgba(0,0,0,0.9)]">
               <div className="relative flex h-14 w-14 sm:h-20 sm:w-20 shrink-0 items-center justify-center rounded-full border-4 border-zinc-700 bg-gradient-to-tr from-zinc-900 to-zinc-800 shadow-md">
                 <Disc3
-                  className={`h-10 w-10 sm:h-14 sm:w-14 text-zinc-400 transition-all ${
-                    isPlaying ? "animate-spin" : ""
+                  className={`h-10 w-10 sm:h-14 sm:w-14 transition-all duration-700 ease-in-out ${
+                    isPlaying ? "animate-spin text-zinc-300" : "text-zinc-500"
                   }`}
-                  style={{ animationDuration: "3s" }}
+                  style={{ animationDuration: isPlaying ? "2.8s" : "0s", animationTimingFunction: "cubic-bezier(0.4, 0, 0.2, 1)" }}
                 />
                 <div className="absolute h-3 w-3 sm:h-4 sm:w-4 rounded-full bg-neon-cyan/80 shadow-neon-cyan" />
               </div>
@@ -555,10 +670,10 @@ export default function RetroCyberDeckPage() {
 
               <div className="relative flex h-14 w-14 sm:h-20 sm:w-20 shrink-0 items-center justify-center rounded-full border-4 border-zinc-700 bg-gradient-to-tr from-zinc-900 to-zinc-800 shadow-md">
                 <Disc3
-                  className={`h-10 w-10 sm:h-14 sm:w-14 text-zinc-400 transition-all ${
-                    isPlaying ? "animate-spin" : ""
+                  className={`h-10 w-10 sm:h-14 sm:w-14 transition-all duration-700 ease-in-out ${
+                    isPlaying ? "animate-spin text-zinc-300" : "text-zinc-500"
                   }`}
-                  style={{ animationDuration: "3s" }}
+                  style={{ animationDuration: isPlaying ? "2.8s" : "0s", animationTimingFunction: "cubic-bezier(0.4, 0, 0.2, 1)" }}
                 />
                 <div className="absolute h-3 w-3 sm:h-4 sm:w-4 rounded-full bg-neon-violet/80 shadow-neon-violet" />
               </div>
@@ -588,14 +703,69 @@ export default function RetroCyberDeckPage() {
 
           {/* Bảng điều khiển Studio Controller & Dynamic VU */}
           <div className="flex w-full flex-1 flex-col justify-between space-y-4 sm:space-y-6">
-            <div>
-              <div className="flex items-center gap-2 text-[11px] sm:text-xs font-mono text-neon-cyan tracking-wider uppercase">
-                <Terminal className="h-4 w-4 shrink-0" />
-                <span className="truncate">VAULT_CONTROLLER // V2.6</span>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2 text-[11px] sm:text-xs font-mono text-neon-cyan tracking-wider uppercase">
+                  <Terminal className="h-4 w-4 shrink-0" />
+                  <span className="truncate">VAULT_CONTROLLER // V2.6</span>
+                </div>
+                <h1 className="mt-1 font-display text-2xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight text-white">
+                  Studio Tape Rack
+                </h1>
               </div>
-              <h1 className="mt-1 font-display text-2xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight text-white">
-                Studio Tape Rack
-              </h1>
+
+              {/* Hardware Quick Action Switches */}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    playMechanicalSound('toggle');
+                    toggleFocusMode();
+                  }}
+                  className="btn-cyberdeck flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-mono text-zinc-300 hover:text-neon-cyan active:scale-95 cursor-pointer"
+                  title="Chế độ Focus Studio [Z]"
+                >
+                  <Maximize2 className="h-3.5 w-3.5 text-neon-cyan" />
+                  <span className="hidden sm:inline">FOCUS [Z]</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    playMechanicalSound('toggle');
+                    toggleLyrics();
+                  }}
+                  className="btn-cyberdeck flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-mono text-zinc-300 hover:text-neon-cyan active:scale-95 cursor-pointer"
+                  title="Lời bài hát VFD"
+                >
+                  <AlignLeft className="h-3.5 w-3.5 text-emerald-400" />
+                  <span className="hidden sm:inline">LYRICS</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    playMechanicalSound('switch');
+                    toggleShortcuts();
+                  }}
+                  className="btn-cyberdeck flex items-center gap-1.5 rounded-xl px-2.5 py-2 text-xs font-mono text-zinc-300 hover:text-amber-400 active:scale-95 cursor-pointer"
+                  title="Phím tắt [?]"
+                >
+                  <HelpCircle className="h-3.5 w-3.5 text-amber-400" />
+                  <span className="hidden sm:inline">[?]</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    playMechanicalSound('toggle');
+                    toggleSfx();
+                  }}
+                  className={`btn-cyberdeck flex items-center gap-1.5 rounded-xl px-2.5 py-2 text-xs font-mono cursor-pointer transition ${
+                    isSfxEnabled ? 'text-emerald-400' : 'text-zinc-500'
+                  }`}
+                  title="Bật/Tắt âm thanh cơ học"
+                >
+                  <span className={`led-status ${isSfxEnabled ? 'bg-emerald-400 text-emerald-400' : 'bg-zinc-600 text-zinc-600'}`} />
+                  <span className="hidden sm:inline text-[10px] font-bold">SFX</span>
+                </button>
+              </div>
             </div>
 
             {/* DÀN ĐÈN VU METER AUTO-GAIN NHẠY VỚI MỌI BÀI HÁT */}
@@ -605,7 +775,7 @@ export default function RetroCyberDeckPage() {
               <button
                 onClick={handlePlayAll}
                 disabled={tracks.length === 0}
-                className="group flex items-center gap-2 rounded-xl bg-gradient-to-r from-neon-cyan to-neon-violet px-4 sm:px-6 py-3 sm:py-3.5 text-xs font-mono font-bold tracking-wider text-black shadow-lg shadow-neon-cyan/20 transition hover:scale-105 active:scale-95 disabled:opacity-40 cursor-pointer"
+                className="group flex items-center gap-2 rounded-xl bg-gradient-to-r from-neon-cyan to-neon-violet px-4 sm:px-6 py-3 sm:py-3.5 text-xs font-mono font-bold tracking-wider text-black shadow-lg shadow-neon-cyan/20 transition-all duration-150 hover:scale-105 hover:shadow-[0_0_24px_rgba(0,240,255,0.4)] active:scale-95 active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.3)] disabled:opacity-40 cursor-pointer border border-white/20"
               >
                 {isPlaying && !(currentTrack as any)?.isPreview ? (
                   <Pause className="h-4 w-4 fill-black" />
@@ -618,7 +788,7 @@ export default function RetroCyberDeckPage() {
               <button
                 onClick={handleShuffle}
                 disabled={tracks.length === 0}
-                className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3.5 sm:px-4 py-3 sm:py-3.5 text-xs font-mono text-zinc-300 transition hover:bg-white/10 hover:text-white disabled:opacity-40 cursor-pointer"
+                className="btn-cyberdeck flex items-center gap-2 rounded-xl px-3.5 sm:px-4 py-3 sm:py-3.5 text-xs font-mono text-zinc-300 hover:text-white disabled:opacity-40 cursor-pointer"
                 title="Trộn bài"
               >
                 <Shuffle className="h-4 w-4 text-neon-cyan" />
@@ -649,6 +819,110 @@ export default function RetroCyberDeckPage() {
                 />
               </div>
             </div>
+
+            {/* SMART FILTER DECK & SORT SWITCH */}
+            <div className="flex flex-wrap items-center justify-between gap-2.5 pt-1 border-t border-white/[0.05]">
+              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                <button
+                  onClick={() => {
+                    playMechanicalSound('switch');
+                    setActiveChip('all');
+                  }}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-mono font-semibold transition active:scale-95 cursor-pointer ${
+                    activeChip === 'all'
+                      ? 'bg-neon-cyan text-black font-bold shadow-[0_0_12px_rgba(0,240,255,0.35)]'
+                      : 'border border-white/10 bg-white/[0.04] text-zinc-400 hover:text-white hover:bg-white/[0.08]'
+                  }`}
+                >
+                  [ TẤT CẢ ]
+                </button>
+
+                <button
+                  onClick={() => {
+                    playMechanicalSound('switch');
+                    setActiveChip('liked');
+                  }}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-mono font-semibold transition active:scale-95 cursor-pointer ${
+                    activeChip === 'liked'
+                      ? 'bg-rose-500 text-white font-bold shadow-[0_0_12px_rgba(244,63,94,0.35)]'
+                      : 'border border-white/10 bg-white/[0.04] text-zinc-400 hover:text-rose-400 hover:bg-white/[0.08]'
+                  }`}
+                >
+                  <span className="flex items-center gap-1.5">
+                    <Heart className="h-3 w-3 fill-current" />
+                    <span>[ ĐÃ THÍCH ]</span>
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    playMechanicalSound('switch');
+                    setActiveChip('popular');
+                  }}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-mono font-semibold transition active:scale-95 cursor-pointer ${
+                    activeChip === 'popular'
+                      ? 'bg-amber-400 text-black font-bold shadow-[0_0_12px_rgba(245,158,11,0.35)]'
+                      : 'border border-white/10 bg-white/[0.04] text-zinc-400 hover:text-amber-300 hover:bg-white/[0.08]'
+                  }`}
+                >
+                  <span className="flex items-center gap-1.5">
+                    <Flame className="h-3 w-3" />
+                    <span>[ POPULAR ]</span>
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    playMechanicalSound('switch');
+                    setActiveChip('recent');
+                  }}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-mono font-semibold transition active:scale-95 cursor-pointer ${
+                    activeChip === 'recent'
+                      ? 'bg-emerald-400 text-black font-bold shadow-[0_0_12px_rgba(16,185,129,0.35)]'
+                      : 'border border-white/10 bg-white/[0.04] text-zinc-400 hover:text-emerald-300 hover:bg-white/[0.08]'
+                  }`}
+                >
+                  <span className="flex items-center gap-1.5">
+                    <History className="h-3 w-3" />
+                    <span>[ GẦN ĐÂY ]</span>
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    playMechanicalSound('switch');
+                    setActiveChip('longplay');
+                  }}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-mono font-semibold transition active:scale-95 cursor-pointer ${
+                    activeChip === 'longplay'
+                      ? 'bg-neon-violet text-white font-bold shadow-[0_0_12px_rgba(168,85,247,0.35)]'
+                      : 'border border-white/10 bg-white/[0.04] text-zinc-400 hover:text-neon-violet hover:bg-white/[0.08]'
+                  }`}
+                >
+                  <span className="flex items-center gap-1.5">
+                    <Music2 className="h-3 w-3" />
+                    <span>[ LONG PLAY &gt;4m ]</span>
+                  </span>
+                </button>
+              </div>
+
+              {/* Nút Toggle Sort cơ học */}
+              <button
+                onClick={() => {
+                  playMechanicalSound('toggle');
+                  setSortMode((prev) =>
+                    prev === 'default' ? 'streams' : prev === 'streams' ? 'alphabet' : 'default'
+                  );
+                }}
+                className="btn-cyberdeck flex items-center gap-2 rounded-xl px-3 py-1.5 text-xs font-mono text-zinc-300 hover:text-white active:scale-95 cursor-pointer"
+                title="Thay đổi thứ tự sắp xếp bài hát"
+              >
+                <ArrowUpDown className="h-3.5 w-3.5 text-neon-cyan" />
+                <span>
+                  SẮP XẾP: {sortMode === 'streams' ? 'LƯỢT NGHE' : sortMode === 'alphabet' ? 'TÊN A-Z' : 'MẶC ĐỊNH'}
+                </span>
+              </button>
+            </div>
           </div>
         </div>
       </section>
@@ -658,7 +932,10 @@ export default function RetroCyberDeckPage() {
         <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-white/[0.08] pb-3">
           <div className="flex flex-wrap items-center gap-2">
             <button
-              onClick={() => setActiveView("vault")}
+              onClick={() => {
+                playMechanicalSound('switch');
+                setActiveView("vault");
+              }}
               className={`flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-mono font-bold uppercase tracking-wider transition-all cursor-pointer ${
                 activeView === "vault"
                   ? "bg-white text-black shadow-md"
@@ -670,7 +947,10 @@ export default function RetroCyberDeckPage() {
             </button>
 
             <button
-              onClick={() => setActiveView("favorites")}
+              onClick={() => {
+                playMechanicalSound('switch');
+                setActiveView("favorites");
+              }}
               className={`flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-mono font-bold uppercase tracking-wider transition-all cursor-pointer ${
                 activeView === "favorites"
                   ? "bg-rose-500 text-white shadow-md"
@@ -836,10 +1116,13 @@ export default function RetroCyberDeckPage() {
                         }}
                       >
                         <Disc3
-                          className={`h-full w-full p-1.5 text-zinc-600 transition-all ${
-                            isThisPlaying ? "animate-spin text-neon-cyan/70" : "group-hover:text-zinc-400"
+                          className={`h-full w-full p-1.5 transition-all duration-700 ease-in-out ${
+                            isThisPlaying ? "animate-spin text-neon-cyan/80" : "text-zinc-600 group-hover:text-zinc-400"
                           }`}
-                          style={{ animationDuration: "3s" }}
+                          style={{
+                            animationDuration: isThisPlaying ? "2.8s" : "0s",
+                            animationTimingFunction: "cubic-bezier(0.4, 0, 0.2, 1)",
+                          }}
                         />
 
                         <div
@@ -893,40 +1176,46 @@ export default function RetroCyberDeckPage() {
 
                   <div className="flex items-center gap-1.5 sm:gap-3 shrink-0" onClick={(e) => e.stopPropagation()}>
                     <button
-                      onClick={() => toggleLikeTrack(track.id)}
-                      className={`p-1.5 transition cursor-pointer ${
+                      onClick={() => handleToggleLike(track)}
+                      className={`p-1.5 transition-all duration-200 cursor-pointer active:scale-75 ${
                         isLiked
-                          ? "text-rose-500"
-                          : "text-zinc-500 opacity-100 md:opacity-0 md:group-hover:opacity-100 hover:text-white"
+                          ? "text-rose-500 animate-spring-pop"
+                          : "text-zinc-500 opacity-100 md:opacity-0 md:group-hover:opacity-100 hover:text-white hover:scale-110"
                       }`}
                       title={isLiked ? "Bỏ yêu thích" : "Yêu thích"}
                     >
-                      <Heart className={`h-4 w-4 ${isLiked ? "fill-rose-500" : ""}`} />
+                      <Heart
+                        className={`h-4 w-4 transition-transform ${
+                          isLiked ? "fill-rose-500 drop-shadow-[0_0_6px_rgba(244,63,94,0.5)]" : ""
+                        }`}
+                      />
                     </button>
 
                     <div className="relative">
                       <button
                         onClick={() => {
                           if ((customPlaylists || []).length === 0) {
-                            enqueueTrack(track);
+                            handleEnqueue(track);
                           } else {
                             setPlaylistMenuTrackId(isMenuOpen ? null : track.id);
                           }
                         }}
-                        className="p-1.5 text-zinc-500 opacity-100 md:opacity-0 md:group-hover:opacity-100 hover:text-neon-cyan transition cursor-pointer"
+                        className={`p-1.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all duration-200 cursor-pointer active:scale-90 ${
+                          isMenuOpen ? "text-neon-cyan scale-110" : "text-zinc-500 hover:text-neon-cyan hover:scale-110"
+                        }`}
                         title="Thêm vào Hàng đợi / Playlist"
                       >
                         <ListPlus className="h-4 w-4" />
                       </button>
 
                       {isMenuOpen && (
-                        <div className="absolute right-0 bottom-9 z-40 w-48 rounded-2xl border border-white/10 bg-[#0d0d1a]/98 p-2 shadow-2xl backdrop-blur-xl text-xs">
+                        <div className="absolute right-0 bottom-9 z-40 w-48 rounded-2xl border border-white/10 bg-[#0d0d1a]/98 p-2 shadow-[0_16px_48px_rgba(0,0,0,0.7),0_0_1px_rgba(0,240,255,0.2)] backdrop-blur-xl text-xs">
                           <button
                             onClick={() => {
-                              enqueueTrack(track);
+                              handleEnqueue(track);
                               setPlaylistMenuTrackId(null);
                             }}
-                            className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left text-zinc-200 hover:bg-white/10 hover:text-neon-cyan cursor-pointer"
+                            className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left text-zinc-200 hover:bg-white/10 hover:text-neon-cyan cursor-pointer transition active:scale-95"
                           >
                             <ListPlus className="h-3.5 w-3.5 text-neon-cyan" />
                             <span>Thêm vào Hàng đợi</span>
@@ -938,14 +1227,10 @@ export default function RetroCyberDeckPage() {
                               <button
                                 key={pl.id}
                                 onClick={() => {
-                                  if (inPl) {
-                                    removeTrackFromPlaylist(pl.id, track.id);
-                                  } else {
-                                    addTrackToPlaylist(pl.id, track);
-                                  }
+                                  handlePlaylistAddToggle(pl, track);
                                   setPlaylistMenuTrackId(null);
                                 }}
-                                className="flex w-full items-center justify-between gap-2 rounded-xl px-2.5 py-2 text-left text-zinc-200 hover:bg-white/10 cursor-pointer"
+                                className="flex w-full items-center justify-between gap-2 rounded-xl px-2.5 py-2 text-left text-zinc-200 hover:bg-white/10 cursor-pointer transition active:scale-95"
                               >
                                 <span className="truncate">{pl.name}</span>
                                 {inPl && <Check className="h-3.5 w-3.5 text-emerald-400 shrink-0" />}

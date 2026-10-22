@@ -147,6 +147,16 @@ export interface PlayerState {
   playPlaylist: (playlistId: string, shuffle?: boolean) => void;
   toggleLikeTrack: (trackId: string) => void;
   recordTrackStream: (trackId: string) => void;
+
+  // Retro Hi-Fi Cyberdeck additions
+  isSfxEnabled: boolean;
+  isFocusMode: boolean;
+  isShortcutsOpen: boolean;
+  isLyricsOpen: boolean;
+  toggleSfx: () => void;
+  toggleFocusMode: (val?: boolean) => void;
+  toggleShortcuts: (val?: boolean) => void;
+  toggleLyrics: (val?: boolean) => void;
 }
 
 export const usePlayerStore = create<PlayerState>()(
@@ -177,6 +187,19 @@ export const usePlayerStore = create<PlayerState>()(
       customPlaylists: [],
       likedTrackIds: [],
       streamCounts: {},
+
+      isSfxEnabled: true,
+      isFocusMode: false,
+      isShortcutsOpen: false,
+      isLyricsOpen: false,
+
+      toggleSfx: () => set((s) => ({ isSfxEnabled: !s.isSfxEnabled })),
+      toggleFocusMode: (val?: boolean) =>
+        set((s) => ({ isFocusMode: typeof val === 'boolean' ? val : !s.isFocusMode })),
+      toggleShortcuts: (val?: boolean) =>
+        set((s) => ({ isShortcutsOpen: typeof val === 'boolean' ? val : !s.isShortcutsOpen })),
+      toggleLyrics: (val?: boolean) =>
+        set((s) => ({ isLyricsOpen: typeof val === 'boolean' ? val : !s.isLyricsOpen })),
 
       toggleSidebar: (..._args: any[]) => set((s) => ({ isSidebarCollapsed: !s.isSidebarCollapsed })),
       setSidebarCollapsed: (collapsed?: any, ..._args: any[]) =>
@@ -805,6 +828,7 @@ export const usePlayerStore = create<PlayerState>()(
         customPlaylists: state.customPlaylists,
         likedTrackIds: state.likedTrackIds,
         streamCounts: state.streamCounts,
+        isSfxEnabled: state.isSfxEnabled,
       }),
     }
   )

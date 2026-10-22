@@ -523,7 +523,7 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
   const renderContent = () => {
     if ((!effectiveOpen || isMinimized) && hasRunningTasks && activeTask) {
       return (
-        <div className="fixed bottom-36 md:bottom-28 right-3 md:right-6 z-50 w-72 sm:w-80 overflow-hidden rounded-2xl border border-neon-cyan/35 bg-[#0b0b16]/95 p-3.5 text-white shadow-[0_16px_50px_rgba(0,0,0,0.85)] backdrop-blur-xl select-none font-sans">
+        <div className="fixed bottom-[8.5rem] md:bottom-28 right-3 md:right-6 z-50 w-72 sm:w-80 overflow-hidden rounded-2xl border border-neon-cyan/25 bg-[#0b0b16]/95 p-3.5 text-white shadow-[0_16px_50px_rgba(0,0,0,0.85),0_0_12px_-3px_rgba(0,240,255,0.2)] backdrop-blur-xl select-none font-sans">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">
               {activeTask.status === 'completed' ? (
@@ -570,11 +570,11 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
 
           <div className="mt-2.5 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
             <div
-              className={`h-full rounded-full bg-gradient-to-r from-neon-cyan via-sky-400 to-emerald-400 transition-all duration-300 ${
+              className={`shimmer-bar h-full rounded-full bg-gradient-to-r from-neon-cyan via-sky-400 to-emerald-400 transition-all duration-500 ease-out ${
                 activeTask.status === 'queued'
-                  ? 'w-1/3 animate-pulse'
+                  ? 'w-1/3'
                   : activeTask.status === 'downloading'
-                  ? 'w-3/4 animate-pulse'
+                  ? 'w-3/4'
                   : 'w-full'
               }`}
             />
@@ -653,7 +653,7 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
     });
 
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xl p-3 sm:p-4 select-none font-sans">
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-xl p-3 sm:p-4 select-none font-sans">
         <div className="relative w-full max-w-2xl overflow-hidden rounded-3xl border border-white/[0.08] bg-gradient-to-b from-[#141424]/95 via-[#0b0b14]/98 to-[#06060b] p-4 sm:p-6 text-white shadow-[0_24px_80px_rgba(0,0,0,0.9)]">
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(0,240,255,0.08),transparent_60%)]" />
 
@@ -716,7 +716,7 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
             <button
               type="submit"
               disabled={searching}
-              className="flex items-center gap-1.5 rounded-2xl bg-white px-4 sm:px-6 py-2.5 sm:py-3 text-xs font-bold text-black shadow-lg transition hover:bg-zinc-200 active:scale-95 disabled:opacity-50 cursor-pointer shrink-0"
+              className="flex items-center gap-1.5 rounded-2xl bg-white px-4 sm:px-6 py-2.5 sm:py-3 text-xs font-bold text-black shadow-lg shadow-white/10 transition-all duration-150 hover:bg-zinc-200 hover:shadow-[0_0_16px_rgba(255,255,255,0.2)] active:scale-95 active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.3)] disabled:opacity-50 cursor-pointer shrink-0 border border-white/20"
             >
               {searching ? (
                 <>
@@ -778,13 +778,13 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
                 <span className="text-zinc-400">{activeTask.statusText}</span>
               </p>
 
-              <div className="mt-2.5 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+              <div className="mt-2.5 h-2 w-full overflow-hidden rounded-full bg-white/10 shadow-inner">
                 <div
-                  className={`h-full rounded-full bg-gradient-to-r from-neon-cyan via-sky-400 to-emerald-400 transition-all duration-300 ${
+                  className={`shimmer-bar h-full rounded-full bg-gradient-to-r from-neon-cyan via-sky-400 to-emerald-400 transition-all duration-500 ease-out ${
                     activeTask.status === 'queued'
-                      ? 'w-1/3 animate-pulse'
+                      ? 'w-1/3'
                       : activeTask.status === 'downloading'
-                      ? 'w-3/4 animate-pulse'
+                      ? 'w-3/4'
                       : 'w-full'
                   }`}
                 />
@@ -818,7 +818,7 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
               </span>
               <button
                 onClick={() => enqueueBatchIngestTasks(unqueuedResults)}
-                className="flex items-center gap-1.5 shrink-0 rounded-xl border border-neon-cyan/30 bg-neon-cyan/10 px-3 py-1.5 text-[11px] font-semibold text-neon-cyan transition hover:bg-neon-cyan hover:text-black cursor-pointer"
+                className="flex items-center gap-1.5 shrink-0 rounded-xl border border-neon-cyan/30 bg-neon-cyan/10 px-3 py-1.5 text-[11px] font-semibold text-neon-cyan transition-all duration-200 hover:bg-neon-cyan hover:text-black hover:shadow-[0_0_16px_rgba(0,240,255,0.3)] active:scale-95 cursor-pointer"
               >
                 <ListPlus className="h-3.5 w-3.5" />
                 <span>Tải tất cả ({unqueuedResults.length})</span>
@@ -911,7 +911,7 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
                       className={`shrink-0 flex items-center gap-1.5 sm:gap-2 rounded-xl px-3 sm:px-4 py-2 sm:py-2.5 text-[11px] sm:text-xs font-semibold transition-all cursor-pointer ${
                         isDone
                           ? 'bg-emerald-500 text-black font-bold shadow-[0_0_20px_rgba(16,185,129,0.4)]'
-                          : 'border border-white/10 bg-white/[0.07] text-white hover:bg-white hover:text-black active:scale-95'
+                          : 'border border-white/10 bg-white/[0.07] text-white hover:bg-white hover:text-black hover:shadow-[0_0_16px_rgba(255,255,255,0.15)] active:scale-95 active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.3)]'
                       }`}
                     >
                       {isDone ? (

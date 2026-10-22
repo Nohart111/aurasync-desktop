@@ -215,12 +215,10 @@ export function ExploreTrendingSection() {
                         className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
                       />
                       {isPlayingThisPreview && (
-                        <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-[1px]">
-                          <div className="flex items-end gap-0.5 h-4 w-4 justify-center">
-                            <span className="h-full w-1 rounded-full bg-neon-cyan animate-pulse" />
-                            <span className="h-2/3 w-1 rounded-full bg-neon-cyan animate-pulse delay-75" />
-                            <span className="h-4/5 w-1 rounded-full bg-neon-cyan animate-pulse delay-150" />
-                          </div>
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/65 backdrop-blur-[1.5px]">
+                          <span className="eq-bars text-neon-cyan scale-125">
+                            <span /><span /><span />
+                          </span>
                         </div>
                       )}
                     </div>
@@ -270,7 +268,7 @@ export function ExploreTrendingSection() {
                     ) : isDownloading || isPending ? (
                       <button
                         onClick={() => cancelIngestTask(key)}
-                        className="inline-flex items-center gap-1.5 rounded-xl border border-neon-cyan/40 bg-neon-cyan/15 px-3 py-2 text-xs font-semibold text-neon-cyan transition hover:border-rose-500/40 hover:bg-rose-500/20 hover:text-rose-200 cursor-pointer"
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-neon-cyan/40 bg-neon-cyan/15 px-3 py-2 text-xs font-semibold text-neon-cyan transition hover:border-rose-500/40 hover:bg-rose-500/20 hover:text-rose-200 active:scale-95 cursor-pointer"
                         title="Bấm để hủy tải"
                       >
                         <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -279,7 +277,7 @@ export function ExploreTrendingSection() {
                     ) : (
                       <button
                         onClick={() => enqueueIngestTask(item)}
-                        className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.06] px-3.5 py-2 text-xs font-semibold text-zinc-200 transition hover:border-neon-cyan/50 hover:bg-neon-cyan hover:text-black active:scale-95 cursor-pointer"
+                        className="btn-cyberdeck inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-semibold text-zinc-200 hover:border-neon-cyan/50 hover:bg-neon-cyan hover:text-black active:scale-95 cursor-pointer"
                         title="Lưu bài hát này vào kho lưu trữ cá nhân"
                       >
                         <CloudDownload className="h-3.5 w-3.5 text-neon-cyan group-hover:text-current" />
@@ -297,7 +295,7 @@ export function ExploreTrendingSection() {
             <div className="flex justify-center pt-2">
               <button
                 onClick={() => setVisibleCount((prev) => prev + 16)}
-                className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-6 py-2.5 text-xs font-semibold text-zinc-300 transition hover:border-neon-cyan/40 hover:bg-neon-cyan/10 hover:text-neon-cyan active:scale-95 cursor-pointer"
+                className="btn-cyberdeck flex items-center gap-2 rounded-2xl px-6 py-2.5 text-xs font-semibold text-zinc-300 hover:border-neon-cyan/40 hover:bg-neon-cyan/10 hover:text-neon-cyan active:scale-95 cursor-pointer"
               >
                 <ChevronDown className="h-4 w-4 text-neon-cyan" />
                 <span>Xem thêm bài hát ({items.length - visibleCount} bài)</span>

@@ -1,7 +1,10 @@
-﻿import React from "react";
+import React from "react";
 import SidebarNav from "@/components/layout/SidebarNav";
 import FloatingPlayerBar from "@/components/player/FloatingPlayerBar";
 import AmbientBackground from "@/components/layout/AmbientBackground";
+import { KeyboardShortcutsHUD } from "@/components/player/KeyboardShortcutsHUD";
+import { FocusStudioModal } from "@/components/player/FocusStudioModal";
+import { RetroLyricsDrawer } from "@/components/player/RetroLyricsDrawer";
 
 export default function DesktopLayout({
   children,
@@ -16,6 +19,9 @@ export default function DesktopLayout({
         {children}
       </main>
       <FloatingPlayerBar />
+      <KeyboardShortcutsHUD />
+      <FocusStudioModal />
+      <RetroLyricsDrawer />
     </div>
   );
 }

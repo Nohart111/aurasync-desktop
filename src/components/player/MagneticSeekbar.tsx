@@ -83,6 +83,7 @@ export function MagneticSeekbar({
     if (duration <= 0) return;
     e.currentTarget.setPointerCapture(e.pointerId);
     isScrubbingRef.current = true;
+    setIsHovered(true);
     displayProgress.set(updatePointerPosition(e));
   };
 
@@ -95,6 +96,7 @@ export function MagneticSeekbar({
     if (!isScrubbingRef.current) return;
     const ratio = updatePointerPosition(e);
     isScrubbingRef.current = false;
+    setIsHovered(false);
     onSeek(ratio * duration);
     displayProgress.set(ratio);
     e.currentTarget.releasePointerCapture(e.pointerId);
@@ -102,6 +104,7 @@ export function MagneticSeekbar({
 
   const handlePointerCancel = () => {
     isScrubbingRef.current = false;
+    setIsHovered(false);
     displayProgress.set(progressMV.get());
   };
 
@@ -127,7 +130,7 @@ export function MagneticSeekbar({
         onPointerCancel={handlePointerCancel}
         className="relative flex h-full flex-1 items-center px-1"
       >
-        <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-white/10 transition-all duration-200 group-hover:h-2.5">
+        <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-white/[0.08] transition-all duration-300 ease-out group-hover:h-2.5 group-hover:bg-white/[0.12]">
           <motion.div
             style={{ scaleX, transformOrigin: "0% 50%" }}
             className="gpu-accelerated h-full w-full bg-gradient-to-r from-neon-violet via-neon-cyan to-emerald-400"
@@ -135,11 +138,11 @@ export function MagneticSeekbar({
         </div>
         <motion.div
           style={{ left: thumbLeft, opacity: glowOpacity }}
-          className="gpu-accelerated pointer-events-none absolute -ml-2 h-4 w-4 rounded-full bg-white shadow-neon-cyan ring-2 ring-neon-cyan"
+          className="gpu-accelerated pointer-events-none absolute -ml-2 h-4 w-4 rounded-full bg-white shadow-[0_0_12px_rgba(0,240,255,0.5)] ring-2 ring-neon-cyan transition-transform duration-150 group-hover:scale-125"
         />
         <motion.span
           style={{ left: tooltipLeft, opacity: glowOpacity }}
-          className="tabular-time pointer-events-none absolute bottom-full mb-1 -translate-x-1/2 rounded bg-obsidian-900 px-2 py-1 text-[11px] text-white shadow-neon-cyan"
+          className="tabular-time pointer-events-none absolute bottom-full mb-2 -translate-x-1/2 rounded-lg bg-obsidian-900 px-2.5 py-1 text-[11px] text-neon-cyan font-mono font-bold shadow-[0_4px_12px_rgba(0,0,0,0.6),0_0_8px_rgba(0,240,255,0.2)] border border-white/10"
         >
           {formatTime(previewSecond)}
         </motion.span>
