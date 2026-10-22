@@ -7,6 +7,34 @@
  *   background playback never gets muted when the OS suspends AudioContext in deep sleep
  * - Preloads next track at 70% progress so track transitions while screen is locked happen in 0ms
  */
+export interface EqBandConfig {
+  freq: number;
+  label: string;
+  type: BiquadFilterType;
+}
+
+export const EQ_BANDS: EqBandConfig[] = [
+  { freq: 32, label: '32Hz', type: 'lowshelf' },
+  { freq: 64, label: '64Hz', type: 'peaking' },
+  { freq: 125, label: '125Hz', type: 'peaking' },
+  { freq: 250, label: '250Hz', type: 'peaking' },
+  { freq: 500, label: '500Hz', type: 'peaking' },
+  { freq: 1000, label: '1kHz', type: 'peaking' },
+  { freq: 2000, label: '2kHz', type: 'peaking' },
+  { freq: 4000, label: '4kHz', type: 'peaking' },
+  { freq: 8000, label: '8kHz', type: 'peaking' },
+  { freq: 16000, label: '16kHz', type: 'highshelf' },
+];
+
+export const EQ_PRESETS: Record<string, number[]> = {
+  'Flat': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  'Bass Boost': [7, 6, 4, 1, 0, 0, 0, 1, 2, 3],
+  'Vocal': [-2, -1, 0, 1, 3, 4, 3, 1, 0, -1],
+  'Acoustic': [3, 2, 1, 0, 1, 2, 3, 4, 4, 3],
+  'Club / EDM': [6, 5, 3, 0, -1, 1, 2, 4, 5, 6],
+  'Warm Tape': [3, 2, 2, 1, 0, -1, -1, -2, -3, -4],
+};
+
 export class AudioEngine {
   private static instance: AudioEngine;
   private primaryAudio: HTMLAudioElement | null = null;
@@ -15,6 +43,10 @@ export class AudioEngine {
   private analyser: AnalyserNode | null = null;
   private gainNode: GainNode | null = null;
   private sourceNode: MediaElementAudioSourceNode | null = null;
+  private eqFilters: BiquadFilterNode[] = [];
+  private compressorNode: DynamicsCompressorNode | null = null;
+  private currentEqGains: number[] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+  private isEqBypassed: boolean = false;
   private frequencyData: Uint8Array = new Uint8Array(64);
 
   private currentUrl: string = '';
@@ -213,20 +245,87 @@ export class AudioEngine {
 
         this.sourceNode = this.audioCtx.createMediaElementSource(this.primaryAudio);
 
-        // Chuỗi phát âm thanh ra loa: Audio Element -> GainNode -> Speakers (Destination)
-        // Tuyệt đối không qua bộ lọc hay nén nào, bảo toàn 100% chất lượng âm thanh gốc!
-        this.sourceNode.connect(this.gainNode);
+        // 1. DÀN 10-BAND GRAPHIC EQUALIZER CHUẨN STUDIO MASTERING
+        this.eqFilters = EQ_BANDS.map((band, idx) => {
+          const filter = this.audioCtx!.createBiquadFilter();
+          filter.type = band.type;
+          filter.frequency.value = band.freq;
+          filter.Q.value = 1.4;
+          filter.gain.value = this.isEqBypassed ? 0 : (this.currentEqGains[idx] || 0);
+          return filter;
+        });
+
+        // 2. DYNAMICS COMPRESSOR / PEAK LIMITER:
+        // Chống 100% hiện tượng vỡ tiếng (clipping/distortion) khi người dùng boost bass mạnh hoặc nghe volume lớn
+        this.compressorNode = this.audioCtx.createDynamicsCompressor();
+        this.compressorNode.threshold.value = -1.0;
+        this.compressorNode.knee.value = 6;
+        this.compressorNode.ratio.value = 16;
+        this.compressorNode.attack.value = 0.003;
+        this.compressorNode.release.value = 0.15;
+
+        // Chuỗi phát âm thanh chuẩn phòng thu:
+        // Source -> Filter[0] -> Filter[1] -> ... -> Filter[9] -> Limiter Compressor -> GainNode -> Speakers
+        let prevNode: AudioNode = this.sourceNode;
+        for (const filter of this.eqFilters) {
+          prevNode.connect(filter);
+          prevNode = filter;
+        }
+        prevNode.connect(this.compressorNode);
+        this.compressorNode.connect(this.gainNode);
         this.gainNode.connect(this.audioCtx.destination);
 
-        // Nhánh cảm biến Analyser song song: Trích xuất tín hiệu gốc độc lập (Line-Level Tap)
-        // để đo đạc cho dàn đèn VU Meter & Spectrum mà không bị suy hao khi người dùng vặn nhỏ volume!
-        this.sourceNode.connect(this.analyser);
+        // Nhánh cảm biến Analyser song song: lấy tín hiệu sau compressor
+        // để dàn đèn VU Meter và Spectrum phản ánh chuẩn xác chất âm sau khi qua EQ
+        this.compressorNode.connect(this.analyser);
 
         (window as any).__AURASOUND_ANALYSER__ = this.analyser;
       }
 
       this.resumeContext();
     } catch {}
+  }
+
+  public setEqGain(bandIdx: number, gainDb: number): void {
+    if (bandIdx < 0 || bandIdx >= 10) return;
+    const safeGain = Math.max(-12, Math.min(12, gainDb));
+    this.currentEqGains[bandIdx] = safeGain;
+    if (this.eqFilters[bandIdx] && !this.isEqBypassed) {
+      if (this.audioCtx && this.audioCtx.state === 'running') {
+        this.eqFilters[bandIdx].gain.setTargetAtTime(safeGain, this.audioCtx.currentTime, 0.02);
+      } else {
+        this.eqFilters[bandIdx].gain.value = safeGain;
+      }
+    }
+  }
+
+  public setAllEqGains(gains: number[]): void {
+    if (!Array.isArray(gains)) return;
+    this.currentEqGains = gains.slice(0, 10).map((g) => Math.max(-12, Math.min(12, g)));
+    this.eqFilters.forEach((filter, idx) => {
+      const targetGain = this.isEqBypassed ? 0 : (this.currentEqGains[idx] || 0);
+      if (this.audioCtx && this.audioCtx.state === 'running') {
+        filter.gain.setTargetAtTime(targetGain, this.audioCtx.currentTime, 0.02);
+      } else {
+        filter.gain.value = targetGain;
+      }
+    });
+  }
+
+  public setEqBypassed(bypassed: boolean): void {
+    this.isEqBypassed = Boolean(bypassed);
+    this.eqFilters.forEach((filter, idx) => {
+      const targetGain = this.isEqBypassed ? 0 : (this.currentEqGains[idx] || 0);
+      if (this.audioCtx && this.audioCtx.state === 'running') {
+        filter.gain.setTargetAtTime(targetGain, this.audioCtx.currentTime, 0.02);
+      } else {
+        filter.gain.value = targetGain;
+      }
+    });
+  }
+
+  public getEqGains(): number[] {
+    return [...this.currentEqGains];
   }
 
   public async loadAndPlay(url: string, nonce?: number): Promise<void> {
@@ -351,6 +450,13 @@ export class AudioEngine {
       if (this.primaryAudio.ended) {
         this.primaryAudio.currentTime = 0;
       }
+      if (this.gainNode && this.audioCtx && this.audioCtx.state === 'running') {
+        const targetVol = Math.max(0.001, Math.min(1, this.primaryAudio.volume || 0.8));
+        try {
+          this.gainNode.gain.setValueAtTime(0.001, this.audioCtx.currentTime);
+          this.gainNode.gain.exponentialRampToValueAtTime(targetVol, this.audioCtx.currentTime + 0.035);
+        } catch {}
+      }
       await this.primaryAudio.play();
     } catch (err: any) {
       if (err?.name !== 'AbortError' && err?.name !== 'NotAllowedError') {
@@ -362,7 +468,23 @@ export class AudioEngine {
   public pause(): void {
     if (!this.primaryAudio) return;
     this.isLoading = false;
-    this.primaryAudio.pause();
+    if (this.gainNode && this.audioCtx && this.audioCtx.state === 'running' && !this.primaryAudio.paused) {
+      const currentVol = Math.max(0.001, this.primaryAudio.volume || 0.8);
+      try {
+        this.gainNode.gain.setValueAtTime(currentVol, this.audioCtx.currentTime);
+        this.gainNode.gain.exponentialRampToValueAtTime(0.0001, this.audioCtx.currentTime + 0.035);
+      } catch {}
+      setTimeout(() => {
+        this.primaryAudio?.pause();
+        if (this.gainNode && this.audioCtx) {
+          try {
+            this.gainNode.gain.setValueAtTime(currentVol, this.audioCtx.currentTime);
+          } catch {}
+        }
+      }, 40);
+    } else {
+      this.primaryAudio.pause();
+    }
   }
 
   public seek(seconds: number): void {

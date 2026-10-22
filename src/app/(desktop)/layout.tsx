@@ -4,7 +4,7 @@ import FloatingPlayerBar from "@/components/player/FloatingPlayerBar";
 import AmbientBackground from "@/components/layout/AmbientBackground";
 import { KeyboardShortcutsHUD } from "@/components/player/KeyboardShortcutsHUD";
 import { FocusStudioModal } from "@/components/player/FocusStudioModal";
-import { RetroLyricsDrawer } from "@/components/player/RetroLyricsDrawer";
+import { StudioEqualizerModal } from "@/components/player/StudioEqualizerModal";
 
 export default function DesktopLayout({
   children,
@@ -21,7 +21,7 @@ export default function DesktopLayout({
       <FloatingPlayerBar />
       <KeyboardShortcutsHUD />
       <FocusStudioModal />
-      <RetroLyricsDrawer />
+      <StudioEqualizerModal />
     </div>
   );
 }

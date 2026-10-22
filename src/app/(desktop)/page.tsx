@@ -33,6 +33,7 @@ import {
   ArrowUpDown,
   Maximize2,
   HelpCircle,
+  SlidersHorizontal,
   AlignLeft,
   Trash2,
 } from "lucide-react";
@@ -95,6 +96,8 @@ function StudioDynamicVuMeter({ isPlaying }: { isPlaying: boolean }) {
   // Headroom trần tối thiểu 125..160: Đảm bảo nhạc bình thường không bị đội tràn vào vùng Đỏ
   const peakEnergyRef = useRef<number>(125);
   const freqDataRef = useRef<Uint8Array>(new Uint8Array(64));
+  const lastActiveCountRef = useRef<number>(-1);
+  const lastDbTextRef = useRef<string>("");
 
   useEffect(() => {
     let phase = 0;
@@ -261,9 +264,9 @@ function StudioDynamicVuMeter({ isPlaying }: { isPlaying: boolean }) {
 
       const activeCount = isPlaying ? Math.max(1, Math.round(smoothedLevelRef.current)) : 0;
 
-      // CẬP NHẬT 24 BÓNG ĐÈN: LIỀN MẠCH KHÔNG ĐỨT NÉT (SOLID CONTINUOUS BAR)
-      // 12 XANH LÁ (0..11) | 6 VÀNG HỔ PHÁCH (12..17) | 6 ĐỎ PEAK (18..23)
-      if (containerRef.current) {
+      // CẬP NHẬT 24 BÓNG ĐÈN: CHỈ CHẠY KHI activeCount THỰC SỰ THAY ĐỔI (DIRTY-CHECKING 60FPS)
+      if (containerRef.current && (activeCount !== lastActiveCountRef.current || !isPlaying)) {
+        lastActiveCountRef.current = activeCount;
         const leds = containerRef.current.children;
         for (let i = 0; i < 24; i++) {
           const led = leds[i] as HTMLElement;
@@ -287,25 +290,31 @@ function StudioDynamicVuMeter({ isPlaying }: { isPlaying: boolean }) {
         }
       }
 
-      // DISPLAY dB VALUE: -42 dB TO +6 dB
+      // DISPLAY dB VALUE: -42 dB TO +6 dB (DIRTY CHECKED)
       if (dbTextRef.current) {
-        if (!isPlaying || activeCount === 0) {
-          dbTextRef.current.innerText = "-∞ dB";
-          dbTextRef.current.className = "text-zinc-500 font-semibold shrink-0 tabular-nums";
-        } else {
+        let newDbText = "-∞ dB";
+        let newDbClass = "text-zinc-500 font-semibold shrink-0 tabular-nums";
+
+        if (isPlaying && activeCount > 0) {
           let dbVal = Math.round((activeCount / 24) * 48 - 42);
           if (isNaN(dbVal) || !isFinite(dbVal)) dbVal = -42;
 
           if (activeCount >= 18) {
-            dbTextRef.current.innerText = `+${Math.max(1, dbVal)} dB PEAK`;
-            dbTextRef.current.className = "text-rose-400 font-bold shrink-0 tabular-nums";
+            newDbText = `+${Math.max(1, dbVal)} dB PEAK`;
+            newDbClass = "text-rose-400 font-bold shrink-0 tabular-nums";
           } else if (activeCount >= 12) {
-            dbTextRef.current.innerText = `${dbVal >= 0 ? "+" : ""}${dbVal} dB VU`;
-            dbTextRef.current.className = "text-amber-400 font-bold shrink-0 tabular-nums";
+            newDbText = `${dbVal >= 0 ? "+" : ""}${dbVal} dB VU`;
+            newDbClass = "text-amber-400 font-bold shrink-0 tabular-nums";
           } else {
-            dbTextRef.current.innerText = `${dbVal} dB`;
-            dbTextRef.current.className = "text-emerald-400 font-bold shrink-0 tabular-nums";
+            newDbText = `${dbVal} dB`;
+            newDbClass = "text-emerald-400 font-bold shrink-0 tabular-nums";
           }
+        }
+
+        if (newDbText !== lastDbTextRef.current) {
+          lastDbTextRef.current = newDbText;
+          dbTextRef.current.innerText = newDbText;
+          dbTextRef.current.className = newDbClass;
         }
       }
 
@@ -358,6 +367,35 @@ function StudioDynamicVuMeter({ isPlaying }: { isPlaying: boolean }) {
   );
 }
 
+function formatDuration(seconds?: number): string {
+  const s = Math.floor(seconds || 0);
+  const m = Math.floor(s / 60);
+  const rem = s % 60;
+  return `${m.toString().padStart(2, "0")}:${rem.toString().padStart(2, "0")}`;
+}
+
+/**
+ * Đồng hồ Cyberdeck độc lập: Cô lập re-render thời gian nghe khỏi toàn bộ trang catalog
+ */
+function CyberdeckClock() {
+  const { currentTime, actualDuration } = useAudioPlayer();
+  const isPlaying = usePlayerStore((s) => s.isPlaying);
+  const currentTrack = usePlayerStore((s) => s.currentTrack);
+
+  return (
+    <div className="flex items-center gap-1.5 shrink-0 font-mono text-[10px] sm:text-[11px] text-zinc-300 bg-white/[0.06] px-2 sm:px-2.5 py-1 rounded border border-white/10 shadow-inner">
+      <Clock className={`w-3 h-3 text-amber-400 ${isPlaying ? "animate-pulse" : ""}`} />
+      <span className="text-white font-bold tabular-nums">
+        {isPlaying && currentTrack ? formatDuration(currentTime) : "00:00"}
+      </span>
+      <span className="text-zinc-600">/</span>
+      <span className="text-zinc-400 tabular-nums">
+        {currentTrack ? formatDuration(actualDuration || currentTrack.duration) : "00:00"}
+      </span>
+    </div>
+  );
+}
+
 // ========================================================
 // TRANG CHỦ PHÒNG THU RETRO HI-FI
 // ========================================================
@@ -391,7 +429,8 @@ export default function RetroCyberDeckPage() {
     toggleSfx,
     toggleFocusMode,
     toggleShortcuts,
-    toggleLyrics,
+    isEqOpen,
+    toggleEq,
     createPlaylist,
     deletePlaylist,
     addTrackToPlaylist,
@@ -399,7 +438,6 @@ export default function RetroCyberDeckPage() {
     playPlaylist,
     toggleLikeTrack,
   } = usePlayerStore();
-  const { currentTime, actualDuration } = useAudioPlayer();
 
   useEffect(() => {
     async function loadTracks() {
@@ -619,13 +657,6 @@ export default function RetroCyberDeckPage() {
     }
   };
 
-  const formatDuration = (seconds?: number) => {
-    const s = Math.floor(seconds || 180);
-    const m = Math.floor(s / 60);
-    const rem = s % 60;
-    return `${m.toString().padStart(2, "0")}:${rem.toString().padStart(2, "0")}`;
-  };
-
   return (
     <div className="space-y-6 sm:space-y-8 pb-40 md:pb-24 select-none font-sans relative overflow-x-hidden">
       {/* THÔNG BÁO NỔI KHI TẢI XONG NHẠC TỪ CLOUD / MÁY TÍNH */}
@@ -746,16 +777,7 @@ export default function RetroCyberDeckPage() {
                   {currentTrack ? currentTrack.title : "Ready to Play"}
                 </span>
               </div>
-              <div className="flex items-center gap-1.5 shrink-0 font-mono text-[10px] sm:text-[11px] text-zinc-300 bg-white/[0.06] px-2 sm:px-2.5 py-1 rounded border border-white/10 shadow-inner">
-                <Clock className={`w-3 h-3 text-amber-400 ${isPlaying ? "animate-pulse" : ""}`} />
-                <span className="text-white font-bold tabular-nums">
-                  {isPlaying && currentTrack ? formatDuration(currentTime) : "00:00"}
-                </span>
-                <span className="text-zinc-600">/</span>
-                <span className="text-zinc-400 tabular-nums">
-                  {currentTrack ? formatDuration(actualDuration || currentTrack.duration) : "00:00"}
-                </span>
-              </div>
+              <CyberdeckClock />
             </div>
           </div>
 
@@ -789,13 +811,15 @@ export default function RetroCyberDeckPage() {
                 <button
                   onClick={() => {
                     playMechanicalSound('toggle');
-                    toggleLyrics();
+                    toggleEq();
                   }}
-                  className="btn-cyberdeck flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-mono text-zinc-200 hover:text-emerald-400 active:scale-95 cursor-pointer"
-                  title="VFD Lyrics"
+                  className={`btn-cyberdeck flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-mono text-zinc-200 hover:text-amber-400 active:scale-95 cursor-pointer ${
+                    isEqOpen ? 'border-amber-400/50 bg-amber-400/15 text-amber-300' : ''
+                  }`}
+                  title="Studio 10-Band Equalizer [E]"
                 >
-                  <AlignLeft className="h-3.5 w-3.5 text-emerald-400" />
-                  <span className="hidden sm:inline">Lyrics</span>
+                  <SlidersHorizontal className="h-3.5 w-3.5 text-amber-400" />
+                  <span className="hidden sm:inline">Equalizer</span>
                 </button>
 
                 <button

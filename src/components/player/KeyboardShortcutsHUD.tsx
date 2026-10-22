@@ -41,6 +41,7 @@ export function KeyboardShortcutsHUD() {
     toggleLikeTrack,
     toggleFocusMode,
     toggleShortcuts,
+    toggleEq,
     toggleSfx,
   } = usePlayerStore();
 
@@ -96,6 +97,16 @@ export function KeyboardShortcutsHUD() {
           e.preventDefault();
           playMechanicalSound('toggle');
           toggleFocusMode();
+          return;
+        }
+      }
+
+      // 3b. Phím 'E' hoặc 'e' -> Bật/tắt 10-Band Graphic Equalizer
+      if (e.key === 'e' || e.key === 'E') {
+        if (!e.metaKey && !e.ctrlKey) {
+          e.preventDefault();
+          playMechanicalSound('toggle');
+          toggleEq();
           return;
         }
       }
@@ -360,6 +371,13 @@ export function KeyboardShortcutsHUD() {
                 <span className="text-zinc-300">Focus Studio Mode</span>
                 <span className="font-mono text-[11px] font-bold text-neon-violet bg-white/10 border border-white/15 px-2 py-0.5 rounded-lg shadow-sm">
                   Z
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between rounded-xl border border-white/[0.05] bg-white/[0.02] p-2.5 px-3">
+                <span className="text-zinc-300">10-Band Graphic Equalizer</span>
+                <span className="font-mono text-[11px] font-bold text-amber-400 bg-white/10 border border-white/15 px-2 py-0.5 rounded-lg shadow-sm">
+                  E
                 </span>
               </div>
 

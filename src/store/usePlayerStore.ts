@@ -153,10 +153,19 @@ export interface PlayerState {
   isFocusMode: boolean;
   isShortcutsOpen: boolean;
   isLyricsOpen: boolean;
+  isEqOpen: boolean;
+  eqGains: number[];
+  eqPreset: string;
+  isEqBypassed: boolean;
   toggleSfx: () => void;
   toggleFocusMode: (val?: boolean) => void;
   toggleShortcuts: (val?: boolean) => void;
   toggleLyrics: (val?: boolean) => void;
+  toggleEq: (val?: boolean) => void;
+  setEqGain: (bandIdx: number, val: number) => void;
+  setEqPreset: (presetName: string, gains: number[]) => void;
+  toggleEqBypass: () => void;
+  resetEq: () => void;
 }
 
 export const usePlayerStore = create<PlayerState>()(
@@ -192,6 +201,10 @@ export const usePlayerStore = create<PlayerState>()(
       isFocusMode: false,
       isShortcutsOpen: false,
       isLyricsOpen: false,
+      isEqOpen: false,
+      eqGains: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      eqPreset: 'Flat',
+      isEqBypassed: false,
 
       toggleSfx: () => set((s) => ({ isSfxEnabled: !s.isSfxEnabled })),
       toggleFocusMode: (val?: boolean) =>
@@ -200,6 +213,25 @@ export const usePlayerStore = create<PlayerState>()(
         set((s) => ({ isShortcutsOpen: typeof val === 'boolean' ? val : !s.isShortcutsOpen })),
       toggleLyrics: (val?: boolean) =>
         set((s) => ({ isLyricsOpen: typeof val === 'boolean' ? val : !s.isLyricsOpen })),
+      toggleEq: (val?: boolean) =>
+        set((s) => ({ isEqOpen: typeof val === 'boolean' ? val : !s.isEqOpen })),
+      setEqGain: (bandIdx: number, val: number) =>
+        set((s) => {
+          const newGains = [...s.eqGains];
+          if (bandIdx >= 0 && bandIdx < newGains.length) {
+            newGains[bandIdx] = Math.max(-12, Math.min(12, val));
+          }
+          return { eqGains: newGains, eqPreset: 'Custom' };
+        }),
+      setEqPreset: (presetName: string, gains: number[]) =>
+        set({ eqPreset: presetName, eqGains: [...gains], isEqBypassed: false }),
+      toggleEqBypass: () => set((s) => ({ isEqBypassed: !s.isEqBypassed })),
+      resetEq: () =>
+        set({
+          eqGains: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+          eqPreset: 'Flat',
+          isEqBypassed: false,
+        }),
 
       toggleSidebar: (..._args: any[]) => set((s) => ({ isSidebarCollapsed: !s.isSidebarCollapsed })),
       setSidebarCollapsed: (collapsed?: any, ..._args: any[]) =>
@@ -829,6 +861,9 @@ export const usePlayerStore = create<PlayerState>()(
         likedTrackIds: state.likedTrackIds,
         streamCounts: state.streamCounts,
         isSfxEnabled: state.isSfxEnabled,
+        eqGains: state.eqGains,
+        eqPreset: state.eqPreset,
+        isEqBypassed: state.isEqBypassed,
       }),
     }
   )

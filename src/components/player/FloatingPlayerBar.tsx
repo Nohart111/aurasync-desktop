@@ -17,7 +17,7 @@ import {
   Library,
   CloudDownload,
   Radio,
-  AlignLeft,
+  SlidersHorizontal,
   Maximize2,
   HelpCircle,
 } from 'lucide-react';
@@ -163,8 +163,8 @@ export function FloatingPlayerBar() {
     queue,
     queueItems,
     isSidebarCollapsed,
-    isLyricsOpen,
-    toggleLyrics,
+    isEqOpen,
+    toggleEq,
     toggleFocusMode,
     toggleShortcuts,
     setVolume,
@@ -431,14 +431,14 @@ export function FloatingPlayerBar() {
                 <button
                   onClick={() => {
                     playMechanicalSound('toggle');
-                    toggleLyrics();
+                    toggleEq();
                   }}
                   className={`p-1.5 transition active:scale-90 ${
-                    isLyricsOpen ? 'text-amber-400' : 'text-zinc-400 hover:text-white'
+                    isEqOpen ? 'text-amber-400' : 'text-zinc-400 hover:text-white'
                   }`}
-                  title="Lời bài hát VFD"
+                  title="Studio Equalizer [E]"
                 >
-                  <AlignLeft className="w-4 h-4" />
+                  <SlidersHorizontal className="w-4 h-4" />
                 </button>
                 <button
                   onClick={() => setIsQueueOpen(!isQueueOpen)}
@@ -530,14 +530,14 @@ export function FloatingPlayerBar() {
               <button
                 onClick={() => {
                   playMechanicalSound('toggle');
-                  toggleLyrics();
+                  toggleEq();
                 }}
                 className={`p-1.5 transition active:scale-95 cursor-pointer ${
-                  isLyricsOpen ? 'text-amber-400' : 'text-zinc-400 hover:text-white'
+                  isEqOpen ? 'text-amber-400' : 'text-zinc-400 hover:text-white'
                 }`}
-                title="Lời bài hát VFD"
+                title="Studio Equalizer [E]"
               >
-                <AlignLeft className="w-5 h-5" />
+                <SlidersHorizontal className="w-5 h-5" />
               </button>
 
               <button
