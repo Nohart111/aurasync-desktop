@@ -383,6 +383,29 @@ export function useAudioPlayer() {
       state.setProgress(target);
       updateMediaSessionPosition(target, total);
     });
+
+    safeSetHandler('stop', () => {
+      stopYouTubePreview();
+      audioEngine.pause();
+      audioEngine.seek(0);
+      const state = usePlayerStore.getState();
+      state.setIsPlaying(false);
+      state.setProgress(0);
+      try {
+        navigator.mediaSession.playbackState = 'none';
+      } catch {}
+    });
+
+    return () => {
+      safeSetHandler('play', null);
+      safeSetHandler('pause', null);
+      safeSetHandler('previoustrack', null);
+      safeSetHandler('nexttrack', null);
+      safeSetHandler('seekto', null);
+      safeSetHandler('seekbackward', null);
+      safeSetHandler('seekforward', null);
+      safeSetHandler('stop', null);
+    };
   }, [currentTrack, isPlaying]);
 
   useEffect(() => {
