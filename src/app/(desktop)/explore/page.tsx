@@ -128,8 +128,8 @@ export function ExploreTrendingSection() {
                 }}
                 className={`rounded-full px-4 py-1.5 text-xs font-semibold transition-all cursor-pointer shrink-0 active:scale-95 ${
                   isActive
-                    ? 'bg-neon-cyan text-black shadow-[0_0_20px_rgba(0,240,255,0.35)] font-bold'
-                    : 'border border-white/[0.08] bg-white/[0.03] text-zinc-400 hover:border-white/20 hover:bg-white/[0.07] hover:text-white'
+                    ? 'bg-white text-black shadow-md shadow-white/10 font-bold'
+                    : 'border border-white/[0.08] bg-white/[0.03] text-zinc-300 hover:border-white/20 hover:bg-white/[0.07] hover:text-white'
                 }`}
               >
                 {cat.label}
@@ -139,7 +139,7 @@ export function ExploreTrendingSection() {
         </div>
 
         <span className="hidden sm:inline-flex items-center gap-1.5 font-mono text-[11px] text-zinc-500">
-          <Volume2 className="h-3.5 w-3.5 text-neon-cyan" />
+          <Volume2 className="h-3.5 w-3.5 text-amber-400" />
           <span>Chạm vào bài hát để nghe thử ngay (~1s)</span>
         </span>
       </div>
@@ -200,7 +200,7 @@ export function ExploreTrendingSection() {
                   }}
                   className={`group relative flex items-center justify-between gap-3 rounded-2xl p-3 sm:p-3.5 transition-all duration-200 cursor-pointer border ${
                     isPreviewingThis
-                      ? 'border-neon-cyan/50 bg-gradient-to-r from-neon-cyan/15 via-[#121222] to-[#0a0a14] shadow-[0_4px_24px_rgba(0,240,255,0.12)]'
+                      ? 'border-white/25 bg-white/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.6)]'
                       : 'border-white/[0.06] bg-[#0c0c16]/70 hover:border-white/15 hover:bg-white/[0.04]'
                   }`}
                 >
@@ -223,7 +223,7 @@ export function ExploreTrendingSection() {
                       />
                       {isPlayingThisPreview && (
                         <div className="absolute inset-0 flex items-center justify-center bg-black/65 backdrop-blur-[1.5px]">
-                          <span className="eq-bars text-neon-cyan scale-125">
+                          <span className="eq-bars text-amber-400 scale-125">
                             <span /><span /><span />
                           </span>
                         </div>
@@ -278,7 +278,7 @@ export function ExploreTrendingSection() {
                           playMechanicalSound('toggle');
                           cancelIngestTask(key);
                         }}
-                        className="inline-flex items-center gap-1.5 rounded-xl border border-neon-cyan/40 bg-neon-cyan/15 px-3 py-2 text-xs font-semibold text-neon-cyan transition hover:border-rose-500/40 hover:bg-rose-500/20 hover:text-rose-200 active:scale-95 cursor-pointer"
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-xs font-semibold text-zinc-200 transition hover:border-rose-500/40 hover:bg-rose-500/20 hover:text-rose-200 active:scale-95 cursor-pointer"
                         title="Bấm để hủy tải"
                       >
                         <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -290,10 +290,10 @@ export function ExploreTrendingSection() {
                           playMechanicalSound('beep');
                           enqueueIngestTask(item);
                         }}
-                        className="btn-cyberdeck inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-semibold text-zinc-200 hover:border-neon-cyan/50 hover:bg-neon-cyan hover:text-black active:scale-95 cursor-pointer"
+                        className="btn-cyberdeck inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-semibold text-zinc-200 hover:border-white/30 hover:bg-white hover:text-black active:scale-95 cursor-pointer"
                         title="Lưu bài hát này vào kho lưu trữ cá nhân"
                       >
-                        <CloudDownload className="h-3.5 w-3.5 text-neon-cyan group-hover:text-current" />
+                        <CloudDownload className="h-3.5 w-3.5 text-zinc-300 group-hover:text-black" />
                         <span>Lưu kho</span>
                       </button>
                     )}
@@ -311,9 +311,9 @@ export function ExploreTrendingSection() {
                   playMechanicalSound('switch');
                   setVisibleCount((prev) => prev + 16);
                 }}
-                className="btn-cyberdeck flex items-center gap-2 rounded-2xl px-6 py-2.5 text-xs font-semibold text-zinc-300 hover:border-neon-cyan/40 hover:bg-neon-cyan/10 hover:text-neon-cyan active:scale-95 cursor-pointer"
+                className="btn-cyberdeck flex items-center gap-2 rounded-2xl px-6 py-2.5 text-xs font-semibold text-zinc-300 hover:border-white/25 hover:bg-white/[0.08] hover:text-white active:scale-95 cursor-pointer"
               >
-                <ChevronDown className="h-4 w-4 text-neon-cyan" />
+                <ChevronDown className="h-4 w-4 text-zinc-300" />
                 <span>Xem thêm bài hát ({items.length - visibleCount} bài)</span>
               </button>
             </div>

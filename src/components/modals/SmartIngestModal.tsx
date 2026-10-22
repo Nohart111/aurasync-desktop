@@ -523,15 +523,15 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
   const renderContent = () => {
     if ((!effectiveOpen || isMinimized) && hasRunningTasks && activeTask) {
       return (
-        <div className="fixed bottom-[8.5rem] md:bottom-28 right-3 md:right-6 z-50 w-72 sm:w-80 overflow-hidden rounded-2xl border border-neon-cyan/25 bg-[#0b0b16]/95 p-3.5 text-white shadow-[0_16px_50px_rgba(0,0,0,0.85),0_0_12px_-3px_rgba(0,240,255,0.2)] backdrop-blur-xl select-none font-sans">
+        <div className="fixed bottom-[8.5rem] md:bottom-28 right-3 md:right-6 z-50 w-72 sm:w-80 overflow-hidden rounded-2xl border border-white/15 bg-[#0b0b16]/95 p-3.5 text-white shadow-[0_16px_50px_rgba(0,0,0,0.85)] backdrop-blur-xl select-none font-sans">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">
               {activeTask.status === 'completed' ? (
                 <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
               ) : (
-                <Loader2 className="h-4 w-4 shrink-0 animate-spin text-neon-cyan" />
+                <Loader2 className="h-4 w-4 shrink-0 animate-spin text-amber-400" />
               )}
-              <span className="truncate text-xs font-bold text-neon-cyan">
+              <span className="truncate text-xs font-bold text-white">
                 {activeTask.status === 'completed'
                   ? 'Đã lưu vào kho!'
                   : `Đang tải ngầm${tasks.length > 1 ? ` (còn ${tasks.length} bài)` : ''}`}
@@ -570,7 +570,7 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
 
           <div className="mt-2.5 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
             <div
-              className={`shimmer-bar h-full rounded-full bg-gradient-to-r from-neon-cyan via-sky-400 to-emerald-400 transition-all duration-500 ease-out ${
+              className={`shimmer-bar h-full rounded-full bg-gradient-to-r from-amber-500 via-amber-400 to-emerald-400 transition-all duration-500 ease-out ${
                 activeTask.status === 'queued'
                   ? 'w-1/3'
                   : activeTask.status === 'downloading'
@@ -659,7 +659,7 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
 
           <div className="relative z-10 flex items-center justify-between border-b border-white/[0.08] pb-3.5 sm:pb-4">
             <div className="flex items-center gap-3 min-w-0">
-              <div className="flex h-10 w-10 sm:h-11 sm:w-11 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] text-neon-cyan shadow-inner">
+              <div className="flex h-10 w-10 sm:h-11 sm:w-11 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] text-zinc-300 shadow-inner">
                 <CloudDownload className="h-5 w-5" />
               </div>
               <div className="min-w-0">
@@ -667,7 +667,7 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
                   <h2 className="truncate text-sm sm:text-base font-bold tracking-tight text-white">
                     Nạp nhạc từ Cloud
                   </h2>
-                  <span className="shrink-0 rounded-full border border-neon-cyan/30 bg-neon-cyan/10 px-2 py-0.5 font-mono text-[10px] font-semibold text-neon-cyan">
+                  <span className="shrink-0 rounded-full border border-white/20 bg-white/10 px-2 py-0.5 font-mono text-[10px] font-semibold text-zinc-300">
                     GITHUB CDN
                   </span>
                 </div>
@@ -681,7 +681,7 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
               {hasRunningTasks && (
                 <button
                   onClick={() => setIsMinimized(true)}
-                  className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.04] px-2.5 sm:px-3 py-2 text-xs font-medium text-zinc-300 transition hover:border-neon-cyan/40 hover:bg-neon-cyan/10 hover:text-neon-cyan cursor-pointer"
+                  className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.04] px-2.5 sm:px-3 py-2 text-xs font-medium text-zinc-300 transition hover:border-white/30 hover:bg-white/10 hover:text-white cursor-pointer"
                   title="Thu nhỏ xuống góc màn hình để vừa tải ngầm vừa nghe nhạc"
                 >
                   <Minimize2 className="h-3.5 w-3.5" />
@@ -701,7 +701,7 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
           <form onSubmit={handleSearch} className="relative z-10 mt-4 sm:mt-5 flex items-center gap-2">
             <div className="relative flex-1">
               {isUrl(query) ? (
-                <Globe className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-neon-cyan" />
+                <Globe className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-amber-400" />
               ) : (
                 <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
               )}
@@ -710,7 +710,7 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Nhập tên bài hát, nghệ sĩ hoặc dán link YouTube..."
-                className="w-full rounded-2xl border border-white/10 bg-white/[0.04] pl-10 pr-3 py-2.5 sm:py-3 text-xs sm:text-sm text-white placeholder-zinc-500 transition focus:border-neon-cyan/50 focus:bg-white/[0.06] focus:outline-none"
+                className="w-full rounded-2xl border border-white/10 bg-white/[0.04] pl-10 pr-3 py-2.5 sm:py-3 text-xs sm:text-sm text-white placeholder-zinc-500 transition focus:border-white/40 focus:bg-white/[0.06] focus:outline-none"
               />
             </div>
             <button
@@ -730,13 +730,13 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
           </form>
 
           {activeTask && (
-            <div className="relative z-10 mt-3.5 sm:mt-4 overflow-hidden rounded-2xl border border-neon-cyan/30 bg-[#09151d]/90 p-3.5 sm:p-4 shadow-inner">
+            <div className="relative z-10 mt-3.5 sm:mt-4 overflow-hidden rounded-2xl border border-white/15 bg-black/60 p-3.5 sm:p-4 shadow-inner">
               <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                <div className="flex items-center gap-2 font-semibold text-neon-cyan min-w-0">
+                <div className="flex items-center gap-2 font-semibold text-white min-w-0">
                   {activeTask.status === 'completed' ? (
                     <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
                   ) : (
-                    <Loader2 className="h-4 w-4 animate-spin text-neon-cyan shrink-0" />
+                    <Loader2 className="h-4 w-4 animate-spin text-amber-400 shrink-0" />
                   )}
                   <span className="truncate">
                     {activeTask.status === 'queued' && 'ĐANG KHỞI TẠO (QUEUED)'}
@@ -780,7 +780,7 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
 
               <div className="mt-2.5 h-2 w-full overflow-hidden rounded-full bg-white/10 shadow-inner">
                 <div
-                  className={`shimmer-bar h-full rounded-full bg-gradient-to-r from-neon-cyan via-sky-400 to-emerald-400 transition-all duration-500 ease-out ${
+                  className={`shimmer-bar h-full rounded-full bg-gradient-to-r from-amber-500 via-amber-400 to-emerald-400 transition-all duration-500 ease-out ${
                     activeTask.status === 'queued'
                       ? 'w-1/3'
                       : activeTask.status === 'downloading'
@@ -818,7 +818,7 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
               </span>
               <button
                 onClick={() => enqueueBatchIngestTasks(unqueuedResults)}
-                className="flex items-center gap-1.5 shrink-0 rounded-xl border border-neon-cyan/30 bg-neon-cyan/10 px-3 py-1.5 text-[11px] font-semibold text-neon-cyan transition-all duration-200 hover:bg-neon-cyan hover:text-black hover:shadow-[0_0_16px_rgba(0,240,255,0.3)] active:scale-95 cursor-pointer"
+                className="flex items-center gap-1.5 shrink-0 rounded-xl border border-white/20 bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-white transition-all duration-200 hover:bg-white hover:text-black hover:shadow-md active:scale-95 cursor-pointer"
               >
                 <ListPlus className="h-3.5 w-3.5" />
                 <span>Tải tất cả ({unqueuedResults.length})</span>
@@ -854,7 +854,7 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
                   key={itemKey}
                   className={`group flex items-center justify-between gap-2.5 sm:gap-4 rounded-2xl border p-2.5 sm:p-3 transition-all ${
                     isIngesting
-                      ? 'border-neon-cyan/40 bg-neon-cyan/[0.06]'
+                      ? 'border-amber-400/40 bg-amber-400/[0.06]'
                       : isPending
                       ? 'border-amber-400/30 bg-amber-400/[0.05]'
                       : isDone
@@ -870,13 +870,13 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
                         className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
                       />
                       <span className="absolute bottom-1 right-1 flex items-center gap-1 rounded bg-black/80 px-1.5 py-0.5 font-mono text-[9px] sm:text-[10px] font-medium text-zinc-200 backdrop-blur-sm">
-                        <Clock className="h-2.5 w-2.5 text-neon-cyan" />
+                        <Clock className="h-2.5 w-2.5 text-amber-400" />
                         {item.durationFormatted || formatTime(item.duration)}
                       </span>
                     </div>
 
                     <div className="min-w-0">
-                      <h4 className="truncate text-xs sm:text-sm font-semibold text-white group-hover:text-neon-cyan transition-colors">
+                      <h4 className="truncate text-xs sm:text-sm font-semibold text-white group-hover:text-zinc-200 transition-colors">
                         {item.title}
                       </h4>
                       <p className="mt-0.5 truncate text-[11px] sm:text-xs text-zinc-400">
@@ -890,7 +890,7 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
                       <span
                         className={`flex items-center gap-1.5 rounded-xl px-2.5 sm:px-3 py-2 text-[11px] sm:text-xs font-semibold ${
                           isIngesting
-                            ? 'border border-neon-cyan/40 bg-neon-cyan/15 text-neon-cyan'
+                            ? 'border border-amber-400/40 bg-amber-400/15 text-amber-300'
                             : 'border border-amber-400/30 bg-amber-400/10 text-amber-300'
                         }`}
                       >
@@ -921,7 +921,7 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
                         </>
                       ) : (
                         <>
-                          <Sparkles className="h-3.5 w-3.5 text-neon-cyan group-hover:text-black transition-colors" />
+                          <Sparkles className="h-3.5 w-3.5 text-amber-400 group-hover:text-black transition-colors" />
                           <span>{hasRunningTasks ? 'Thêm hàng đợi' : 'Tải về Kho'}</span>
                         </>
                       )}

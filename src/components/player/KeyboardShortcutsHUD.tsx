@@ -242,11 +242,11 @@ export function KeyboardShortcutsHUD() {
     <>
       {/* 1. FLOATING VOLUME HUD KHI TĂNG/GIẢM BẰNG PHÍM MŨI TÊN */}
       {volumeNotice && (
-        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 rounded-2xl border border-white/10 bg-[#0c0c18]/95 px-4 py-2 shadow-[0_16px_40px_rgba(0,0,0,0.85),0_0_12px_rgba(0,240,255,0.25)] backdrop-blur-xl toast-enter select-none font-sans">
+        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 rounded-2xl border border-white/15 bg-[#0c0c18]/95 px-4 py-2 shadow-[0_16px_40px_rgba(0,0,0,0.85)] backdrop-blur-xl toast-enter select-none font-sans">
           {volumeNotice.volume === 0 ? (
             <VolumeX className="h-4 w-4 text-rose-400" />
           ) : (
-            <Volume2 className="h-4 w-4 text-neon-cyan" />
+            <Volume2 className="h-4 w-4 text-amber-400" />
           )}
           <div className="flex items-center gap-2">
             <span className="font-mono text-xs font-bold text-white tabular-nums w-10">
@@ -254,7 +254,7 @@ export function KeyboardShortcutsHUD() {
             </span>
             <div className="w-24 h-1.5 rounded-full bg-white/10 overflow-hidden">
               <div
-                className="h-full bg-gradient-to-r from-neon-violet via-neon-cyan to-emerald-400 rounded-full transition-all duration-100"
+                className="h-full bg-gradient-to-r from-amber-500 via-amber-400 to-emerald-400 rounded-full transition-all duration-100"
                 style={{ width: `${Math.round(volumeNotice.volume * 100)}%` }}
               />
             </div>

@@ -185,7 +185,7 @@ export function SidebarNav({ onViewChange, onFileUpload }: SidebarNavProps) {
           <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center' : 'justify-between px-1'}`}>
             {!isSidebarCollapsed && (
               <div className="flex items-center gap-2.5">
-                <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-neon-cyan shrink-0 shadow-[0_0_12px_rgba(0,240,255,0.2)]">
+                <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-amber-400 shrink-0 shadow-inner">
                   <Disc3 className="h-4 w-4" />
                 </div>
                 <div className="flex items-center gap-1.5">
@@ -227,7 +227,7 @@ export function SidebarNav({ onViewChange, onFileUpload }: SidebarNavProps) {
                   : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.04]'
               }`}
             >
-              <Radio className={`h-4 w-4 shrink-0 ${activeView === 'vault' ? 'text-neon-cyan' : 'text-zinc-400'}`} />
+              <Radio className={`h-4 w-4 shrink-0 ${activeView === 'vault' ? 'text-amber-400' : 'text-zinc-400'}`} />
               {!isSidebarCollapsed && <span>Bàn phát nhạc</span>}
             </button>
 
@@ -243,7 +243,7 @@ export function SidebarNav({ onViewChange, onFileUpload }: SidebarNavProps) {
                   : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.04]'
               }`}
             >
-              <Compass className={`h-4 w-4 shrink-0 ${activeView === 'explore' ? 'text-neon-cyan' : 'text-zinc-400'}`} />
+              <Compass className={`h-4 w-4 shrink-0 ${activeView === 'explore' ? 'text-amber-400' : 'text-zinc-400'}`} />
               {!isSidebarCollapsed && <span>Khám phá</span>}
             </button>
 
@@ -309,12 +309,12 @@ export function SidebarNav({ onViewChange, onFileUpload }: SidebarNavProps) {
                     onChange={(e) => setQuickName(e.target.value)}
                     placeholder="Tên playlist mới..."
                     autoFocus
-                    className="w-full px-2.5 py-1.5 rounded-lg border border-neon-cyan/40 bg-black/60 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-neon-cyan shadow-[0_0_12px_rgba(0,240,255,0.15)] font-mono"
+                    className="w-full px-2.5 py-1.5 rounded-lg border border-white/20 bg-black/60 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-white/50 shadow-sm font-mono"
                   />
                   <button
                     type="submit"
                     disabled={!quickName.trim()}
-                    className="p-1.5 rounded-lg bg-neon-cyan text-black hover:opacity-90 disabled:opacity-40 shrink-0 cursor-pointer transition active:scale-95"
+                    className="p-1.5 rounded-lg bg-white text-black hover:bg-zinc-200 disabled:opacity-40 shrink-0 cursor-pointer transition active:scale-95"
                   >
                     <Check className="h-3.5 w-3.5" />
                   </button>
@@ -395,7 +395,7 @@ export function SidebarNav({ onViewChange, onFileUpload }: SidebarNavProps) {
                 isSidebarCollapsed ? 'justify-center px-0 py-3' : 'gap-2.5 px-3.5 py-2.5'
               } rounded-xl text-xs font-mono font-medium transition-all text-zinc-200 hover:text-white cursor-pointer`}
             >
-              <CloudDownload className="h-4 w-4 text-neon-cyan shrink-0" />
+              <CloudDownload className="h-4 w-4 text-amber-400 shrink-0" />
               {!isSidebarCollapsed && <span>Tải nhạc YouTube</span>}
             </button>
 
@@ -406,7 +406,7 @@ export function SidebarNav({ onViewChange, onFileUpload }: SidebarNavProps) {
               } rounded-xl text-xs font-mono font-medium transition-all text-zinc-400 hover:text-zinc-200 cursor-pointer`}
             >
               {isUploadingLocal ? (
-                <Loader2 className="h-4 w-4 animate-spin text-neon-cyan shrink-0" />
+                <Loader2 className="h-4 w-4 animate-spin text-amber-400 shrink-0" />
               ) : (
                 <Upload className="h-4 w-4 text-zinc-400 shrink-0" />
               )}

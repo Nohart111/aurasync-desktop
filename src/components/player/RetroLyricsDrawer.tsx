@@ -99,12 +99,12 @@ export function RetroLyricsDrawer() {
           animate={{ x: 0, opacity: 1 }}
           exit={{ x: '100%', opacity: 0 }}
           transition={{ type: 'spring', stiffness: 340, damping: 30, mass: 0.8 }}
-          className="fixed left-3 right-3 sm:left-auto sm:right-4 top-4 bottom-[8.5rem] md:bottom-28 z-50 flex w-auto sm:w-[26rem] flex-col rounded-3xl border border-white/10 bg-[#070712]/98 p-4 sm:p-5 shadow-[0_24px_64px_rgba(0,0,0,0.85),0_0_16px_rgba(0,240,255,0.15)] backdrop-blur-2xl select-none font-sans"
+          className="fixed left-3 right-3 sm:left-auto sm:right-4 top-4 bottom-[8.5rem] md:bottom-28 z-50 flex w-auto sm:w-[26rem] flex-col rounded-3xl border border-white/10 bg-[#070712]/98 p-4 sm:p-5 shadow-[0_24px_64px_rgba(0,0,0,0.85)] backdrop-blur-2xl select-none font-sans"
         >
           {/* Header */}
           <div className="flex items-center justify-between border-b border-white/10 pb-3">
             <div className="flex items-center gap-2.5">
-              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-neon-cyan/15 border border-neon-cyan/30 text-neon-cyan">
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/[0.06] border border-white/15 text-zinc-300">
                 <AlignLeft className="h-4 w-4" />
               </div>
               <div>
@@ -161,7 +161,7 @@ export function RetroLyricsDrawer() {
                     ref={isActive ? activeLineRef : null}
                     className={`transition-all duration-300 font-display ${
                       isActive
-                        ? 'text-neon-cyan font-bold text-sm sm:text-base scale-105 drop-shadow-[0_0_12px_rgba(0,240,255,0.65)]'
+                        ? 'text-amber-300 font-bold text-sm sm:text-base scale-105 drop-shadow-[0_0_12px_rgba(245,158,11,0.6)]'
                         : Math.abs(idx - activeIndex) <= 2
                         ? 'text-zinc-300/80 text-xs sm:text-sm'
                         : 'text-zinc-600/40 text-xs'
@@ -176,8 +176,8 @@ export function RetroLyricsDrawer() {
 
           {/* Footer Phosphor Indicator */}
           <div className="pt-3 border-t border-white/10 flex items-center justify-between text-[10px] font-mono text-zinc-500">
-            <span className="flex items-center gap-1 text-neon-cyan">
-              <Sparkles className="h-3 w-3" />
+            <span className="flex items-center gap-1 text-amber-400">
+              <Sparkles className="h-3 w-3 text-amber-400" />
               <span>VFD FLUORESCENT MATRIX</span>
             </span>
             <span>AUTO_SCROLL: ON</span>

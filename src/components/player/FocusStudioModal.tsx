@@ -287,17 +287,17 @@ export function FocusStudioModal() {
   const content = (
     <div className="fixed inset-0 z-50 flex flex-col justify-between bg-[#050508] p-4 sm:p-8 select-none font-sans overflow-hidden">
       {/* Dynamic Ambient Background Glow */}
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(168,85,247,0.12),transparent_65%)]" />
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_bottom,rgba(0,240,255,0.08),transparent_60%)]" />
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(245,158,11,0.06),transparent_65%)]" />
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_bottom,rgba(0,0,0,0.8),transparent_60%)]" />
 
       {/* Top Bar: Cyberdeck Title & Exit Button */}
       <header className="relative z-10 flex items-center justify-between border-b border-white/[0.08] pb-3.5 sm:pb-4">
         <div className="flex items-center gap-2.5">
-          <Radio className="h-4 w-4 text-neon-cyan animate-pulse" />
+          <Radio className="h-4 w-4 text-amber-400 animate-pulse" />
           <span className="font-mono text-xs font-bold text-white tracking-widest uppercase">
             STUDIO_FOCUS // IMMERSIVE DECK
           </span>
-          <span className="hidden sm:inline-block rounded bg-neon-cyan/15 border border-neon-cyan/30 px-2 py-0.5 text-[10px] font-mono text-neon-cyan font-bold">
+          <span className="hidden sm:inline-block rounded bg-white/10 border border-white/20 px-2 py-0.5 text-[10px] font-mono text-zinc-200 font-bold">
             MASTER HI-FI
           </span>
         </div>
@@ -309,7 +309,7 @@ export function FocusStudioModal() {
           }}
           className="btn-cyberdeck flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-mono font-bold text-zinc-200 hover:text-white cursor-pointer"
         >
-          <Minimize2 className="h-4 w-4 text-neon-cyan" />
+          <Minimize2 className="h-4 w-4 text-zinc-300" />
           <span>THOÁT FOCUS [ESC]</span>
         </button>
       </header>
@@ -320,7 +320,7 @@ export function FocusStudioModal() {
           {/* Ambient Glow Disk Behind Vinyl */}
           <div
             className={`absolute h-72 w-72 sm:h-96 sm:w-96 rounded-full blur-3xl transition-opacity duration-1000 pointer-events-none ${
-              isPlaying ? 'opacity-40 bg-gradient-to-tr from-neon-violet via-neon-cyan to-emerald-400' : 'opacity-10 bg-white/5'
+              isPlaying ? 'opacity-30 bg-gradient-to-tr from-amber-600/30 via-amber-400/20 to-transparent' : 'opacity-10 bg-white/5'
             }`}
           />
 
@@ -335,7 +335,7 @@ export function FocusStudioModal() {
             {/* Spinning Grooves Layer */}
             <Disc3
               className={`h-full w-full p-4 animate-spin transition-colors duration-500 ${
-                isPlaying ? 'text-neon-cyan/45' : 'text-zinc-700/60'
+                isPlaying ? 'text-amber-400/35' : 'text-zinc-700/60'
               }`}
               style={{
                 animationDuration: '4s',
@@ -355,7 +355,7 @@ export function FocusStudioModal() {
                 />
               ) : (
                 <div className="flex flex-col items-center justify-center text-center p-2">
-                  <Radio className="h-6 w-6 text-neon-cyan mb-1" />
+                  <Radio className="h-6 w-6 text-amber-400 mb-1" />
                   <span className="font-mono text-[9px] font-bold text-zinc-400">AURASYNC</span>
                 </div>
               )}
@@ -462,7 +462,7 @@ export function FocusStudioModal() {
       <footer className="crt-screen overflow-hidden relative z-10 w-full max-w-3xl mx-auto rounded-2xl border border-white/[0.08] bg-black/50 p-3 sm:p-4 backdrop-blur-md shadow-inner">
         <div className="flex items-center justify-between text-[10px] font-mono mb-1.5">
           <div className="flex items-center gap-2">
-            <span className="text-neon-cyan font-bold tracking-wider">VU MASTER</span>
+            <span className="text-zinc-300 font-bold tracking-wider">VU MASTER</span>
             <span className="text-zinc-600">•</span>
             <span className="text-zinc-400 font-medium">-42 to +6 dB</span>
           </div>

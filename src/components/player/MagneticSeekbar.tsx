@@ -133,16 +133,16 @@ export function MagneticSeekbar({
         <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-white/[0.08] transition-all duration-300 ease-out group-hover:h-2.5 group-hover:bg-white/[0.12]">
           <motion.div
             style={{ scaleX, transformOrigin: "0% 50%" }}
-            className="gpu-accelerated h-full w-full bg-gradient-to-r from-neon-violet via-neon-cyan to-emerald-400"
+            className="gpu-accelerated h-full w-full bg-gradient-to-r from-amber-500 via-amber-400 to-emerald-400"
           />
         </div>
         <motion.div
           style={{ left: thumbLeft, opacity: glowOpacity }}
-          className="gpu-accelerated pointer-events-none absolute -ml-2 h-4 w-4 rounded-full bg-white shadow-[0_0_12px_rgba(0,240,255,0.5)] ring-2 ring-neon-cyan transition-transform duration-150 group-hover:scale-125"
+          className="gpu-accelerated pointer-events-none absolute -ml-2 h-4 w-4 rounded-full bg-white shadow-[0_0_12px_rgba(255,255,255,0.6)] ring-2 ring-white/80 transition-transform duration-150 group-hover:scale-125"
         />
         <motion.span
           style={{ left: tooltipLeft, opacity: glowOpacity }}
-          className="tabular-time pointer-events-none absolute bottom-full mb-2 -translate-x-1/2 rounded-lg bg-obsidian-900 px-2.5 py-1 text-[11px] text-neon-cyan font-mono font-bold shadow-[0_4px_12px_rgba(0,0,0,0.6),0_0_8px_rgba(0,240,255,0.2)] border border-white/10"
+          className="tabular-time pointer-events-none absolute bottom-full mb-2 -translate-x-1/2 rounded-lg bg-obsidian-900 px-2.5 py-1 text-[11px] text-white font-mono font-bold shadow-[0_4px_12px_rgba(0,0,0,0.6)] border border-white/15"
         >
           {formatTime(previewSecond)}
         </motion.span>

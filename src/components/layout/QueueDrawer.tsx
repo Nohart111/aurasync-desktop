@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { AnimatePresence, motion } from "framer-motion";
 import { ListMusic, Trash2, X, GripVertical } from "lucide-react";
@@ -33,7 +33,7 @@ export function QueueDrawer({ isOpen, onClose }: QueueDrawerProps) {
         >
           <div className="flex items-center justify-between border-b border-white/10 pb-4">
             <div className="flex items-center gap-2.5">
-              <ListMusic className="h-5 w-5 text-neon-cyan" />
+              <ListMusic className="h-5 w-5 text-amber-400" />
               <h2 className="font-mono text-sm font-bold tracking-tight text-white uppercase">
                 Hàng đợi phát ({list.length})
               </h2>
@@ -63,7 +63,7 @@ export function QueueDrawer({ isOpen, onClose }: QueueDrawerProps) {
                     onClick={() => jumpToTrack(track.id)}
                     className={`group flex cursor-pointer items-center justify-between rounded-xl p-2.5 transition ${
                       isPlaying
-                        ? "bg-neon-cyan/20 border border-neon-cyan/40 shadow-sm"
+                        ? "bg-white/[0.08] border border-white/20 shadow-sm"
                         : "hover:bg-white/5 text-zinc-300"
                     }`}
                   >
@@ -74,7 +74,7 @@ export function QueueDrawer({ isOpen, onClose }: QueueDrawerProps) {
                       <div className="truncate">
                         <p
                           className={`truncate text-xs font-semibold ${
-                            isPlaying ? "text-neon-cyan" : "text-zinc-100"
+                            isPlaying ? "text-white font-bold" : "text-zinc-100"
                           }`}
                         >
                           {track.title}

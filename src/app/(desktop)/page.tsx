@@ -648,7 +648,7 @@ export default function RetroCyberDeckPage() {
 
       {/* THÔNG BÁO TƯƠNG TÁC TỨC THÌ (LIKE / PLAYLIST / QUEUE / DELETE) */}
       {interactionToast && (
-        <div className="fixed top-4 right-3 sm:right-6 z-50 flex items-center gap-3 rounded-2xl border border-white/10 bg-[#0b0b16]/95 px-4 sm:px-5 py-2.5 shadow-[0_12px_40px_rgba(0,0,0,0.85),0_0_16px_rgba(0,240,255,0.18)] backdrop-blur-xl toast-enter max-w-[92vw]">
+        <div className="fixed top-4 right-3 sm:right-6 z-50 flex items-center gap-3 rounded-2xl border border-white/10 bg-[#0b0b16]/95 px-4 sm:px-5 py-2.5 shadow-[0_12px_40px_rgba(0,0,0,0.85)] backdrop-blur-xl toast-enter max-w-[92vw]">
           <div
             className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border ${
               interactionToast.type === "heart"
@@ -657,7 +657,7 @@ export default function RetroCyberDeckPage() {
                 ? "bg-rose-500/20 border-rose-500/40 text-rose-400"
                 : interactionToast.type === "playlist"
                 ? "bg-amber-400/20 border-amber-400/40 text-amber-300"
-                : "bg-neon-cyan/20 border-neon-cyan/40 text-neon-cyan"
+                : "bg-white/10 border-white/20 text-white"
             }`}
           >
             {interactionToast.type === "heart" ? (
@@ -680,14 +680,14 @@ export default function RetroCyberDeckPage() {
 
       {/* KHUNG TAPE DECK TRÊN CÙNG */}
       <section className="relative overflow-hidden rounded-3xl border border-white/[0.08] bg-gradient-to-b from-[#121222]/80 via-[#090912]/90 to-[#050508] p-3.5 sm:p-6 shadow-2xl backdrop-blur-2xl">
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(0,240,255,0.06),transparent_60%)]" />
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(245,158,11,0.05),transparent_60%)]" />
 
         <div className="relative z-10 flex flex-col lg:flex-row items-center justify-between gap-5 sm:gap-8">
           {/* Đầu máy băng cassette cơ học */}
           <div className="relative flex w-full max-w-md flex-col items-center rounded-2xl border border-white/[0.08] bg-gradient-to-b from-[#18182c] to-[#0c0c16] p-3.5 sm:p-5 shadow-inner">
             <div className="flex w-full flex-wrap items-center justify-between gap-1.5 border-b border-white/[0.08] pb-2.5 sm:pb-3 text-[9px] sm:text-[10px] font-mono tracking-widest text-zinc-300 uppercase">
               <span className="flex items-center gap-1.5 text-zinc-300 font-medium">
-                <Radio className="h-3.5 w-3.5 text-neon-cyan animate-pulse" />
+                <Radio className="h-3.5 w-3.5 text-amber-400 animate-pulse" />
                 HI-FI STEREO
               </span>
               <span className="rounded bg-amber-400/15 px-2 py-0.5 font-bold text-amber-300 border border-amber-400/30">
@@ -707,13 +707,13 @@ export default function RetroCyberDeckPage() {
                     animationPlayState: isPlaying ? "running" : "paused",
                   }}
                 />
-                <div className="absolute h-3 w-3 sm:h-4 sm:w-4 rounded-full bg-neon-cyan/90 shadow-[0_0_10px_#00F0FF]" />
+                <div className="absolute h-3 w-3 sm:h-4 sm:w-4 rounded-full bg-zinc-300 shadow-[0_0_8px_rgba(255,255,255,0.6)]" />
               </div>
 
               <div className="relative flex flex-1 flex-col items-center justify-center px-2">
                 <div className="h-1.5 w-full bg-zinc-800 rounded-full overflow-hidden border border-white/5">
                   <div
-                    className={`h-full bg-gradient-to-r from-neon-cyan via-emerald-400 to-amber-400 transition-all ${
+                    className={`h-full bg-gradient-to-r from-amber-400 via-amber-300 to-emerald-400 transition-all ${
                       isPlaying ? "w-2/3 animate-pulse" : "w-1/3"
                     }`}
                   />
@@ -1061,11 +1061,11 @@ export default function RetroCyberDeckPage() {
                   onChange={(e) => setNewPlaylistName(e.target.value)}
                   placeholder="Tên playlist..."
                   autoFocus
-                  className="w-36 rounded-xl border border-neon-cyan/50 bg-black/70 px-3 py-1.5 text-xs text-white placeholder-zinc-500 outline-none"
+                  className="w-36 rounded-xl border border-white/20 bg-black/70 px-3 py-1.5 text-xs text-white placeholder-zinc-500 outline-none focus:border-white/50"
                 />
                 <button
                   type="submit"
-                  className="rounded-xl bg-neon-cyan p-1.5 text-black hover:opacity-90 cursor-pointer"
+                  className="rounded-xl bg-white p-1.5 text-black hover:bg-zinc-200 cursor-pointer"
                   title="Lưu"
                 >
                   <Check className="h-3.5 w-3.5" />
@@ -1100,7 +1100,7 @@ export default function RetroCyberDeckPage() {
                   : "border border-white/[0.08] bg-white/[0.03] text-zinc-400 hover:bg-white/[0.07] hover:text-white"
               }`}
             >
-              <Compass className={`h-3.5 w-3.5 ${activeView === "explore" ? "text-black" : "text-neon-cyan"}`} />
+              <Compass className={`h-3.5 w-3.5 ${activeView === "explore" ? "text-black" : "text-amber-400"}`} />
               <span>Khám phá</span>
             </button>
           </div>
@@ -1157,7 +1157,7 @@ export default function RetroCyberDeckPage() {
                   onClick={() => handlePlayTrack(track)}
                   className={`group relative flex items-center justify-between rounded-2xl p-3 sm:p-3.5 transition-all duration-300 cursor-pointer border ${
                     isThisActive
-                      ? "border-neon-cyan/50 bg-gradient-to-r from-neon-cyan/15 via-[#0e1622] to-[#080d14] shadow-[0_4px_24px_rgba(0,240,255,0.12)]"
+                      ? "border-white/25 bg-white/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.6)]"
                       : "border-white/[0.06] bg-[#0c0c16]/70 hover:border-white/15 hover:bg-white/[0.04]"
                   }`}
                 >
@@ -1166,7 +1166,7 @@ export default function RetroCyberDeckPage() {
                     <div className="relative h-11 w-11 sm:h-12 sm:w-12 shrink-0 flex items-center justify-center">
                       <div
                         className={`relative flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center rounded-full bg-[#0a0a12] border border-white/10 shadow-md transition-transform duration-300 group-hover:scale-105 ${
-                          isThisPlaying ? "shadow-[0_0_14px_rgba(0,240,255,0.35)]" : ""
+                          isThisPlaying ? "shadow-[0_0_12px_rgba(245,158,11,0.35)]" : ""
                         }`}
                         style={{
                           backgroundImage:
@@ -1175,7 +1175,7 @@ export default function RetroCyberDeckPage() {
                       >
                         <Disc3
                           className={`h-full w-full p-1.5 animate-spin transition-colors duration-300 ${
-                            isThisPlaying ? "text-neon-cyan/85 drop-shadow-[0_0_8px_rgba(0,240,255,0.4)]" : "text-zinc-600 group-hover:text-zinc-400"
+                            isThisPlaying ? "text-amber-400/90 drop-shadow-[0_0_8px_rgba(245,158,11,0.4)]" : "text-zinc-600 group-hover:text-zinc-400"
                           }`}
                           style={{
                             animationDuration: "3s",
@@ -1186,15 +1186,15 @@ export default function RetroCyberDeckPage() {
                         <div
                           className={`absolute inset-0 m-auto flex h-6 w-6 items-center justify-center rounded-full transition-all duration-200 ${
                             isThisPlaying
-                              ? "bg-neon-cyan/20 border border-neon-cyan text-neon-cyan shadow-[0_0_8px_#00F0FF]"
+                              ? "bg-amber-400/20 border border-amber-400 text-amber-300 shadow-[0_0_8px_rgba(245,158,11,0.5)]"
                               : "bg-zinc-900/90 border border-white/20 text-zinc-300 group-hover:bg-white group-hover:text-black group-hover:border-white group-hover:shadow-[0_0_10px_rgba(255,255,255,0.4)]"
                           }`}
                         >
                           {isThisPlaying ? (
                             <div className="flex items-end gap-0.5 h-3 w-3 justify-center">
-                              <span className="h-full w-0.5 rounded-full bg-neon-cyan animate-pulse" />
-                              <span className="h-2/3 w-0.5 rounded-full bg-neon-cyan animate-pulse delay-75" />
-                              <span className="h-4/5 w-0.5 rounded-full bg-neon-cyan animate-pulse delay-150" />
+                              <span className="h-full w-0.5 rounded-full bg-amber-400 animate-pulse" />
+                              <span className="h-2/3 w-0.5 rounded-full bg-amber-400 animate-pulse delay-75" />
+                              <span className="h-4/5 w-0.5 rounded-full bg-amber-400 animate-pulse delay-150" />
                             </div>
                           ) : (
                             <Play className="ml-0.5 h-3 w-3 fill-current" />

@@ -208,7 +208,7 @@ export function FloatingPlayerBar() {
           }}
           className="flex flex-col items-center justify-center gap-1 px-3 py-1.5 min-w-[52px] text-zinc-300 transition-all duration-150 hover:text-white active:scale-90"
         >
-          <Radio className="h-4 w-4 text-neon-cyan" />
+          <Radio className="h-4 w-4 text-zinc-300" />
           <span className="text-[10px] font-medium">Đầu Deck</span>
         </button>
 
@@ -222,7 +222,7 @@ export function FloatingPlayerBar() {
           }}
           className="flex flex-col items-center justify-center gap-1 px-3 py-1.5 min-w-[52px] text-zinc-300 transition-all duration-150 hover:text-white active:scale-90"
         >
-          <Compass className="h-4 w-4 text-neon-cyan" />
+          <Compass className="h-4 w-4 text-zinc-300" />
           <span className="text-[10px] font-medium">Khám phá</span>
         </button>
 
@@ -259,11 +259,11 @@ export function FloatingPlayerBar() {
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: '100%', opacity: 0 }}
             transition={{ type: 'spring', stiffness: 340, damping: 30, mass: 0.8 }}
-            className="fixed left-3 right-3 sm:left-auto sm:right-4 top-4 bottom-[8.5rem] md:bottom-28 z-50 flex w-auto sm:w-96 flex-col rounded-2xl border border-white/10 bg-[#0c0c16]/95 p-4 sm:p-5 shadow-[0_24px_64px_rgba(0,0,0,0.8),0_0_1px_rgba(0,240,255,0.15)] backdrop-blur-2xl"
+            className="fixed left-3 right-3 sm:left-auto sm:right-4 top-4 bottom-[8.5rem] md:bottom-28 z-50 flex w-auto sm:w-96 flex-col rounded-2xl border border-white/10 bg-[#0c0c16]/95 p-4 sm:p-5 shadow-[0_24px_64px_rgba(0,0,0,0.8)] backdrop-blur-2xl"
           >
             <div className="flex items-center justify-between border-b border-white/10 pb-3">
               <div className="flex items-center gap-2.5">
-                <ListMusic className="h-5 w-5 text-neon-cyan" />
+                <ListMusic className="h-5 w-5 text-amber-400" />
                 <h3 className="font-mono text-xs sm:text-sm font-bold text-white tracking-wide">
                   HÀNG ĐỢI PHÁT ({queueCount})
                 </h3>
@@ -317,8 +317,8 @@ export function FloatingPlayerBar() {
 
                       <div className="flex items-center gap-2 shrink-0">
                         {isCurrent && (
-                          <span className="inline-flex items-center gap-1.5 text-[9px] font-mono font-bold bg-neon-cyan/20 text-neon-cyan px-1.5 py-0.5 rounded">
-                            <span className="eq-bars text-neon-cyan">
+                          <span className="inline-flex items-center gap-1.5 text-[9px] font-mono font-bold bg-white/10 text-amber-300 px-1.5 py-0.5 rounded">
+                            <span className="eq-bars text-amber-400">
                               <span /><span /><span />
                             </span>
                             PLAYING
@@ -376,11 +376,11 @@ export function FloatingPlayerBar() {
                             <h4 className="text-xs sm:text-sm font-semibold text-white whitespace-nowrap">
                               {currentTrack.title}
                             </h4>
-                            <span className="mx-3 text-neon-cyan/40 text-[10px] select-none">•</span>
+                            <span className="mx-3 text-zinc-600 text-[10px] select-none">•</span>
                             <h4 className="text-xs sm:text-sm font-semibold text-white whitespace-nowrap md:hidden">
                               {currentTrack.title}
                             </h4>
-                            <span className="mx-3 text-neon-cyan/40 text-[10px] select-none md:hidden">•</span>
+                            <span className="mx-3 text-zinc-600 text-[10px] select-none md:hidden">•</span>
                           </div>
                         </div>
                       ) : (
@@ -434,7 +434,7 @@ export function FloatingPlayerBar() {
                     toggleLyrics();
                   }}
                   className={`p-1.5 transition active:scale-90 ${
-                    isLyricsOpen ? 'text-neon-cyan' : 'text-zinc-400 hover:text-white'
+                    isLyricsOpen ? 'text-amber-400' : 'text-zinc-400 hover:text-white'
                   }`}
                   title="Lời bài hát VFD"
                 >
@@ -447,11 +447,11 @@ export function FloatingPlayerBar() {
                 >
                   <ListMusic
                     className={`w-4 h-4 transition-colors ${
-                      isQueueOpen ? 'text-neon-cyan' : 'hover:text-white'
+                      isQueueOpen ? 'text-amber-400' : 'hover:text-white'
                     }`}
                   />
                   {queueCount > 0 && (
-                    <span className="absolute -top-0.5 -right-0.5 text-[9px] font-mono font-bold text-neon-cyan select-none">
+                    <span className="absolute -top-0.5 -right-0.5 text-[9px] font-mono font-bold text-amber-400 select-none">
                       {queueCount}
                     </span>
                   )}
@@ -533,7 +533,7 @@ export function FloatingPlayerBar() {
                   toggleLyrics();
                 }}
                 className={`p-1.5 transition active:scale-95 cursor-pointer ${
-                  isLyricsOpen ? 'text-neon-cyan' : 'text-zinc-400 hover:text-white'
+                  isLyricsOpen ? 'text-amber-400' : 'text-zinc-400 hover:text-white'
                 }`}
                 title="Lời bài hát VFD"
               >
@@ -572,11 +572,11 @@ export function FloatingPlayerBar() {
               >
                 <ListMusic
                   className={`w-5 h-5 transition-colors ${
-                    isQueueOpen ? 'text-neon-cyan' : 'hover:text-white'
+                    isQueueOpen ? 'text-amber-400' : 'hover:text-white'
                   }`}
                 />
                 {queueCount > 0 && (
-                  <span className="absolute -top-1 -right-1 text-[10px] font-mono font-bold text-neon-cyan select-none">
+                  <span className="absolute -top-1 -right-1 text-[10px] font-mono font-bold text-amber-400 select-none">
                     {queueCount}
                   </span>
                 )}
