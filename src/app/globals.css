@@ -228,6 +228,23 @@ body {
   animation: toast-slide-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+/* Subtle Retro CRT Scanline texture for audio meters and hardware deck */
+.crt-screen {
+  position: relative;
+}
+.crt-screen::before {
+  content: "";
+  display: block;
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.22) 50%);
+  background-size: 100% 3px;
+  z-index: 2;
+  pointer-events: none;
+  opacity: 0.45;
+}
+
 @keyframes marquee-scroll {
   0% {
     transform: translate3d(0, 0, 0);

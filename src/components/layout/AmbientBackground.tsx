@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
@@ -9,7 +9,7 @@ interface AmbientBackgroundProps {
 }
 
 export function AmbientBackground({
-  primaryColor = "#8A2BE2",
+  primaryColor = "#B45309",
   secondaryColor = "#00F0FF",
 }: AmbientBackgroundProps) {
   const [mousePos, setMousePos] = useState({ x: -1000, y: -1000 });

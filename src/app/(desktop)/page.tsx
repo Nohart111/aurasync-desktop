@@ -336,7 +336,7 @@ function StudioDynamicVuMeter({ isPlaying }: { isPlaying: boolean }) {
   }, [isPlaying]);
 
   return (
-    <div className="space-y-2 rounded-2xl border border-white/[0.1] bg-[#0c0c16]/80 p-3 sm:p-4 backdrop-blur-md shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)]">
+    <div className="crt-screen space-y-2 rounded-2xl border border-white/[0.1] bg-[#0c0c16]/80 p-3 sm:p-4 backdrop-blur-md shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)]">
       <div className="flex items-center justify-between gap-2 text-[10px] sm:text-xs font-mono">
         <div className="flex items-center gap-2 truncate">
           <span className="text-neon-cyan font-bold tracking-wider">VU LEVEL</span>
@@ -656,7 +656,7 @@ export default function RetroCyberDeckPage() {
                 : interactionToast.type === "delete"
                 ? "bg-rose-500/20 border-rose-500/40 text-rose-400"
                 : interactionToast.type === "playlist"
-                ? "bg-neon-violet/20 border-neon-violet/40 text-neon-violet"
+                ? "bg-amber-400/20 border-amber-400/40 text-amber-300"
                 : "bg-neon-cyan/20 border-neon-cyan/40 text-neon-cyan"
             }`}
           >
@@ -690,13 +690,13 @@ export default function RetroCyberDeckPage() {
                 <Radio className="h-3.5 w-3.5 animate-pulse" />
                 HI-FI STEREO
               </span>
-              <span className="rounded bg-neon-violet/20 px-2 py-0.5 font-bold text-white border border-neon-violet/40">
+              <span className="rounded bg-amber-400/15 px-2 py-0.5 font-bold text-amber-300 border border-amber-400/30">
                 1411 KBPS
               </span>
               <span className="text-emerald-400 font-semibold tracking-wider">SIDE A</span>
             </div>
 
-            <div className="relative my-3 sm:my-4 flex h-24 sm:h-32 w-full items-center justify-around rounded-xl border border-black/80 bg-[#06060c] px-3 sm:px-4 shadow-[inset_0_4px_12px_rgba(0,0,0,0.9)]">
+            <div className="crt-screen relative my-3 sm:my-4 flex h-24 sm:h-32 w-full items-center justify-around rounded-xl border border-black/80 bg-[#06060c] px-3 sm:px-4 shadow-[inset_0_4px_12px_rgba(0,0,0,0.9)] overflow-hidden">
               <div className="relative flex h-14 w-14 sm:h-20 sm:w-20 shrink-0 items-center justify-center rounded-full border-4 border-zinc-700 bg-gradient-to-tr from-zinc-900 to-zinc-800 shadow-md">
                 <Disc3
                   className={`h-10 w-10 sm:h-14 sm:w-14 animate-spin transition-colors duration-300 ${
@@ -707,13 +707,13 @@ export default function RetroCyberDeckPage() {
                     animationPlayState: isPlaying ? "running" : "paused",
                   }}
                 />
-                <div className="absolute h-3 w-3 sm:h-4 sm:w-4 rounded-full bg-neon-cyan/80 shadow-neon-cyan" />
+                <div className="absolute h-3 w-3 sm:h-4 sm:w-4 rounded-full bg-neon-cyan/90 shadow-[0_0_10px_#00F0FF]" />
               </div>
 
               <div className="relative flex flex-1 flex-col items-center justify-center px-2">
                 <div className="h-1.5 w-full bg-zinc-800 rounded-full overflow-hidden border border-white/5">
                   <div
-                    className={`h-full bg-gradient-to-r from-neon-cyan to-neon-violet transition-all ${
+                    className={`h-full bg-gradient-to-r from-neon-cyan via-emerald-400 to-amber-400 transition-all ${
                       isPlaying ? "w-2/3 animate-pulse" : "w-1/3"
                     }`}
                   />
@@ -733,7 +733,7 @@ export default function RetroCyberDeckPage() {
                     animationPlayState: isPlaying ? "running" : "paused",
                   }}
                 />
-                <div className="absolute h-3 w-3 sm:h-4 sm:w-4 rounded-full bg-neon-violet/80 shadow-neon-violet" />
+                <div className="absolute h-3 w-3 sm:h-4 sm:w-4 rounded-full bg-amber-400/90 shadow-[0_0_10px_#F59E0B]" />
               </div>
             </div>
 
@@ -833,7 +833,7 @@ export default function RetroCyberDeckPage() {
               <button
                 onClick={handlePlayAll}
                 disabled={tracks.length === 0}
-                className="group flex items-center gap-2 rounded-xl bg-gradient-to-r from-neon-cyan via-sky-400 to-neon-violet px-5 sm:px-6 py-3 sm:py-3.5 text-xs font-mono font-extrabold tracking-wider text-black shadow-lg shadow-neon-cyan/25 transition-all duration-150 hover:scale-105 hover:shadow-[0_0_24px_rgba(0,240,255,0.45)] active:scale-95 active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.3)] disabled:opacity-50 cursor-pointer border border-white/20 shrink-0"
+                className="btn-cyberdeck group flex items-center gap-2 rounded-xl bg-gradient-to-b from-[#00F0FF] to-[#00C4D6] px-5 sm:px-6 py-3 sm:py-3.5 text-xs font-mono font-extrabold tracking-wider text-black shadow-[0_0_24px_rgba(0,240,255,0.45),inset_0_1px_0_rgba(255,255,255,0.4)] transition-all duration-150 hover:scale-105 hover:bg-[#33F3FF] active:scale-95 active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.4)] disabled:opacity-50 cursor-pointer border border-cyan-200/50 shrink-0"
               >
                 {isPlaying && !(currentTrack as any)?.isPreview ? (
                   <Pause className="h-4 w-4 fill-black text-black" />
@@ -953,8 +953,8 @@ export default function RetroCyberDeckPage() {
                   }}
                   className={`px-3.5 py-1.5 rounded-xl text-xs font-mono font-bold transition active:scale-95 cursor-pointer ${
                     activeChip === 'longplay'
-                      ? 'bg-neon-violet text-white shadow-[0_0_16px_rgba(168,85,247,0.4)]'
-                      : 'border border-white/15 bg-white/[0.06] text-zinc-200 hover:text-purple-300 hover:bg-white/[0.12] hover:border-neon-violet/40'
+                      ? 'bg-zinc-100 text-black shadow-[0_0_16px_rgba(255,255,255,0.4)]'
+                      : 'border border-white/15 bg-white/[0.06] text-zinc-200 hover:text-white hover:bg-white/[0.12] hover:border-white/30'
                   }`}
                 >
                   <span className="flex items-center gap-1.5">
@@ -1026,7 +1026,7 @@ export default function RetroCyberDeckPage() {
                   key={pl.id}
                   className={`inline-flex items-center rounded-xl border transition-all ${
                     isPlActive
-                      ? "border-neon-violet bg-neon-violet/25 text-white shadow-md"
+                      ? "border-amber-400/50 bg-amber-400/15 text-amber-200 shadow-[0_0_12px_rgba(245,158,11,0.2)]"
                       : "border-white/[0.08] bg-white/[0.03] text-zinc-400 hover:bg-white/[0.07] hover:text-white"
                   }`}
                 >
@@ -1034,7 +1034,7 @@ export default function RetroCyberDeckPage() {
                     onClick={() => setActiveView(pl.id)}
                     className="flex items-center gap-1.5 px-3 py-2 text-xs font-mono font-bold cursor-pointer"
                   >
-                    <FolderHeart className="h-3.5 w-3.5 text-neon-violet" />
+                    <FolderHeart className="h-3.5 w-3.5 text-amber-400" />
                     <span className="max-w-[120px] truncate">{pl.name}</span>
                     <span className="text-[10px] opacity-75">({pl.trackIds.length})</span>
                   </button>
@@ -1157,7 +1157,7 @@ export default function RetroCyberDeckPage() {
                   onClick={() => handlePlayTrack(track)}
                   className={`group relative flex items-center justify-between rounded-2xl p-3 sm:p-3.5 transition-all duration-300 cursor-pointer border ${
                     isThisActive
-                      ? "border-neon-cyan/40 bg-gradient-to-r from-neon-violet/15 via-[#121222] to-[#0a0a14] shadow-[0_4px_24px_rgba(0,240,255,0.08)]"
+                      ? "border-neon-cyan/50 bg-gradient-to-r from-neon-cyan/15 via-[#0e1622] to-[#080d14] shadow-[0_4px_24px_rgba(0,240,255,0.12)]"
                       : "border-white/[0.06] bg-[#0c0c16]/70 hover:border-white/15 hover:bg-white/[0.04]"
                   }`}
                 >

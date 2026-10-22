@@ -350,12 +350,12 @@ export function SidebarNav({ onViewChange, onFileUpload }: SidebarNavProps) {
                         onClick={() => handlePlaylistClick(pl.id)}
                         className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-mono transition-all cursor-pointer active:scale-95 ${
                           isSelected
-                            ? 'border border-neon-violet/40 bg-neon-violet/15 text-purple-200 font-semibold shadow-[0_0_12px_rgba(168,85,247,0.2)]'
+                            ? 'border border-amber-400/40 bg-amber-400/15 text-amber-200 font-semibold shadow-[0_0_12px_rgba(245,158,11,0.25)]'
                             : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.04]'
                         }`}
                       >
                         <span className="flex items-center gap-2 truncate pr-2">
-                          <ListMusic className="h-3.5 w-3.5 shrink-0 text-neon-violet" />
+                          <ListMusic className="h-3.5 w-3.5 shrink-0 text-amber-400" />
                           <span className="truncate">{pl.name}</span>
                         </span>
                         <span className="text-[10px] font-mono text-zinc-500 shrink-0">

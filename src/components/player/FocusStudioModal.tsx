@@ -459,7 +459,7 @@ export function FocusStudioModal() {
       </main>
 
       {/* Bottom: Wide Dynamic VU Meter */}
-      <footer className="relative z-10 w-full max-w-3xl mx-auto rounded-2xl border border-white/[0.08] bg-black/50 p-3 sm:p-4 backdrop-blur-md shadow-inner">
+      <footer className="crt-screen overflow-hidden relative z-10 w-full max-w-3xl mx-auto rounded-2xl border border-white/[0.08] bg-black/50 p-3 sm:p-4 backdrop-blur-md shadow-inner">
         <div className="flex items-center justify-between text-[10px] font-mono mb-1.5">
           <div className="flex items-center gap-2">
             <span className="text-neon-cyan font-bold tracking-wider">VU MASTER</span>
