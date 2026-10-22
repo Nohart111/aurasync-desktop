@@ -321,12 +321,12 @@ export function FocusStudioModal() {
           >
             {/* Spinning Grooves Layer */}
             <Disc3
-              className={`h-full w-full p-4 text-zinc-700/60 transition-all duration-700 ease-in-out ${
-                isPlaying ? 'animate-spin text-neon-cyan/40' : ''
+              className={`h-full w-full p-4 animate-spin transition-colors duration-500 ${
+                isPlaying ? 'text-neon-cyan/45' : 'text-zinc-700/60'
               }`}
               style={{
-                animationDuration: isPlaying ? '3.5s' : '0s',
-                animationTimingFunction: 'cubic-bezier(0.4, 0, 0.2, 1)',
+                animationDuration: '4s',
+                animationPlayState: isPlaying ? 'running' : 'paused',
               }}
             />
 
@@ -353,11 +353,17 @@ export function FocusStudioModal() {
         </div>
 
         {/* Track Metadata */}
-        <div className="mt-8 text-center max-w-lg px-4">
-          <h2 className="text-xl sm:text-3xl font-extrabold text-white tracking-tight truncate">
+        <div className="mt-8 text-center max-w-xl px-4">
+          <div className="flex items-center justify-center gap-2 mb-1.5">
+            <span className={`inline-block led-status ${isPlaying ? 'bg-emerald-400 text-emerald-400' : 'bg-zinc-600 text-zinc-600'}`} />
+            <span className="font-mono text-[10px] font-bold text-emerald-400 uppercase tracking-widest">
+              {isPlaying ? 'VINYL_TURNTABLE // SPINNING' : 'VINYL_TURNTABLE // PAUSED'}
+            </span>
+          </div>
+          <h2 className="text-2xl sm:text-4xl font-extrabold text-white tracking-tight truncate drop-shadow-[0_2px_16px_rgba(0,0,0,0.85)]">
             {currentTrack?.title || 'CHƯA CHỌN BÀI HÁT'}
           </h2>
-          <p className="mt-1 font-mono text-sm text-zinc-400 truncate">
+          <p className="mt-1 font-mono text-xs sm:text-sm text-neon-cyan/85 tracking-wider truncate uppercase">
             {currentTrack?.artist || 'Phòng thu Retro Hi-Fi Cyberdeck'}
           </p>
 

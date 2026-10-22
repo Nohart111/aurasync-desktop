@@ -647,10 +647,13 @@ export default function RetroCyberDeckPage() {
             <div className="relative my-3 sm:my-4 flex h-24 sm:h-32 w-full items-center justify-around rounded-xl border border-black/80 bg-[#06060c] px-3 sm:px-4 shadow-[inset_0_4px_12px_rgba(0,0,0,0.9)]">
               <div className="relative flex h-14 w-14 sm:h-20 sm:w-20 shrink-0 items-center justify-center rounded-full border-4 border-zinc-700 bg-gradient-to-tr from-zinc-900 to-zinc-800 shadow-md">
                 <Disc3
-                  className={`h-10 w-10 sm:h-14 sm:w-14 transition-all duration-700 ease-in-out ${
-                    isPlaying ? "animate-spin text-zinc-300" : "text-zinc-500"
+                  className={`h-10 w-10 sm:h-14 sm:w-14 animate-spin transition-colors duration-300 ${
+                    isPlaying ? "text-zinc-200" : "text-zinc-500"
                   }`}
-                  style={{ animationDuration: isPlaying ? "2.8s" : "0s", animationTimingFunction: "cubic-bezier(0.4, 0, 0.2, 1)" }}
+                  style={{
+                    animationDuration: "3s",
+                    animationPlayState: isPlaying ? "running" : "paused",
+                  }}
                 />
                 <div className="absolute h-3 w-3 sm:h-4 sm:w-4 rounded-full bg-neon-cyan/80 shadow-neon-cyan" />
               </div>
@@ -670,10 +673,13 @@ export default function RetroCyberDeckPage() {
 
               <div className="relative flex h-14 w-14 sm:h-20 sm:w-20 shrink-0 items-center justify-center rounded-full border-4 border-zinc-700 bg-gradient-to-tr from-zinc-900 to-zinc-800 shadow-md">
                 <Disc3
-                  className={`h-10 w-10 sm:h-14 sm:w-14 transition-all duration-700 ease-in-out ${
-                    isPlaying ? "animate-spin text-zinc-300" : "text-zinc-500"
+                  className={`h-10 w-10 sm:h-14 sm:w-14 animate-spin transition-colors duration-300 ${
+                    isPlaying ? "text-zinc-200" : "text-zinc-500"
                   }`}
-                  style={{ animationDuration: isPlaying ? "2.8s" : "0s", animationTimingFunction: "cubic-bezier(0.4, 0, 0.2, 1)" }}
+                  style={{
+                    animationDuration: "3s",
+                    animationPlayState: isPlaying ? "running" : "paused",
+                  }}
                 />
                 <div className="absolute h-3 w-3 sm:h-4 sm:w-4 rounded-full bg-neon-violet/80 shadow-neon-violet" />
               </div>
@@ -1116,12 +1122,12 @@ export default function RetroCyberDeckPage() {
                         }}
                       >
                         <Disc3
-                          className={`h-full w-full p-1.5 transition-all duration-700 ease-in-out ${
-                            isThisPlaying ? "animate-spin text-neon-cyan/80" : "text-zinc-600 group-hover:text-zinc-400"
+                          className={`h-full w-full p-1.5 animate-spin transition-colors duration-300 ${
+                            isThisPlaying ? "text-neon-cyan/85 drop-shadow-[0_0_8px_rgba(0,240,255,0.4)]" : "text-zinc-600 group-hover:text-zinc-400"
                           }`}
                           style={{
-                            animationDuration: isThisPlaying ? "2.8s" : "0s",
-                            animationTimingFunction: "cubic-bezier(0.4, 0, 0.2, 1)",
+                            animationDuration: "3s",
+                            animationPlayState: isThisPlaying ? "running" : "paused",
                           }}
                         />
 

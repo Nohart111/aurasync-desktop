@@ -372,9 +372,16 @@ export function FloatingPlayerBar() {
                     <div className="overflow-hidden min-w-0 flex-1">
                       {currentTrack.title.length > 20 ? (
                         <div className="marquee-container md:overflow-visible">
-                          <h4 className="marquee-text md:animate-none md:p-0 text-xs sm:text-sm font-semibold text-white">
-                            {currentTrack.title}
-                          </h4>
+                          <div className="marquee-text md:animate-none md:p-0">
+                            <h4 className="text-xs sm:text-sm font-semibold text-white whitespace-nowrap">
+                              {currentTrack.title}
+                            </h4>
+                            <span className="mx-3 text-neon-cyan/40 text-[10px] select-none">•</span>
+                            <h4 className="text-xs sm:text-sm font-semibold text-white whitespace-nowrap md:hidden">
+                              {currentTrack.title}
+                            </h4>
+                            <span className="mx-3 text-neon-cyan/40 text-[10px] select-none md:hidden">•</span>
+                          </div>
                         </div>
                       ) : (
                         <h4 className="text-xs sm:text-sm font-semibold text-white truncate">
