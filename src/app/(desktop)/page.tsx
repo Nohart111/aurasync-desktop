@@ -240,12 +240,23 @@ function StudioDynamicVuMeter({ isPlaying }: { isPlaying: boolean }) {
 
       // QUY LUẬT VẬT LÝ KIM VU ANALOG:
       // Lên từ từ (Attack 0.28 - không giật bắn) / Nhả êm đềm (Release 0.12 - nhún nhảy liền mạch)
+      if (isNaN(smoothedLevelRef.current) || !isFinite(smoothedLevelRef.current)) {
+        smoothedLevelRef.current = 0;
+      }
+      if (isNaN(targetLeds) || !isFinite(targetLeds)) {
+        targetLeds = 0;
+      }
+
       if (!isPlaying) {
         smoothedLevelRef.current = Math.max(0, smoothedLevelRef.current * 0.85 - 0.25);
       } else if (targetLeds > smoothedLevelRef.current) {
         smoothedLevelRef.current += (targetLeds - smoothedLevelRef.current) * 0.28;
       } else {
         smoothedLevelRef.current += (targetLeds - smoothedLevelRef.current) * 0.12;
+      }
+
+      if (isNaN(smoothedLevelRef.current) || !isFinite(smoothedLevelRef.current)) {
+        smoothedLevelRef.current = 0;
       }
 
       const activeCount = isPlaying ? Math.max(1, Math.round(smoothedLevelRef.current)) : 0;
@@ -271,27 +282,29 @@ function StudioDynamicVuMeter({ isPlaying }: { isPlaying: boolean }) {
             }
           } else {
             led.className =
-              "flex-1 rounded-sm bg-zinc-800/40 transition-colors duration-150 ease-out";
+              "flex-1 rounded-sm bg-white/[0.08] border border-white/[0.03] transition-colors duration-150 ease-out";
           }
         }
       }
 
-      // HIỂN THỊ TỶ LỆ CHIA dB LỚN HƠN: -42 dB ĐẾN +6 dB (DẢI ĐỘNG 48 dB CHUẨN PHÒNG THU)
+      // DISPLAY dB VALUE: -42 dB TO +6 dB
       if (dbTextRef.current) {
         if (!isPlaying || activeCount === 0) {
-          dbTextRef.current.innerText = "-∞ dB (STANDBY)";
-          dbTextRef.current.className = "text-zinc-600 font-bold shrink-0";
+          dbTextRef.current.innerText = "-∞ dB";
+          dbTextRef.current.className = "text-zinc-500 font-semibold shrink-0 tabular-nums";
         } else {
-          const dbVal = Math.round((activeCount / 24) * 48 - 42);
+          let dbVal = Math.round((activeCount / 24) * 48 - 42);
+          if (isNaN(dbVal) || !isFinite(dbVal)) dbVal = -42;
+
           if (activeCount >= 18) {
-            dbTextRef.current.innerText = `+${Math.max(1, dbVal)} dB (PEAK)`;
-            dbTextRef.current.className = "text-rose-400 font-bold shrink-0";
+            dbTextRef.current.innerText = `+${Math.max(1, dbVal)} dB PEAK`;
+            dbTextRef.current.className = "text-rose-400 font-bold shrink-0 tabular-nums";
           } else if (activeCount >= 12) {
-            dbTextRef.current.innerText = `${dbVal >= 0 ? "+" : ""}${dbVal} dB (0 VU)`;
-            dbTextRef.current.className = "text-amber-400 font-bold shrink-0";
+            dbTextRef.current.innerText = `${dbVal >= 0 ? "+" : ""}${dbVal} dB VU`;
+            dbTextRef.current.className = "text-amber-400 font-bold shrink-0 tabular-nums";
           } else {
             dbTextRef.current.innerText = `${dbVal} dB`;
-            dbTextRef.current.className = "text-emerald-400 font-bold shrink-0";
+            dbTextRef.current.className = "text-emerald-400 font-bold shrink-0 tabular-nums";
           }
         }
       }
@@ -323,21 +336,22 @@ function StudioDynamicVuMeter({ isPlaying }: { isPlaying: boolean }) {
   }, [isPlaying]);
 
   return (
-    <div className="space-y-1.5 rounded-2xl border border-white/[0.08] bg-black/40 p-3 sm:p-4 backdrop-blur-md shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)]">
-      <div className="flex items-center justify-between gap-2 text-[9px] sm:text-[10px] font-mono text-zinc-500">
-        <span className="truncate">
-          <span className="hidden sm:inline">
-            VU METER (WIDE DYNAMIC RANGE [-42 dB ... 0 VU ... +6 dB]) [12 NORM / 6 GROOVE / 6 PEAK]
+    <div className="space-y-2 rounded-2xl border border-white/[0.1] bg-[#0c0c16]/80 p-3 sm:p-4 backdrop-blur-md shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)]">
+      <div className="flex items-center justify-between gap-2 text-[10px] sm:text-xs font-mono">
+        <div className="flex items-center gap-2 truncate">
+          <span className="text-neon-cyan font-bold tracking-wider">VU LEVEL</span>
+          <span className="text-zinc-600">•</span>
+          <span className="text-zinc-400 font-medium truncate">
+            -42 to +6 dB
           </span>
-          <span className="sm:hidden">VU METER [-42 dB ... +6 dB] [12 GREEN / 6 AMBER / 6 RED]</span>
-        </span>
-        <span ref={dbTextRef} className="text-zinc-600 font-bold shrink-0">
-          -∞ dB (STANDBY)
+        </div>
+        <span ref={dbTextRef} className="text-zinc-500 font-semibold shrink-0 tabular-nums">
+          -∞ dB
         </span>
       </div>
       <div ref={containerRef} className="flex gap-0.5 sm:gap-1 h-2.5 sm:h-3 w-full">
         {Array.from({ length: 24 }).map((_, i) => (
-          <div key={i} className="flex-1 rounded-sm bg-zinc-800/40" />
+          <div key={i} className="flex-1 rounded-sm bg-white/[0.08] border border-white/[0.03]" />
         ))}
       </div>
     </div>
@@ -671,15 +685,15 @@ export default function RetroCyberDeckPage() {
         <div className="relative z-10 flex flex-col lg:flex-row items-center justify-between gap-5 sm:gap-8">
           {/* Đầu máy băng cassette cơ học */}
           <div className="relative flex w-full max-w-md flex-col items-center rounded-2xl border border-white/[0.08] bg-gradient-to-b from-[#18182c] to-[#0c0c16] p-3.5 sm:p-5 shadow-inner">
-            <div className="flex w-full flex-wrap items-center justify-between gap-1.5 border-b border-white/[0.08] pb-2.5 sm:pb-3 text-[9px] sm:text-[10px] font-mono tracking-widest text-zinc-400 uppercase">
-              <span className="flex items-center gap-1.5 text-neon-cyan">
+            <div className="flex w-full flex-wrap items-center justify-between gap-1.5 border-b border-white/[0.08] pb-2.5 sm:pb-3 text-[9px] sm:text-[10px] font-mono tracking-widest text-zinc-300 uppercase">
+              <span className="flex items-center gap-1.5 text-neon-cyan font-bold">
                 <Radio className="h-3.5 w-3.5 animate-pulse" />
-                HI-FI STEREO TAPE
+                HI-FI STEREO
               </span>
               <span className="rounded bg-neon-violet/20 px-2 py-0.5 font-bold text-white border border-neon-violet/40">
                 1411 KBPS
               </span>
-              <span className="text-emerald-400">SIDE A / DIRECT</span>
+              <span className="text-emerald-400 font-semibold tracking-wider">SIDE A</span>
             </div>
 
             <div className="relative my-3 sm:my-4 flex h-24 sm:h-32 w-full items-center justify-around rounded-xl border border-black/80 bg-[#06060c] px-3 sm:px-4 shadow-[inset_0_4px_12px_rgba(0,0,0,0.9)]">
@@ -704,8 +718,8 @@ export default function RetroCyberDeckPage() {
                     }`}
                   />
                 </div>
-                <span className="mt-2 text-[8px] sm:text-[9px] font-mono text-zinc-500 uppercase tracking-widest text-center">
-                  {isPlaying ? "TAPE ROLLING" : "DECK STOPPED"}
+                <span className="mt-2 text-[8px] sm:text-[9px] font-mono text-zinc-400 uppercase tracking-widest text-center font-medium">
+                  {isPlaying ? "ROLLING" : "STANDBY"}
                 </span>
               </div>
 
@@ -725,11 +739,11 @@ export default function RetroCyberDeckPage() {
 
             <div className="flex w-full items-center justify-between gap-2 rounded-lg bg-zinc-900/80 border border-white/[0.06] px-2.5 sm:px-3 py-2 text-xs">
               <div className="truncate pr-1 min-w-0">
-                <span className="text-[9px] sm:text-[10px] font-mono text-zinc-500 block uppercase">
-                  {(currentTrack as any)?.isPreview ? "YOUTUBE PREVIEW" : "MASTER CASSETTE"}
+                <span className="text-[9px] sm:text-[10px] font-mono text-zinc-400 block uppercase font-medium">
+                  {(currentTrack as any)?.isPreview ? "PREVIEW" : "MASTER TAPE"}
                 </span>
                 <span className="font-mono font-bold text-neon-cyan truncate block">
-                  {currentTrack ? currentTrack.title : "EMPTY DECK (SẴN SÀNG)"}
+                  {currentTrack ? currentTrack.title : "Ready to Play"}
                 </span>
               </div>
               <div className="flex items-center gap-1.5 shrink-0 font-mono text-[10px] sm:text-[11px] text-zinc-300 bg-white/[0.06] px-2 sm:px-2.5 py-1 rounded border border-white/10 shadow-inner">
@@ -749,12 +763,12 @@ export default function RetroCyberDeckPage() {
           <div className="flex w-full flex-1 flex-col justify-between space-y-4 sm:space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
-                <div className="flex items-center gap-2 text-[11px] sm:text-xs font-mono text-neon-cyan tracking-wider uppercase">
-                  <Terminal className="h-4 w-4 shrink-0" />
-                  <span className="truncate">VAULT_CONTROLLER // V2.6</span>
+                <div className="flex items-center gap-2 text-[10px] sm:text-[11px] font-mono text-neon-cyan tracking-widest uppercase font-bold">
+                  <span className="led-status text-neon-cyan" />
+                  <span className="truncate">AURA SOUND // MASTER DECK</span>
                 </div>
                 <h1 className="mt-1 font-display text-2xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight text-white">
-                  Studio Tape Rack
+                  Studio Deck
                 </h1>
               </div>
 
@@ -765,11 +779,11 @@ export default function RetroCyberDeckPage() {
                     playMechanicalSound('toggle');
                     toggleFocusMode();
                   }}
-                  className="btn-cyberdeck flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-mono text-zinc-300 hover:text-neon-cyan active:scale-95 cursor-pointer"
-                  title="Chế độ Focus Studio [Z]"
+                  className="btn-cyberdeck flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-mono text-zinc-200 hover:text-neon-cyan active:scale-95 cursor-pointer"
+                  title="Focus Studio [Z]"
                 >
                   <Maximize2 className="h-3.5 w-3.5 text-neon-cyan" />
-                  <span className="hidden sm:inline">FOCUS [Z]</span>
+                  <span className="hidden sm:inline">Focus</span>
                 </button>
 
                 <button
@@ -777,11 +791,11 @@ export default function RetroCyberDeckPage() {
                     playMechanicalSound('toggle');
                     toggleLyrics();
                   }}
-                  className="btn-cyberdeck flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-mono text-zinc-300 hover:text-neon-cyan active:scale-95 cursor-pointer"
-                  title="Lời bài hát VFD"
+                  className="btn-cyberdeck flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-mono text-zinc-200 hover:text-emerald-400 active:scale-95 cursor-pointer"
+                  title="VFD Lyrics"
                 >
                   <AlignLeft className="h-3.5 w-3.5 text-emerald-400" />
-                  <span className="hidden sm:inline">LYRICS</span>
+                  <span className="hidden sm:inline">Lyrics</span>
                 </button>
 
                 <button
@@ -789,11 +803,11 @@ export default function RetroCyberDeckPage() {
                     playMechanicalSound('switch');
                     toggleShortcuts();
                   }}
-                  className="btn-cyberdeck flex items-center gap-1.5 rounded-xl px-2.5 py-2 text-xs font-mono text-zinc-300 hover:text-amber-400 active:scale-95 cursor-pointer"
-                  title="Phím tắt [?]"
+                  className="btn-cyberdeck flex items-center gap-1.5 rounded-xl px-2.5 py-2 text-xs font-mono text-zinc-200 hover:text-amber-400 active:scale-95 cursor-pointer"
+                  title="Keyboard Shortcuts [?]"
                 >
                   <HelpCircle className="h-3.5 w-3.5 text-amber-400" />
-                  <span className="hidden sm:inline">[?]</span>
+                  <span className="hidden sm:inline">Keys</span>
                 </button>
 
                 <button
@@ -802,9 +816,9 @@ export default function RetroCyberDeckPage() {
                     toggleSfx();
                   }}
                   className={`btn-cyberdeck flex items-center gap-1.5 rounded-xl px-2.5 py-2 text-xs font-mono cursor-pointer transition ${
-                    isSfxEnabled ? 'text-emerald-400' : 'text-zinc-500'
+                    isSfxEnabled ? 'text-emerald-400' : 'text-zinc-400'
                   }`}
-                  title="Bật/Tắt âm thanh cơ học"
+                  title="Mechanical Sound Effects"
                 >
                   <span className={`led-status ${isSfxEnabled ? 'bg-emerald-400 text-emerald-400' : 'bg-zinc-600 text-zinc-600'}`} />
                   <span className="hidden sm:inline text-[10px] font-bold">SFX</span>
@@ -819,38 +833,38 @@ export default function RetroCyberDeckPage() {
               <button
                 onClick={handlePlayAll}
                 disabled={tracks.length === 0}
-                className="group flex items-center gap-2 rounded-xl bg-gradient-to-r from-neon-cyan to-neon-violet px-4 sm:px-6 py-3 sm:py-3.5 text-xs font-mono font-bold tracking-wider text-black shadow-lg shadow-neon-cyan/20 transition-all duration-150 hover:scale-105 hover:shadow-[0_0_24px_rgba(0,240,255,0.4)] active:scale-95 active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.3)] disabled:opacity-40 cursor-pointer border border-white/20"
+                className="group flex items-center gap-2 rounded-xl bg-gradient-to-r from-neon-cyan via-sky-400 to-neon-violet px-5 sm:px-6 py-3 sm:py-3.5 text-xs font-mono font-extrabold tracking-wider text-black shadow-lg shadow-neon-cyan/25 transition-all duration-150 hover:scale-105 hover:shadow-[0_0_24px_rgba(0,240,255,0.45)] active:scale-95 active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.3)] disabled:opacity-50 cursor-pointer border border-white/20 shrink-0"
               >
                 {isPlaying && !(currentTrack as any)?.isPreview ? (
-                  <Pause className="h-4 w-4 fill-black" />
+                  <Pause className="h-4 w-4 fill-black text-black" />
                 ) : (
-                  <Play className="h-4 w-4 fill-black" />
+                  <Play className="h-4 w-4 fill-black text-black" />
                 )}
-                <span>[ TAPE_PLAY_ALL ]</span>
+                <span>{isPlaying && !(currentTrack as any)?.isPreview ? "Pause" : "Play All"}</span>
               </button>
 
               <button
                 onClick={handleShuffle}
                 disabled={tracks.length === 0}
-                className="btn-cyberdeck flex items-center gap-2 rounded-xl px-3.5 sm:px-4 py-3 sm:py-3.5 text-xs font-mono text-zinc-300 hover:text-white disabled:opacity-40 cursor-pointer"
-                title="Trộn bài"
+                className="btn-cyberdeck flex items-center gap-2 rounded-xl px-4 py-3 sm:py-3.5 text-xs font-mono font-semibold text-zinc-100 hover:text-white disabled:opacity-40 cursor-pointer shrink-0"
+                title="Shuffle Tracks"
               >
                 <Shuffle className="h-4 w-4 text-neon-cyan" />
-                <span>SHUFFLE</span>
+                <span>Shuffle</span>
               </button>
 
               <button
                 onClick={() => {
                   window.dispatchEvent(new CustomEvent("aurasound:open-ingest-modal"));
                 }}
-                className="flex md:hidden items-center gap-2 rounded-xl border border-neon-cyan/30 bg-neon-cyan/10 px-3.5 py-3 text-xs font-mono font-semibold text-neon-cyan transition active:scale-95 cursor-pointer"
+                className="flex md:hidden items-center gap-2 rounded-xl border border-neon-cyan/30 bg-neon-cyan/10 px-3.5 py-3 text-xs font-mono font-semibold text-neon-cyan transition active:scale-95 cursor-pointer shrink-0"
               >
                 <CloudDownload className="h-4 w-4" />
-                <span>NẠP NHẠC</span>
+                <span>Import</span>
               </button>
 
               <div className="relative w-full sm:flex-1 sm:min-w-[200px]">
-                <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-500" />
+                <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" />
                 <input
                   type="text"
                   value={searchQuery}
@@ -858,27 +872,27 @@ export default function RetroCyberDeckPage() {
                     setSearchQuery(e.target.value);
                     if (activeView === "explore") setActiveView("vault");
                   }}
-                  placeholder="FILTER_TRACK_BY_NAME..."
-                  className="w-full rounded-xl border border-white/[0.08] bg-black/50 pl-9 pr-3 py-3 text-xs font-mono text-neon-cyan placeholder-zinc-600 outline-none transition focus:border-neon-cyan/50 focus:bg-black/80"
+                  placeholder="Search tracks, artists..."
+                  className="w-full rounded-xl border border-white/15 bg-black/60 pl-9 pr-3 py-3 text-xs font-mono text-zinc-100 placeholder-zinc-400 outline-none transition focus:border-neon-cyan/60 focus:bg-black/90 focus:ring-1 focus:ring-neon-cyan/40"
                 />
               </div>
             </div>
 
             {/* SMART FILTER DECK & SORT SWITCH */}
-            <div className="flex flex-wrap items-center justify-between gap-2.5 pt-1 border-t border-white/[0.05]">
+            <div className="flex flex-wrap items-center justify-between gap-2.5 pt-2 border-t border-white/[0.08]">
               <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
                 <button
                   onClick={() => {
                     playMechanicalSound('switch');
                     setActiveChip('all');
                   }}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-mono font-semibold transition active:scale-95 cursor-pointer ${
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-mono font-bold transition active:scale-95 cursor-pointer ${
                     activeChip === 'all'
-                      ? 'bg-neon-cyan text-black font-bold shadow-[0_0_12px_rgba(0,240,255,0.35)]'
-                      : 'border border-white/10 bg-white/[0.04] text-zinc-400 hover:text-white hover:bg-white/[0.08]'
+                      ? 'bg-neon-cyan text-black shadow-[0_0_16px_rgba(0,240,255,0.4)]'
+                      : 'border border-white/15 bg-white/[0.06] text-zinc-200 hover:text-white hover:bg-white/[0.12] hover:border-white/30'
                   }`}
                 >
-                  [ TẤT CẢ ]
+                  All
                 </button>
 
                 <button
@@ -886,15 +900,15 @@ export default function RetroCyberDeckPage() {
                     playMechanicalSound('switch');
                     setActiveChip('liked');
                   }}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-mono font-semibold transition active:scale-95 cursor-pointer ${
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-mono font-bold transition active:scale-95 cursor-pointer ${
                     activeChip === 'liked'
-                      ? 'bg-rose-500 text-white font-bold shadow-[0_0_12px_rgba(244,63,94,0.35)]'
-                      : 'border border-white/10 bg-white/[0.04] text-zinc-400 hover:text-rose-400 hover:bg-white/[0.08]'
+                      ? 'bg-rose-500 text-white shadow-[0_0_16px_rgba(244,63,94,0.4)]'
+                      : 'border border-white/15 bg-white/[0.06] text-zinc-200 hover:text-rose-300 hover:bg-white/[0.12] hover:border-rose-500/40'
                   }`}
                 >
                   <span className="flex items-center gap-1.5">
                     <Heart className="h-3 w-3 fill-current" />
-                    <span>[ ĐÃ THÍCH ]</span>
+                    <span>Liked</span>
                   </span>
                 </button>
 
@@ -903,15 +917,15 @@ export default function RetroCyberDeckPage() {
                     playMechanicalSound('switch');
                     setActiveChip('popular');
                   }}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-mono font-semibold transition active:scale-95 cursor-pointer ${
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-mono font-bold transition active:scale-95 cursor-pointer ${
                     activeChip === 'popular'
-                      ? 'bg-amber-400 text-black font-bold shadow-[0_0_12px_rgba(245,158,11,0.35)]'
-                      : 'border border-white/10 bg-white/[0.04] text-zinc-400 hover:text-amber-300 hover:bg-white/[0.08]'
+                      ? 'bg-amber-400 text-black shadow-[0_0_16px_rgba(245,158,11,0.4)]'
+                      : 'border border-white/15 bg-white/[0.06] text-zinc-200 hover:text-amber-300 hover:bg-white/[0.12] hover:border-amber-400/40'
                   }`}
                 >
                   <span className="flex items-center gap-1.5">
                     <Flame className="h-3 w-3" />
-                    <span>[ POPULAR ]</span>
+                    <span>Popular</span>
                   </span>
                 </button>
 
@@ -920,15 +934,15 @@ export default function RetroCyberDeckPage() {
                     playMechanicalSound('switch');
                     setActiveChip('recent');
                   }}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-mono font-semibold transition active:scale-95 cursor-pointer ${
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-mono font-bold transition active:scale-95 cursor-pointer ${
                     activeChip === 'recent'
-                      ? 'bg-emerald-400 text-black font-bold shadow-[0_0_12px_rgba(16,185,129,0.35)]'
-                      : 'border border-white/10 bg-white/[0.04] text-zinc-400 hover:text-emerald-300 hover:bg-white/[0.08]'
+                      ? 'bg-emerald-400 text-black shadow-[0_0_16px_rgba(16,185,129,0.4)]'
+                      : 'border border-white/15 bg-white/[0.06] text-zinc-200 hover:text-emerald-300 hover:bg-white/[0.12] hover:border-emerald-400/40'
                   }`}
                 >
                   <span className="flex items-center gap-1.5">
                     <History className="h-3 w-3" />
-                    <span>[ GẦN ĐÂY ]</span>
+                    <span>Recent</span>
                   </span>
                 </button>
 
@@ -937,15 +951,15 @@ export default function RetroCyberDeckPage() {
                     playMechanicalSound('switch');
                     setActiveChip('longplay');
                   }}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-mono font-semibold transition active:scale-95 cursor-pointer ${
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-mono font-bold transition active:scale-95 cursor-pointer ${
                     activeChip === 'longplay'
-                      ? 'bg-neon-violet text-white font-bold shadow-[0_0_12px_rgba(168,85,247,0.35)]'
-                      : 'border border-white/10 bg-white/[0.04] text-zinc-400 hover:text-neon-violet hover:bg-white/[0.08]'
+                      ? 'bg-neon-violet text-white shadow-[0_0_16px_rgba(168,85,247,0.4)]'
+                      : 'border border-white/15 bg-white/[0.06] text-zinc-200 hover:text-purple-300 hover:bg-white/[0.12] hover:border-neon-violet/40'
                   }`}
                 >
                   <span className="flex items-center gap-1.5">
                     <Music2 className="h-3 w-3" />
-                    <span>[ LONG PLAY &gt;4m ]</span>
+                    <span>Long Play</span>
                   </span>
                 </button>
               </div>
@@ -958,12 +972,12 @@ export default function RetroCyberDeckPage() {
                     prev === 'default' ? 'streams' : prev === 'streams' ? 'alphabet' : 'default'
                   );
                 }}
-                className="btn-cyberdeck flex items-center gap-2 rounded-xl px-3 py-1.5 text-xs font-mono text-zinc-300 hover:text-white active:scale-95 cursor-pointer"
-                title="Thay đổi thứ tự sắp xếp bài hát"
+                className="btn-cyberdeck flex items-center gap-2 rounded-xl px-3.5 py-1.5 text-xs font-mono text-zinc-200 hover:text-white active:scale-95 cursor-pointer border border-white/15 bg-white/[0.06]"
+                title="Sort tracks"
               >
                 <ArrowUpDown className="h-3.5 w-3.5 text-neon-cyan" />
                 <span>
-                  SẮP XẾP: {sortMode === 'streams' ? 'LƯỢT NGHE' : sortMode === 'alphabet' ? 'TÊN A-Z' : 'MẶC ĐỊNH'}
+                  Sort: {sortMode === 'streams' ? 'Popular' : sortMode === 'alphabet' ? 'A-Z' : 'Default'}
                 </span>
               </button>
             </div>

@@ -1,5 +1,30 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@config "../../tailwind.config.ts";
+
+@theme {
+  --color-obsidian-950: #050508;
+  --color-obsidian-900: #0a0a10;
+  --color-obsidian-800: #12121c;
+
+  --color-neon-cyan: #00f0ff;
+  --color-neon-violet: #a855f7;
+  --color-neon-amber: #f59e0b;
+  --color-neon-emerald: #10b981;
+  --color-neon-rose: #ff2a85;
+
+  --color-glass-surface: rgba(18, 18, 28, 0.55);
+  --color-glass-elevated: rgba(30, 30, 46, 0.65);
+  --color-glass-border: rgba(255, 255, 255, 0.08);
+  --color-glass-highlight: rgba(255, 255, 255, 0.16);
+
+  --shadow-neon-cyan: 0 0 24px -4px rgba(0, 240, 255, 0.45);
+  --shadow-neon-violet: 0 0 32px -4px rgba(168, 85, 247, 0.45);
+  --shadow-neon-amber: 0 0 24px -4px rgba(245, 158, 11, 0.45);
+  --shadow-neon-glow-cyan: 0 0 16px -2px rgba(0, 240, 255, 0.35), 0 0 4px -1px rgba(0, 240, 255, 0.2);
+  --shadow-neon-glow-violet: 0 0 16px -2px rgba(168, 85, 247, 0.35), 0 0 4px -1px rgba(168, 85, 247, 0.2);
+  --shadow-neon-glow-amber: 0 0 16px -2px rgba(245, 158, 11, 0.3), 0 0 4px -1px rgba(245, 158, 11, 0.2);
+}
 
 :root {
   --background: #050508;

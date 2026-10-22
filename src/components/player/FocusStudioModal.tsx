@@ -181,12 +181,23 @@ export function FocusStudioModal() {
         }
       }
 
+      if (isNaN(smoothedLevelRef.current) || !isFinite(smoothedLevelRef.current)) {
+        smoothedLevelRef.current = 0;
+      }
+      if (isNaN(targetLeds) || !isFinite(targetLeds)) {
+        targetLeds = 0;
+      }
+
       if (!isPlaying) {
         smoothedLevelRef.current = Math.max(0, smoothedLevelRef.current * 0.85 - 0.25);
       } else if (targetLeds > smoothedLevelRef.current) {
         smoothedLevelRef.current += (targetLeds - smoothedLevelRef.current) * 0.28;
       } else {
         smoothedLevelRef.current += (targetLeds - smoothedLevelRef.current) * 0.12;
+      }
+
+      if (isNaN(smoothedLevelRef.current) || !isFinite(smoothedLevelRef.current)) {
+        smoothedLevelRef.current = 0;
       }
 
       const activeCount = isPlaying ? Math.max(1, Math.round(smoothedLevelRef.current)) : 0;
@@ -217,19 +228,21 @@ export function FocusStudioModal() {
 
       if (dbTextRef.current) {
         if (!isPlaying || activeCount === 0) {
-          dbTextRef.current.innerText = '-∞ dB (STANDBY)';
-          dbTextRef.current.className = 'text-zinc-600 font-bold shrink-0';
+          dbTextRef.current.innerText = '-∞ dB';
+          dbTextRef.current.className = 'text-zinc-500 font-semibold shrink-0 tabular-nums';
         } else {
-          const dbVal = Math.round((activeCount / 24) * 48 - 42);
+          let dbVal = Math.round((activeCount / 24) * 48 - 42);
+          if (isNaN(dbVal) || !isFinite(dbVal)) dbVal = -42;
+
           if (activeCount >= 18) {
-            dbTextRef.current.innerText = `+${Math.max(1, dbVal)} dB (PEAK)`;
-            dbTextRef.current.className = 'text-rose-400 font-bold shrink-0';
+            dbTextRef.current.innerText = `+${Math.max(1, dbVal)} dB PEAK`;
+            dbTextRef.current.className = 'text-rose-400 font-bold shrink-0 tabular-nums';
           } else if (activeCount >= 12) {
-            dbTextRef.current.innerText = `${dbVal >= 0 ? '+' : ''}${dbVal} dB (0 VU)`;
-            dbTextRef.current.className = 'text-amber-400 font-bold shrink-0';
+            dbTextRef.current.innerText = `${dbVal >= 0 ? '+' : ''}${dbVal} dB VU`;
+            dbTextRef.current.className = 'text-amber-400 font-bold shrink-0 tabular-nums';
           } else {
             dbTextRef.current.innerText = `${dbVal} dB`;
-            dbTextRef.current.className = 'text-emerald-400 font-bold shrink-0';
+            dbTextRef.current.className = 'text-emerald-400 font-bold shrink-0 tabular-nums';
           }
         }
       }
@@ -447,10 +460,14 @@ export function FocusStudioModal() {
 
       {/* Bottom: Wide Dynamic VU Meter */}
       <footer className="relative z-10 w-full max-w-3xl mx-auto rounded-2xl border border-white/[0.08] bg-black/50 p-3 sm:p-4 backdrop-blur-md shadow-inner">
-        <div className="flex items-center justify-between text-[10px] font-mono text-zinc-400 mb-1.5">
-          <span>VU MASTER DYNAMIC RANGE [-42 dB ... 0 VU ... +6 dB]</span>
-          <span ref={dbTextRef} className="text-zinc-600 font-bold">
-            -∞ dB (STANDBY)
+        <div className="flex items-center justify-between text-[10px] font-mono mb-1.5">
+          <div className="flex items-center gap-2">
+            <span className="text-neon-cyan font-bold tracking-wider">VU MASTER</span>
+            <span className="text-zinc-600">•</span>
+            <span className="text-zinc-400 font-medium">-42 to +6 dB</span>
+          </div>
+          <span ref={dbTextRef} className="text-zinc-500 font-semibold tabular-nums">
+            -∞ dB
           </span>
         </div>
         <div ref={containerRef} className="flex gap-1 h-3 sm:h-3.5 w-full">
