@@ -29,6 +29,8 @@ function getSfxContext(): AudioContext | null {
 
 export function playMechanicalSound(type: MechanicalSfxType = 'switch') {
   if (typeof window === 'undefined') return;
+  // Không kích hoạt SFX khi ở chế độ chạy ngầm để tránh đánh thức hoặc gây nghẽn AudioContext
+  if (typeof document !== 'undefined' && document.hidden) return;
 
   const isEnabled = usePlayerStore.getState().isSfxEnabled;
   if (!isEnabled) return;

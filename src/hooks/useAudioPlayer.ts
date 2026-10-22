@@ -350,6 +350,11 @@ export function useAudioPlayer() {
       const offset = details.seekOffset || 10;
       const state = usePlayerStore.getState();
       const baseTime = state.currentTrack?.isPreview ? state.progress : audioEngine.getCurrentTime();
+      const total =
+        audioEngine.getDuration() ||
+        state.duration ||
+        state.currentTrack?.duration ||
+        0;
       const target = Math.max(0, baseTime - offset);
       if (state.currentTrack?.isPreview) {
         seekYouTubePreview(target);
@@ -357,13 +362,18 @@ export function useAudioPlayer() {
         audioEngine.seek(target);
       }
       state.setProgress(target);
+      updateMediaSessionPosition(target, total);
     });
 
     safeSetHandler('seekforward', (details) => {
       const offset = details.seekOffset || 10;
       const state = usePlayerStore.getState();
       const baseTime = state.currentTrack?.isPreview ? state.progress : audioEngine.getCurrentTime();
-      const total = audioEngine.getDuration() || state.duration || 0;
+      const total =
+        audioEngine.getDuration() ||
+        state.duration ||
+        state.currentTrack?.duration ||
+        0;
       const target = total > 0 ? Math.min(total, baseTime + offset) : baseTime + offset;
       if (state.currentTrack?.isPreview) {
         seekYouTubePreview(target);
@@ -371,6 +381,7 @@ export function useAudioPlayer() {
         audioEngine.seek(target);
       }
       state.setProgress(target);
+      updateMediaSessionPosition(target, total);
     });
   }, [currentTrack, isPlaying]);
 

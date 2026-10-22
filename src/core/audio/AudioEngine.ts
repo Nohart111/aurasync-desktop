@@ -35,13 +35,41 @@ export class AudioEngine {
   private constructor() {
     if (typeof window !== 'undefined') {
       this.primaryAudio = new Audio();
-      this.primaryAudio.crossOrigin = 'anonymous';
+      if (!this.isMobileDevice()) {
+        this.primaryAudio.crossOrigin = 'anonymous';
+      }
       this.primaryAudio.preload = 'auto';
       (this.primaryAudio as any).playsInline = true;
+      this.primaryAudio.setAttribute('playsinline', '');
+      this.primaryAudio.setAttribute('webkit-playsinline', '');
+
+      // Gắn Audio element vào DOM để tránh bị iOS Safari / Android thu hồi tiến trình (garbage collect) khi phát trong nền
+      const attachAudio = () => {
+        if (typeof document !== 'undefined' && document.body && this.primaryAudio && !this.primaryAudio.parentElement) {
+          this.primaryAudio.id = 'aurasound-primary-audio';
+          this.primaryAudio.style.position = 'fixed';
+          this.primaryAudio.style.width = '1px';
+          this.primaryAudio.style.height = '1px';
+          this.primaryAudio.style.opacity = '0.001';
+          this.primaryAudio.style.pointerEvents = 'none';
+          this.primaryAudio.style.zIndex = '-100';
+          document.body.appendChild(this.primaryAudio);
+        }
+      };
+      if (document.readyState === 'loading') {
+        window.addEventListener('DOMContentLoaded', attachAudio, { once: true });
+      } else {
+        attachAudio();
+      }
 
       this.preloadAudio = new Audio();
-      this.preloadAudio.crossOrigin = 'anonymous';
+      if (!this.isMobileDevice()) {
+        this.preloadAudio.crossOrigin = 'anonymous';
+      }
       this.preloadAudio.preload = 'auto';
+      (this.preloadAudio as any).playsInline = true;
+      this.preloadAudio.setAttribute('playsinline', '');
+      this.preloadAudio.setAttribute('webkit-playsinline', '');
 
       this.bindNativeEvents();
 
@@ -159,6 +187,12 @@ export class AudioEngine {
 
   private ensureAudioContext(): void {
     if (typeof window === 'undefined' || !this.primaryAudio) return;
+    // BẤT BIẾN QUAN TRỌNG CHO MOBILE:
+    // Tuyệt đối KHÔNG gắn createMediaElementSource() trên iOS Safari / Android Chrome!
+    // Hệ điều hành di động sẽ đình chỉ (suspend) AudioContext khi tắt màn hình hoặc ẩn tab,
+    // khiến toàn bộ âm thanh ngầm bị ngắt tiếng.
+    // Giữ nguyên AudioElement thuần giúp tận dụng 100% pipeline âm thanh ngầm tự nhiên của OS.
+    if (this.isMobileDevice()) return;
     if (typeof document !== 'undefined' && document.hidden) return;
 
     try {
@@ -226,15 +260,26 @@ export class AudioEngine {
     this.isLoading = true;
 
     try {
-      if (this.primaryAudio.crossOrigin !== 'anonymous') {
-        this.primaryAudio.crossOrigin = 'anonymous';
+      if (!this.isMobileDevice()) {
+        if (this.primaryAudio.crossOrigin !== 'anonymous') {
+          this.primaryAudio.crossOrigin = 'anonymous';
+        }
+      } else {
+        this.primaryAudio.removeAttribute('crossorigin');
       }
 
       if (!isSameUrl) {
-        this.primaryAudio.pause();
-        this.primaryAudio.src = url;
-        this.currentUrl = url;
-        this.primaryAudio.load();
+        if (!this.isMobileDevice()) {
+          this.primaryAudio.pause();
+          this.primaryAudio.src = url;
+          this.currentUrl = url;
+          this.primaryAudio.load();
+        } else {
+          // Trên mobile: gán trực tiếp src mà không gọi pause() hay load()
+          // để duy trì quyền ưu tiên phát âm thanh ngầm liên tục của OS khi chuyển bài
+          this.primaryAudio.src = url;
+          this.currentUrl = url;
+        }
       } else {
         this.primaryAudio.currentTime = 0;
       }
@@ -361,6 +406,16 @@ export class AudioEngine {
     }
     if (this.analyser) {
       this.analyser.getByteFrequencyData(this.frequencyData as any);
+    } else if (this.primaryAudio && !this.primaryAudio.paused) {
+      // Mô phỏng phổ tần số mượt mà cho mobile khi mở màn hình
+      const t = this.primaryAudio.currentTime || 0;
+      for (let i = 0; i < this.frequencyData.length; i++) {
+        const wave = Math.sin(t * 7.5 + i * 0.45) * 0.5 + 0.5;
+        const beat = Math.pow(Math.max(0, Math.sin(t * 3.75)), 2.5);
+        this.frequencyData[i] = Math.floor((wave * 0.6 + beat * 0.4) * 190 + 25);
+      }
+    } else {
+      this.frequencyData.fill(0);
     }
     return this.frequencyData;
   }
