@@ -376,13 +376,13 @@ export function FocusStudioModal() {
           <h2 className="text-2xl sm:text-4xl font-extrabold text-white tracking-tight truncate drop-shadow-[0_2px_16px_rgba(0,0,0,0.85)]">
             {currentTrack?.title || 'CHƯA CHỌN BÀI HÁT'}
           </h2>
-          <p className="mt-1 font-mono text-xs sm:text-sm text-neon-cyan/85 tracking-wider truncate uppercase">
+          <p className="mt-1 font-mono text-xs sm:text-sm text-zinc-400 tracking-wider truncate uppercase">
             {currentTrack?.artist || 'Phòng thu Retro Hi-Fi Cyberdeck'}
           </p>
 
           {/* VFD Digital Clock */}
-          <div className="mt-3 inline-flex items-center gap-2 rounded-xl bg-black/60 border border-white/10 px-3.5 py-1.5 font-mono text-xs sm:text-sm text-neon-cyan shadow-inner">
-            <Clock className={`w-3.5 h-3.5 ${isPlaying ? 'animate-pulse' : ''}`} />
+          <div className="mt-3 inline-flex items-center gap-2 rounded-xl bg-black/60 border border-white/10 px-3.5 py-1.5 font-mono text-xs sm:text-sm text-white shadow-inner">
+            <Clock className={`w-3.5 h-3.5 text-amber-400 ${isPlaying ? 'animate-pulse' : ''}`} />
             <span className="font-bold tabular-nums">
               {isPlaying && currentTrack ? formatDuration(currentTime) : '00:00'}
             </span>

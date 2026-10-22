@@ -190,7 +190,7 @@ export function SidebarNav({ onViewChange, onFileUpload }: SidebarNavProps) {
                 </div>
                 <div className="flex items-center gap-1.5">
                   <span className="text-sm font-semibold tracking-tight text-white font-display">AuraSound</span>
-                  <span className="rounded bg-white/5 px-1.5 py-0.5 text-[9px] font-mono text-neon-cyan border border-neon-cyan/30 shadow-[0_0_8px_rgba(0,240,255,0.15)]">
+                  <span className="rounded bg-white/5 px-1.5 py-0.5 text-[9px] font-mono text-zinc-300 border border-white/15">
                     HI-FI
                   </span>
                 </div>
@@ -221,13 +221,13 @@ export function SidebarNav({ onViewChange, onFileUpload }: SidebarNavProps) {
               title="Bàn phát nhạc"
               className={`w-full flex items-center ${
                 isSidebarCollapsed ? 'justify-center px-0 py-3' : 'gap-3 px-3.5 py-2.5'
-              } rounded-xl text-xs font-mono font-medium transition-all active:scale-95 cursor-pointer ${
+              } rounded-xl text-xs font-mono transition-all active:scale-95 cursor-pointer ${
                 activeView === 'vault'
-                  ? 'border border-neon-cyan/40 bg-neon-cyan/10 text-neon-cyan shadow-[0_0_16px_rgba(0,240,255,0.15)]'
+                  ? 'border border-white/20 bg-white/[0.08] text-white font-semibold shadow-sm'
                   : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.04]'
               }`}
             >
-              <Radio className="h-4 w-4 shrink-0" />
+              <Radio className={`h-4 w-4 shrink-0 ${activeView === 'vault' ? 'text-neon-cyan' : 'text-zinc-400'}`} />
               {!isSidebarCollapsed && <span>Bàn phát nhạc</span>}
             </button>
 
@@ -237,13 +237,13 @@ export function SidebarNav({ onViewChange, onFileUpload }: SidebarNavProps) {
               title="Khám phá Thịnh hành"
               className={`w-full flex items-center ${
                 isSidebarCollapsed ? 'justify-center px-0 py-3' : 'gap-3 px-3.5 py-2.5'
-              } rounded-xl text-xs font-mono font-medium transition-all active:scale-95 cursor-pointer ${
+              } rounded-xl text-xs font-mono transition-all active:scale-95 cursor-pointer ${
                 activeView === 'explore'
-                  ? 'border border-neon-cyan bg-neon-cyan text-black font-bold shadow-[0_0_20px_rgba(0,240,255,0.35)]'
-                  : 'text-zinc-400 hover:text-neon-cyan hover:bg-white/[0.04]'
+                  ? 'border border-white/20 bg-white/[0.08] text-white font-semibold shadow-sm'
+                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.04]'
               }`}
             >
-              <Compass className="h-4 w-4 shrink-0" />
+              <Compass className={`h-4 w-4 shrink-0 ${activeView === 'explore' ? 'text-neon-cyan' : 'text-zinc-400'}`} />
               {!isSidebarCollapsed && <span>Khám phá</span>}
             </button>
 

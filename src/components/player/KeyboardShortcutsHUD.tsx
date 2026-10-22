@@ -271,7 +271,7 @@ export function KeyboardShortcutsHUD() {
             {/* Header */}
             <div className="relative z-10 flex items-center justify-between border-b border-white/[0.08] pb-3.5">
               <div className="flex items-center gap-2.5">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-neon-cyan shadow-inner">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-zinc-300 shadow-inner">
                   <Terminal className="h-4 w-4" />
                 </div>
                 <div>
@@ -299,7 +299,7 @@ export function KeyboardShortcutsHUD() {
             <div className="relative z-10 mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
               <div className="flex items-center justify-between rounded-xl border border-white/[0.05] bg-white/[0.02] p-2.5 px-3">
                 <span className="text-zinc-300">Phát / Tạm dừng</span>
-                <span className="font-mono text-[11px] font-bold text-neon-cyan bg-white/10 border border-white/15 px-2 py-0.5 rounded-lg shadow-sm">
+                <span className="font-mono text-[11px] font-bold text-zinc-100 bg-white/[0.08] border border-white/20 px-2 py-0.5 rounded-lg shadow-sm">
                   Space
                 </span>
               </div>
@@ -307,10 +307,10 @@ export function KeyboardShortcutsHUD() {
               <div className="flex items-center justify-between rounded-xl border border-white/[0.05] bg-white/[0.02] p-2.5 px-3">
                 <span className="text-zinc-300">Tua lùi / Tiến 5s</span>
                 <div className="flex items-center gap-1">
-                  <span className="font-mono text-[11px] font-bold text-neon-cyan bg-white/10 border border-white/15 px-1.5 py-0.5 rounded-lg shadow-sm">
+                  <span className="font-mono text-[11px] font-bold text-zinc-100 bg-white/[0.08] border border-white/20 px-1.5 py-0.5 rounded-lg shadow-sm">
                     ←
                   </span>
-                  <span className="font-mono text-[11px] font-bold text-neon-cyan bg-white/10 border border-white/15 px-1.5 py-0.5 rounded-lg shadow-sm">
+                  <span className="font-mono text-[11px] font-bold text-zinc-100 bg-white/[0.08] border border-white/20 px-1.5 py-0.5 rounded-lg shadow-sm">
                     →
                   </span>
                 </div>
@@ -318,14 +318,14 @@ export function KeyboardShortcutsHUD() {
 
               <div className="flex items-center justify-between rounded-xl border border-white/[0.05] bg-white/[0.02] p-2.5 px-3">
                 <span className="text-zinc-300">Bài kế tiếp</span>
-                <span className="font-mono text-[11px] font-bold text-neon-cyan bg-white/10 border border-white/15 px-2 py-0.5 rounded-lg shadow-sm">
+                <span className="font-mono text-[11px] font-bold text-zinc-100 bg-white/[0.08] border border-white/20 px-2 py-0.5 rounded-lg shadow-sm">
                   N
                 </span>
               </div>
 
               <div className="flex items-center justify-between rounded-xl border border-white/[0.05] bg-white/[0.02] p-2.5 px-3">
                 <span className="text-zinc-300">Bài trước</span>
-                <span className="font-mono text-[11px] font-bold text-neon-cyan bg-white/10 border border-white/15 px-2 py-0.5 rounded-lg shadow-sm">
+                <span className="font-mono text-[11px] font-bold text-zinc-100 bg-white/[0.08] border border-white/20 px-2 py-0.5 rounded-lg shadow-sm">
                   P
                 </span>
               </div>
@@ -333,10 +333,10 @@ export function KeyboardShortcutsHUD() {
               <div className="flex items-center justify-between rounded-xl border border-white/[0.05] bg-white/[0.02] p-2.5 px-3">
                 <span className="text-zinc-300">Âm lượng (±5%)</span>
                 <div className="flex items-center gap-1">
-                  <span className="font-mono text-[11px] font-bold text-neon-cyan bg-white/10 border border-white/15 px-1.5 py-0.5 rounded-lg shadow-sm">
+                  <span className="font-mono text-[11px] font-bold text-zinc-100 bg-white/[0.08] border border-white/20 px-1.5 py-0.5 rounded-lg shadow-sm">
                     ↑
                   </span>
-                  <span className="font-mono text-[11px] font-bold text-neon-cyan bg-white/10 border border-white/15 px-1.5 py-0.5 rounded-lg shadow-sm">
+                  <span className="font-mono text-[11px] font-bold text-zinc-100 bg-white/[0.08] border border-white/20 px-1.5 py-0.5 rounded-lg shadow-sm">
                     ↓
                   </span>
                 </div>
@@ -344,7 +344,7 @@ export function KeyboardShortcutsHUD() {
 
               <div className="flex items-center justify-between rounded-xl border border-white/[0.05] bg-white/[0.02] p-2.5 px-3">
                 <span className="text-zinc-300">Bật / Tắt âm (Mute)</span>
-                <span className="font-mono text-[11px] font-bold text-neon-cyan bg-white/10 border border-white/15 px-2 py-0.5 rounded-lg shadow-sm">
+                <span className="font-mono text-[11px] font-bold text-zinc-100 bg-white/[0.08] border border-white/20 px-2 py-0.5 rounded-lg shadow-sm">
                   M
                 </span>
               </div>
@@ -391,7 +391,7 @@ export function KeyboardShortcutsHUD() {
             {/* Footer */}
             <div className="relative z-10 mt-5 pt-3 border-t border-white/[0.08] flex items-center justify-between text-[11px] font-mono text-zinc-500">
               <span>Bấm phím [ESC] để đóng</span>
-              <span className="text-neon-cyan">PURE_AUDIO_PATH: ACTIVE</span>
+              <span className="text-emerald-400 font-semibold">PURE_AUDIO_PATH: ACTIVE</span>
             </div>
           </div>
         </div>

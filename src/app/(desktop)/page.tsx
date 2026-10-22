@@ -339,7 +339,7 @@ function StudioDynamicVuMeter({ isPlaying }: { isPlaying: boolean }) {
     <div className="crt-screen space-y-2 rounded-2xl border border-white/[0.1] bg-[#0c0c16]/80 p-3 sm:p-4 backdrop-blur-md shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)]">
       <div className="flex items-center justify-between gap-2 text-[10px] sm:text-xs font-mono">
         <div className="flex items-center gap-2 truncate">
-          <span className="text-neon-cyan font-bold tracking-wider">VU LEVEL</span>
+          <span className="text-zinc-300 font-bold tracking-wider">VU LEVEL</span>
           <span className="text-zinc-600">•</span>
           <span className="text-zinc-400 font-medium truncate">
             -42 to +6 dB
@@ -686,8 +686,8 @@ export default function RetroCyberDeckPage() {
           {/* Đầu máy băng cassette cơ học */}
           <div className="relative flex w-full max-w-md flex-col items-center rounded-2xl border border-white/[0.08] bg-gradient-to-b from-[#18182c] to-[#0c0c16] p-3.5 sm:p-5 shadow-inner">
             <div className="flex w-full flex-wrap items-center justify-between gap-1.5 border-b border-white/[0.08] pb-2.5 sm:pb-3 text-[9px] sm:text-[10px] font-mono tracking-widest text-zinc-300 uppercase">
-              <span className="flex items-center gap-1.5 text-neon-cyan font-bold">
-                <Radio className="h-3.5 w-3.5 animate-pulse" />
+              <span className="flex items-center gap-1.5 text-zinc-300 font-medium">
+                <Radio className="h-3.5 w-3.5 text-neon-cyan animate-pulse" />
                 HI-FI STEREO
               </span>
               <span className="rounded bg-amber-400/15 px-2 py-0.5 font-bold text-amber-300 border border-amber-400/30">
@@ -742,13 +742,13 @@ export default function RetroCyberDeckPage() {
                 <span className="text-[9px] sm:text-[10px] font-mono text-zinc-400 block uppercase font-medium">
                   {(currentTrack as any)?.isPreview ? "PREVIEW" : "MASTER TAPE"}
                 </span>
-                <span className="font-mono font-bold text-neon-cyan truncate block">
+                <span className="font-display font-semibold text-white truncate block">
                   {currentTrack ? currentTrack.title : "Ready to Play"}
                 </span>
               </div>
               <div className="flex items-center gap-1.5 shrink-0 font-mono text-[10px] sm:text-[11px] text-zinc-300 bg-white/[0.06] px-2 sm:px-2.5 py-1 rounded border border-white/10 shadow-inner">
-                <Clock className={`w-3 h-3 text-neon-cyan ${isPlaying ? "animate-pulse" : ""}`} />
-                <span className="text-neon-cyan font-bold tabular-nums">
+                <Clock className={`w-3 h-3 text-amber-400 ${isPlaying ? "animate-pulse" : ""}`} />
+                <span className="text-white font-bold tabular-nums">
                   {isPlaying && currentTrack ? formatDuration(currentTime) : "00:00"}
                 </span>
                 <span className="text-zinc-600">/</span>
@@ -763,8 +763,8 @@ export default function RetroCyberDeckPage() {
           <div className="flex w-full flex-1 flex-col justify-between space-y-4 sm:space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
-                <div className="flex items-center gap-2 text-[10px] sm:text-[11px] font-mono text-neon-cyan tracking-widest uppercase font-bold">
-                  <span className="led-status text-neon-cyan" />
+                <div className="flex items-center gap-2 text-[10px] sm:text-[11px] font-mono text-zinc-400 tracking-widest uppercase font-semibold">
+                  <span className="led-status text-emerald-400" />
                   <span className="truncate">AURA SOUND // MASTER DECK</span>
                 </div>
                 <h1 className="mt-1 font-display text-2xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight text-white">
@@ -779,10 +779,10 @@ export default function RetroCyberDeckPage() {
                     playMechanicalSound('toggle');
                     toggleFocusMode();
                   }}
-                  className="btn-cyberdeck flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-mono text-zinc-200 hover:text-neon-cyan active:scale-95 cursor-pointer"
+                  className="btn-cyberdeck flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-mono text-zinc-200 hover:text-white active:scale-95 cursor-pointer"
                   title="Focus Studio [Z]"
                 >
-                  <Maximize2 className="h-3.5 w-3.5 text-neon-cyan" />
+                  <Maximize2 className="h-3.5 w-3.5 text-zinc-300" />
                   <span className="hidden sm:inline">Focus</span>
                 </button>
 
@@ -833,7 +833,7 @@ export default function RetroCyberDeckPage() {
               <button
                 onClick={handlePlayAll}
                 disabled={tracks.length === 0}
-                className="btn-cyberdeck group flex items-center gap-2 rounded-xl bg-gradient-to-b from-[#00F0FF] to-[#00C4D6] px-5 sm:px-6 py-3 sm:py-3.5 text-xs font-mono font-extrabold tracking-wider text-black shadow-[0_0_24px_rgba(0,240,255,0.45),inset_0_1px_0_rgba(255,255,255,0.4)] transition-all duration-150 hover:scale-105 hover:bg-[#33F3FF] active:scale-95 active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.4)] disabled:opacity-50 cursor-pointer border border-cyan-200/50 shrink-0"
+                className="group flex items-center gap-2 rounded-xl bg-white px-5 sm:px-6 py-3 sm:py-3.5 text-xs font-mono font-bold tracking-wider text-black shadow-lg shadow-white/10 transition-all duration-150 hover:bg-zinc-200 active:scale-95 disabled:opacity-40 cursor-pointer border border-white/40 shrink-0"
               >
                 {isPlaying && !(currentTrack as any)?.isPreview ? (
                   <Pause className="h-4 w-4 fill-black text-black" />
@@ -849,7 +849,7 @@ export default function RetroCyberDeckPage() {
                 className="btn-cyberdeck flex items-center gap-2 rounded-xl px-4 py-3 sm:py-3.5 text-xs font-mono font-semibold text-zinc-100 hover:text-white disabled:opacity-40 cursor-pointer shrink-0"
                 title="Shuffle Tracks"
               >
-                <Shuffle className="h-4 w-4 text-neon-cyan" />
+                <Shuffle className="h-4 w-4 text-zinc-300" />
                 <span>Shuffle</span>
               </button>
 
@@ -857,9 +857,9 @@ export default function RetroCyberDeckPage() {
                 onClick={() => {
                   window.dispatchEvent(new CustomEvent("aurasound:open-ingest-modal"));
                 }}
-                className="flex md:hidden items-center gap-2 rounded-xl border border-neon-cyan/30 bg-neon-cyan/10 px-3.5 py-3 text-xs font-mono font-semibold text-neon-cyan transition active:scale-95 cursor-pointer shrink-0"
+                className="flex md:hidden items-center gap-2 rounded-xl border border-white/15 bg-white/[0.06] px-3.5 py-3 text-xs font-mono font-semibold text-zinc-200 transition active:scale-95 cursor-pointer shrink-0 hover:text-white"
               >
-                <CloudDownload className="h-4 w-4" />
+                <CloudDownload className="h-4 w-4 text-zinc-300" />
                 <span>Import</span>
               </button>
 
@@ -873,7 +873,7 @@ export default function RetroCyberDeckPage() {
                     if (activeView === "explore") setActiveView("vault");
                   }}
                   placeholder="Search tracks, artists..."
-                  className="w-full rounded-xl border border-white/15 bg-black/60 pl-9 pr-3 py-3 text-xs font-mono text-zinc-100 placeholder-zinc-400 outline-none transition focus:border-neon-cyan/60 focus:bg-black/90 focus:ring-1 focus:ring-neon-cyan/40"
+                  className="w-full rounded-xl border border-white/15 bg-black/60 pl-9 pr-3 py-3 text-xs font-mono text-zinc-100 placeholder-zinc-400 outline-none transition focus:border-white/40 focus:bg-black/90 focus:ring-1 focus:ring-white/20"
                 />
               </div>
             </div>
@@ -888,8 +888,8 @@ export default function RetroCyberDeckPage() {
                   }}
                   className={`px-3.5 py-1.5 rounded-xl text-xs font-mono font-bold transition active:scale-95 cursor-pointer ${
                     activeChip === 'all'
-                      ? 'bg-neon-cyan text-black shadow-[0_0_16px_rgba(0,240,255,0.4)]'
-                      : 'border border-white/15 bg-white/[0.06] text-zinc-200 hover:text-white hover:bg-white/[0.12] hover:border-white/30'
+                      ? 'bg-white text-black font-bold shadow-md shadow-white/10'
+                      : 'border border-white/15 bg-white/[0.06] text-zinc-300 hover:text-white hover:bg-white/[0.12] hover:border-white/25'
                   }`}
                 >
                   All
@@ -975,7 +975,7 @@ export default function RetroCyberDeckPage() {
                 className="btn-cyberdeck flex items-center gap-2 rounded-xl px-3.5 py-1.5 text-xs font-mono text-zinc-200 hover:text-white active:scale-95 cursor-pointer border border-white/15 bg-white/[0.06]"
                 title="Sort tracks"
               >
-                <ArrowUpDown className="h-3.5 w-3.5 text-neon-cyan" />
+                <ArrowUpDown className="h-3.5 w-3.5 text-zinc-300" />
                 <span>
                   Sort: {sortMode === 'streams' ? 'Popular' : sortMode === 'alphabet' ? 'A-Z' : 'Default'}
                 </span>
@@ -1000,7 +1000,7 @@ export default function RetroCyberDeckPage() {
                   : "border border-white/[0.08] bg-white/[0.03] text-zinc-400 hover:bg-white/[0.07] hover:text-white"
               }`}
             >
-              <Cpu className={`h-3.5 w-3.5 ${activeView === "vault" ? "text-black" : "text-neon-cyan"}`} />
+              <Cpu className={`h-3.5 w-3.5 ${activeView === "vault" ? "text-black" : "text-zinc-300"}`} />
               <span>Kho nhạc ({tracks.length})</span>
             </button>
 
@@ -1084,10 +1084,10 @@ export default function RetroCyberDeckPage() {
             ) : (
               <button
                 onClick={() => setIsCreatingPlaylist(true)}
-                className="flex items-center gap-1.5 rounded-xl border border-dashed border-white/15 bg-white/[0.02] px-3 py-2 text-xs font-mono text-zinc-400 transition hover:border-neon-cyan/40 hover:text-neon-cyan cursor-pointer"
+                className="flex items-center gap-1.5 rounded-xl border border-dashed border-white/15 bg-white/[0.02] px-3 py-2 text-xs font-mono text-zinc-400 transition hover:border-white/40 hover:text-white cursor-pointer"
                 title="Tạo Playlist mới"
               >
-                <FolderPlus className="h-3.5 w-3.5 text-neon-cyan" />
+                <FolderPlus className="h-3.5 w-3.5 text-zinc-300" />
                 <span>+ Playlist</span>
               </button>
             )}
@@ -1096,7 +1096,7 @@ export default function RetroCyberDeckPage() {
               onClick={() => setActiveView("explore")}
               className={`flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-mono font-bold uppercase tracking-wider transition-all cursor-pointer ${
                 activeView === "explore"
-                  ? "bg-neon-cyan text-black shadow-[0_0_20px_rgba(0,240,255,0.3)]"
+                  ? "bg-white text-black shadow-md"
                   : "border border-white/[0.08] bg-white/[0.03] text-zinc-400 hover:bg-white/[0.07] hover:text-white"
               }`}
             >
@@ -1187,7 +1187,7 @@ export default function RetroCyberDeckPage() {
                           className={`absolute inset-0 m-auto flex h-6 w-6 items-center justify-center rounded-full transition-all duration-200 ${
                             isThisPlaying
                               ? "bg-neon-cyan/20 border border-neon-cyan text-neon-cyan shadow-[0_0_8px_#00F0FF]"
-                              : "bg-zinc-900/90 border border-white/20 text-zinc-300 group-hover:bg-neon-cyan group-hover:text-black group-hover:border-neon-cyan group-hover:shadow-[0_0_10px_#00F0FF]"
+                              : "bg-zinc-900/90 border border-white/20 text-zinc-300 group-hover:bg-white group-hover:text-black group-hover:border-white group-hover:shadow-[0_0_10px_rgba(255,255,255,0.4)]"
                           }`}
                         >
                           {isThisPlaying ? (
@@ -1216,7 +1216,7 @@ export default function RetroCyberDeckPage() {
                       </div>
                       <p
                         className={`truncate text-xs sm:text-sm font-semibold transition ${
-                          isThisActive ? "text-neon-cyan" : "text-zinc-100 group-hover:text-white"
+                          isThisActive ? "text-white font-bold" : "text-zinc-200 group-hover:text-white"
                         }`}
                       >
                         {track.title}
@@ -1225,7 +1225,7 @@ export default function RetroCyberDeckPage() {
                         <span className="truncate">{track.artist || "Nghệ sĩ chưa rõ"}</span>
                         <span className="text-zinc-600">•</span>
                         <span className="shrink-0 inline-flex items-center gap-1 text-zinc-500">
-                          <Headphones className="h-3 w-3 text-neon-cyan/70" />
+                          <Headphones className="h-3 w-3 text-zinc-500" />
                           <span>{streamLabel}</span>
                         </span>
                       </div>
@@ -1259,7 +1259,7 @@ export default function RetroCyberDeckPage() {
                           }
                         }}
                         className={`p-1.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all duration-200 cursor-pointer active:scale-90 ${
-                          isMenuOpen ? "text-neon-cyan scale-110" : "text-zinc-500 hover:text-neon-cyan hover:scale-110"
+                          isMenuOpen ? "text-white scale-110" : "text-zinc-500 hover:text-white hover:scale-110"
                         }`}
                         title="Thêm vào Hàng đợi / Playlist"
                       >
@@ -1273,9 +1273,9 @@ export default function RetroCyberDeckPage() {
                               handleEnqueue(track);
                               setPlaylistMenuTrackId(null);
                             }}
-                            className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left text-zinc-200 hover:bg-white/10 hover:text-neon-cyan cursor-pointer transition active:scale-95"
+                            className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left text-zinc-200 hover:bg-white/10 hover:text-white cursor-pointer transition active:scale-95"
                           >
-                            <ListPlus className="h-3.5 w-3.5 text-neon-cyan" />
+                            <ListPlus className="h-3.5 w-3.5 text-zinc-400" />
                             <span>Thêm vào Hàng đợi</span>
                           </button>
 

@@ -208,7 +208,7 @@ export function ExploreTrendingSection() {
                   <div className="flex items-center gap-3 overflow-hidden min-w-0 flex-1">
                     <span
                       className={`font-mono text-xs font-bold w-5 text-center shrink-0 ${
-                        idx < 3 ? 'text-neon-cyan' : 'text-zinc-500'
+                        idx < 3 ? 'text-amber-400' : 'text-zinc-500'
                       }`}
                     >
                       {String(idx + 1).padStart(2, '0')}
@@ -235,7 +235,7 @@ export function ExploreTrendingSection() {
                         <p
                           className={`truncate text-xs sm:text-sm font-semibold transition ${
                             isPreviewingThis
-                              ? 'text-neon-cyan'
+                              ? 'text-white font-bold'
                               : 'text-zinc-100 group-hover:text-white'
                           }`}
                         >
@@ -251,7 +251,7 @@ export function ExploreTrendingSection() {
                         <span className="truncate">{item.artist || 'Nghệ sĩ chưa rõ'}</span>
                         <span className="text-zinc-600">•</span>
                         <span className="shrink-0 inline-flex items-center gap-1 text-zinc-500">
-                          <Headphones className="h-3 w-3 text-neon-cyan/70" />
+                          <Headphones className="h-3 w-3 text-zinc-500" />
                           <span>
                             {baseStreamLabel}
                             {personalPlays > 0 ? ` (+${personalPlays})` : ''}
@@ -331,8 +331,8 @@ export default function ExplorePage() {
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(0,240,255,0.07),transparent_60%)]" />
         <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <div className="flex items-center gap-2 text-xs font-mono text-neon-cyan tracking-wider uppercase">
-              <Sparkles className="h-4 w-4" />
+            <div className="flex items-center gap-2 text-xs font-mono text-zinc-400 tracking-wider uppercase">
+              <Sparkles className="h-4 w-4 text-amber-400" />
               <span>TRENDING_RADAR // INSTANT PREVIEW</span>
             </div>
             <h1 className="mt-1 font-display text-2xl sm:text-4xl font-extrabold tracking-tight text-white">

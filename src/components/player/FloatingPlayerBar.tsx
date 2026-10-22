@@ -220,10 +220,10 @@ export function FloatingPlayerBar() {
               el.scrollIntoView({ behavior: 'smooth' });
             }
           }}
-          className="flex flex-col items-center justify-center gap-1 px-3 py-1.5 min-w-[52px] text-neon-cyan transition-all duration-150 active:scale-90"
+          className="flex flex-col items-center justify-center gap-1 px-3 py-1.5 min-w-[52px] text-zinc-300 transition-all duration-150 hover:text-white active:scale-90"
         >
-          <Compass className="h-4 w-4" />
-          <span className="text-[10px] font-semibold">Khám phá</span>
+          <Compass className="h-4 w-4 text-neon-cyan" />
+          <span className="text-[10px] font-medium">Khám phá</span>
         </button>
 
         <button
@@ -244,10 +244,10 @@ export function FloatingPlayerBar() {
           onClick={() => {
             window.dispatchEvent(new CustomEvent('aurasound:open-ingest-modal'));
           }}
-          className="flex flex-col items-center justify-center gap-1 px-3 py-1.5 min-w-[52px] text-zinc-300 transition-all duration-150 hover:text-neon-cyan active:scale-90"
+          className="flex flex-col items-center justify-center gap-1 px-3 py-1.5 min-w-[52px] text-zinc-300 transition-all duration-150 hover:text-white active:scale-90"
         >
-          <CloudDownload className="h-4 w-4 text-neon-cyan" />
-          <span className="text-[10px] font-semibold text-white">Nạp nhạc</span>
+          <CloudDownload className="h-4 w-4 text-zinc-300" />
+          <span className="text-[10px] font-medium">Nạp nhạc</span>
         </button>
       </nav>
 
@@ -293,7 +293,7 @@ export function FloatingPlayerBar() {
                       }}
                       className={`group flex cursor-pointer items-center justify-between rounded-xl p-2.5 transition ${
                         isCurrent
-                          ? 'bg-neon-cyan/15 border border-neon-cyan/40 text-neon-cyan shadow-sm'
+                          ? 'bg-white/[0.08] border border-white/20 text-white shadow-sm'
                           : 'hover:bg-white/5 text-zinc-300'
                       }`}
                     >
@@ -304,7 +304,7 @@ export function FloatingPlayerBar() {
                         <div className="truncate">
                           <p
                             className={`truncate text-xs font-semibold ${
-                              isCurrent ? 'text-neon-cyan' : 'text-zinc-100'
+                              isCurrent ? 'text-white font-bold' : 'text-zinc-100'
                             }`}
                           >
                             {track.title}
