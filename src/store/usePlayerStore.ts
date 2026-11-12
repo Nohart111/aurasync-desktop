@@ -605,10 +605,11 @@ export const usePlayerStore = create<PlayerState>()(
           currentTrack,
           currentQueueId,
           repeatMode,
+          isShuffle,
           playNonce,
         } = get();
 
-        const rawSource = queue.length > 1 ? queue : library.length > 0 ? library : queue;
+        const rawSource = queue.length > 0 ? queue : library;
         const validList = rawSource.filter((t) => isVaultTrack(t));
 
         if (validList.length === 0) {
@@ -616,31 +617,13 @@ export const usePlayerStore = create<PlayerState>()(
           return;
         }
 
-        if (reason === 'ended' && repeatMode === 'one' && currentTrack && !currentTrack.isPreview) {
-          set({
-            progress: 0,
-            currentTime: 0,
-            isPlaying: true,
-            playNonce: playNonce + 1,
-          });
-          return;
-        }
-
-        if (validList.length === 1) {
-          const singleTrack = validList[0];
-          set({
-            currentTrack: singleTrack,
-            nextTrackPreview: singleTrack,
-            currentQueueId: singleTrack.id,
-            queue: validList,
-            queueItems: validList,
-            internalQueue: validList,
-            progress: 0,
-            currentTime: 0,
-            isPlaying: true,
-            playNonce: playNonce + 1,
-          });
-          return;
+        // Let repeat-one finish the whole song before restarting it.
+        if (repeatMode === 'one' && currentTrack && !currentTrack.isPreview) {
+          if (reason === 'crossfade') return;
+          if (reason === 'ended') {
+            set({ progress: 0, currentTime: 0, isPlaying: true, playNonce: playNonce + 1 });
+            return;
+          }
         }
 
         let currIdx = -1;
@@ -687,7 +670,16 @@ export const usePlayerStore = create<PlayerState>()(
           return;
         }
 
-        const shuffledList = shuffleTracksForReplay(validList, currentTrack?.id);
+        if (repeatMode === 'off') {
+          // A crossfade notification arrives before the actual end. Keep the
+          // final seconds audible and stop only when playback really ends.
+          if (reason !== 'crossfade') set({ isPlaying: false, nextTrackPreview: null });
+          return;
+        }
+
+        const shuffledList = isShuffle
+          ? shuffleTracksForReplay(validList, currentTrack?.id)
+          : validList;
         const firstShuffled = shuffledList[0];
 
         set({
@@ -715,7 +707,7 @@ export const usePlayerStore = create<PlayerState>()(
       playPrevious: (..._args: any[]) => {
         const { queue, library, currentTrack, currentQueueId, progress, playNonce } =
           get();
-        const rawSource = queue.length > 1 ? queue : library.length > 0 ? library : queue;
+        const rawSource = queue.length > 0 ? queue : library;
         const validList = rawSource.filter((t) => isVaultTrack(t));
         if (validList.length === 0) return;
 

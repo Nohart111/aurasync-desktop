@@ -63,6 +63,7 @@ export function useYoutubeSearch(
       void youtubeMusic
         .search(normalizedQuery, controller.signal)
         .then((results) => {
+          if (controller.signal.aborted) return;
           setState({
             query: requestKey,
             results,
