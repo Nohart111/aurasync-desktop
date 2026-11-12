@@ -114,3 +114,54 @@ test('late cancelled search cannot replace the newer result', async () => {
   assert.equal(state.isLoading, false);
   cleanup();
 });
+
+
+test('play next moves an existing item without restarting or duplicating the current track', () => {
+  reset({ queue: [a, b, c] });
+  store.getState().playNextInQueue(c);
+  assert.deepEqual(Array.from(store.getState().queue, t => t.id), ['a', 'c', 'b']);
+  assert.equal(store.getState().nextTrackPreview.id, 'c');
+  assert.equal(store.getState().playNonce, 10);
+  store.getState().playNextInQueue(a);
+  assert.deepEqual(Array.from(store.getState().queue, t => t.id), ['a', 'c', 'b']);
+});
+
+test('removing current advances to its successor; removing the last item stops without library fallback', () => {
+  reset({ queue: [a, b, c], currentTrack: b });
+  store.getState().removeFromQueue('b');
+  assert.equal(store.getState().currentTrack.id, 'c');
+  reset({ queue: [a] });
+  store.getState().removeFromQueue('a');
+  assert.equal(store.getState().currentTrack, null);
+  assert.equal(store.getState().isPlaying, false);
+});
+
+test('retry restarts the same selection and preserves its queue', () => {
+  reset({ playbackStatus: 'error', isPlaying: false });
+  store.getState().retryPlayback();
+  assert.equal(store.getState().currentTrack.id, 'a');
+  assert.equal(store.getState().playNonce, 11);
+  assert.equal(store.getState().progress, 0);
+  assert.equal(store.getState().isPlaying, true);
+  assert.deepEqual(Array.from(store.getState().queue, t => t.id), ['a', 'b']);
+});
+
+test('engine reports blocked playback and retry reloads a failed source', async () => {
+  const { AudioEngine } = load('src/core/audio/AudioEngine.ts');
+  const engine = AudioEngine.getInstance();
+  const statuses = [];
+  let reloads = 0, blocked = true;
+  engine.primaryAudio = {
+    src: '', volume: 0.8, paused: true, ended: false, error: null,
+    pause() {}, load() { reloads++; }, removeAttribute() {},
+    async play() { if (blocked) throw Object.assign(new Error('blocked'), { name: 'NotAllowedError' }); },
+  };
+  engine.onPlaybackStatus(status => statuses.push(status));
+  await engine.loadAndPlay('/a.mp3', 1);
+  assert.equal(statuses.at(-1), 'error');
+  blocked = false;
+  engine.primaryAudio.error = { code: 2 };
+  await engine.loadAndPlay('/a.mp3', 2);
+  assert.equal(reloads, 2);
+  assert.equal(statuses.at(-1), 'loading');
+});

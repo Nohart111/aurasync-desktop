@@ -194,6 +194,9 @@ export function FloatingPlayerBar() {
     usePlayerStore.getState().advancePrev();
   };
 
+  const playbackStatus = usePlayerStore((s) => s.playbackStatus);
+  const retryPlayback = usePlayerStore((s) => s.retryPlayback);
+
   const queueList = queue || queueItems || [];
   const queueCount = queueList.length;
 
@@ -324,13 +327,18 @@ export function FloatingPlayerBar() {
                             PLAYING
                           </span>
                         )}
+                      {!isCurrent && (
+                        <button onClick={(e) => { e.stopPropagation(); usePlayerStore.getState().playNextInQueue(track); }}
+                          aria-label={`Phát tiếp theo: ${track.title}`}
+                          className="rounded p-2 text-xs text-zinc-300 hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-amber-400">Phát tiếp</button>
+                      )}
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
                             usePlayerStore.getState().removeTrackFromQueue(track.id);
                           }}
-                          className="p-1 text-zinc-500 opacity-100 md:opacity-0 md:group-hover:opacity-100 hover:text-rose-400 transition"
-                          title="Xóa khỏi hàng đợi"
+                          className="p-1 text-zinc-500 opacity-100 hover:text-rose-400 transition"
+                          aria-label={`Xóa khỏi hàng đợi: ${track.title}`}
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
@@ -353,6 +361,14 @@ export function FloatingPlayerBar() {
         >
           <div className="bg-[#0a0a14]/95 border border-white/[0.08] rounded-2xl p-2.5 px-3.5 md:p-3 md:px-5 shadow-2xl backdrop-blur-xl flex flex-col md:flex-row md:items-center md:justify-between gap-2 md:gap-4">
             {/* Hàng trên trên Mobile / Cụm trái + Nút điều khiển */}
+            {(playbackStatus === 'loading' || playbackStatus === 'error') && (
+              <div className="flex items-center gap-2 text-xs text-amber-300 md:absolute md:bottom-full md:mb-2 rounded-lg bg-[#0a0a14] px-3 py-2">
+                <span role={playbackStatus === 'error' ? 'alert' : 'status'}>
+                  {playbackStatus === 'loading' ? 'Đang tải âm thanh…' : 'Không thể phát bài hát. Hãy thử lại.'}
+                </span>
+                {playbackStatus === 'error' && <button onClick={retryPlayback} className="rounded border border-amber-300/40 px-2 py-1 font-semibold hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-amber-400">Thử lại</button>}
+              </div>
+            )}
             <div className="flex items-center justify-between gap-2.5 md:contents">
               {/* Cụm trái: Bìa vuông icon Music & Tên bài hát */}
               <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1 max-w-[165px] sm:max-w-[220px] md:max-w-[260px] md:min-w-[200px]">

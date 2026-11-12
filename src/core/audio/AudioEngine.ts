@@ -79,6 +79,7 @@ export class AudioEngine {
   private durationChangeCallback: ((duration: number) => void) | null = null;
   private endedCallback: (() => void) | null = null;
   private errorCallback: ((err: string) => void) | null = null;
+  private statusCallback: ((status: 'loading' | 'playing' | 'paused' | 'error') => void) | null = null;
   private playStateCallback: ((isPlaying: boolean) => void) | null = null;
 
   private constructor() {
@@ -224,6 +225,16 @@ export class AudioEngine {
           this.durationChangeCallback(dur);
         }
       }
+    });
+
+    this.primaryAudio.addEventListener('waiting', () => {
+      if (!this.primaryAudio?.paused) this.statusCallback?.('loading');
+    });
+    this.primaryAudio.addEventListener('playing', () => this.statusCallback?.('playing'));
+    this.primaryAudio.addEventListener('error', () => {
+      this.isLoading = false;
+      this.statusCallback?.('error');
+      this.errorCallback?.('Audio playback error');
     });
 
     this.primaryAudio.addEventListener('play', () => {
@@ -446,12 +457,14 @@ export class AudioEngine {
         return;
       }
       this.endedFiredForLoad = false;
+      this.statusCallback?.('loading');
       this.resumeContext();
       try {
         await this.primaryAudio.play();
       } catch (err: any) {
-        if (err?.name !== 'AbortError' && err?.name !== 'NotAllowedError') {
-          console.warn('AudioEngine resume error:', err?.message || err);
+        if (err?.name !== 'AbortError') {
+          this.statusCallback?.('error');
+          this.errorCallback?.('Audio playback error');
         }
       }
       return;
@@ -461,6 +474,7 @@ export class AudioEngine {
     this.endedFiredForLoad = false;
     this.hasTriggered70PercentPreload = false;
     this.isLoading = true;
+    this.statusCallback?.('loading');
 
     try {
       if (!this.isMobileDevice()) {
@@ -484,6 +498,7 @@ export class AudioEngine {
           this.currentUrl = url;
         }
       } else {
+        if (this.primaryAudio.error) this.primaryAudio.load();
         this.primaryAudio.currentTime = 0;
       }
 
@@ -508,9 +523,10 @@ export class AudioEngine {
       await this.primaryAudio.play();
     } catch (err: any) {
       if (loadId !== this.activeLoadId) return;
-      if (err?.name === 'AbortError' || err?.name === 'NotAllowedError') {
+      if (err?.name === 'AbortError') {
         return;
       }
+      this.statusCallback?.('error');
       console.warn('AudioEngine loadAndPlay error:', err?.message || err);
       if (this.errorCallback) {
         this.errorCallback(err?.message || 'Audio playback error');
@@ -678,6 +694,10 @@ export class AudioEngine {
     return () => {
       if (this.endedCallback === cb) this.endedCallback = null;
     };
+  }
+
+  public onPlaybackStatus(cb: NonNullable<AudioEngine['statusCallback']>): void {
+    this.statusCallback = cb;
   }
 
   public onError(cb: (err: string) => void): () => void {

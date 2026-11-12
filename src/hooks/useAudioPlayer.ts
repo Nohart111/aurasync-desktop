@@ -13,7 +13,6 @@ import {
   stopYouTubePreview,
 } from '@/components/player/YouTubePreviewBridge';
 
-let consecutiveErrorCount = 0;
 let initialCatalogSynced = false;
 let lastRecordedStreamSessionKey = '';
 
@@ -242,29 +241,25 @@ export function useAudioPlayer() {
     });
 
     audioEngine.onEnded(() => {
-      consecutiveErrorCount = 0;
       usePlayerStore.getState().advanceNext('ended');
       triggerImmediateSyncPlaybackFromStore();
     });
 
     audioEngine.onCrossfade(() => {
-      consecutiveErrorCount = 0;
       usePlayerStore.getState().advanceNext('crossfade');
       triggerImmediateSyncPlaybackFromStore();
+    });
+
+    audioEngine.onPlaybackStatus((status) => {
+      const state = usePlayerStore.getState();
+      if (!state.currentTrack?.isPreview) state.setPlaybackStatus(status);
     });
 
     audioEngine.onError(() => {
       const state = usePlayerStore.getState();
       if (state.currentTrack?.isPreview) return;
-      const totalTracks = state.queue.length || state.library.length;
-      consecutiveErrorCount += 1;
-      if (totalTracks > 1 && consecutiveErrorCount < Math.min(totalTracks, 3)) {
-        state.advanceNext('error');
-        triggerImmediateSyncPlaybackFromStore();
-      } else {
-        consecutiveErrorCount = 0;
-        state.setIsPlaying(false);
-      }
+      state.setPlaybackStatus('error');
+      state.setIsPlaying(false);
     });
   }, []);
 
@@ -418,6 +413,7 @@ export function useAudioPlayer() {
     if (!currentTrack) {
       audioEngine.pause();
       stopYouTubePreview();
+      usePlayerStore.getState().setPlaybackStatus('idle');
       return;
     }
 
@@ -439,7 +435,11 @@ export function useAudioPlayer() {
     stopYouTubePreview();
 
     const streamUrl = resolveStreamUrl(rawUrl);
-    if (!streamUrl) return;
+    if (!streamUrl) {
+      usePlayerStore.getState().setPlaybackStatus('error');
+      usePlayerStore.getState().setIsPlaying(false);
+      return;
+    }
 
     if (currentTrack.duration && currentTrack.duration > 0) {
       setDuration(currentTrack.duration);
@@ -449,6 +449,8 @@ export function useAudioPlayer() {
       void audioEngine.loadAndPlay(streamUrl, playNonce);
     } else {
       audioEngine.pause();
+      const state = usePlayerStore.getState();
+      if (state.playbackStatus !== 'error') state.setPlaybackStatus('paused');
     }
   }, [currentTrack, isPlaying, playNonce, setDuration]);
 

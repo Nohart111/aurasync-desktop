@@ -83,6 +83,9 @@ export interface PlayerState {
   currentTrack: Track | null;
   nextTrackPreview: Track | null;
   currentQueueId: string | null;
+  playbackStatus: 'idle' | 'loading' | 'playing' | 'paused' | 'error';
+  setPlaybackStatus: (status: PlayerState['playbackStatus']) => void;
+  retryPlayback: () => void;
   isPlaying: boolean;
   volume: number;
   progress: number;
@@ -188,6 +191,12 @@ export const usePlayerStore = create<PlayerState>()(
       actualDuration: 0,
       isShuffle: false,
       repeatMode: 'all',
+      playbackStatus: 'idle',
+      setPlaybackStatus: (playbackStatus) => set({ playbackStatus }),
+      retryPlayback: () => set((s) => s.currentTrack ? {
+        isPlaying: true, progress: 0, currentTime: 0,
+        playNonce: s.playNonce + 1,
+      } : {}),
       playNonce: 0,
 
       isSidebarCollapsed: false,
@@ -469,7 +478,7 @@ export const usePlayerStore = create<PlayerState>()(
       },
 
       playNextInQueue: (track?: any, ..._args: any[]) => {
-        if (!track || !track.id || track.isPreview) return;
+        if (!isVaultTrack(track) || track.id === get().currentTrack?.id) return;
         const { queue, currentTrack } = get();
         const filtered = queue.filter((t) => t.id !== track.id);
         let insertIdx = 0;
@@ -494,7 +503,7 @@ export const usePlayerStore = create<PlayerState>()(
           const removedCurrent = s.currentTrack && s.currentTrack.id === idOrQueueId;
 
           if (removedCurrent) {
-            const fallbackTrack = nextQueue[0] || s.library.find((t) => t.id !== idOrQueueId) || null;
+            const fallbackTrack = nextQueue[Math.min(s.queue.findIndex((t) => t.id === idOrQueueId), nextQueue.length - 1)] || null;
             return {
               queue: nextQueue,
               queueItems: nextQueue,

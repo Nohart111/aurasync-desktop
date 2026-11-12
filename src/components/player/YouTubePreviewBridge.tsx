@@ -126,10 +126,13 @@ export function initYouTubePreviewBridge() {
             if (!store.currentTrack?.isPreview) return;
 
             if (event.data === YTState.PLAYING) {
+              store.setPlaybackStatus('playing');
               const dur = event.target.getDuration?.() || 0;
               if (dur > 0) store.setDuration(dur);
               if (!store.isPlaying) store.setIsPlaying(true);
               startProgressTimer();
+            } else if (event.data === YTState.BUFFERING) {
+              store.setPlaybackStatus('loading');
             } else if (event.data === YTState.PAUSED) {
               if (store.isPlaying) store.setIsPlaying(false);
               clearProgressTimer();
@@ -141,6 +144,10 @@ export function initYouTubePreviewBridge() {
           },
           onError: () => {
             clearProgressTimer();
+            const store = usePlayerStore.getState();
+            if (!store.currentTrack?.isPreview) return;
+            store.setPlaybackStatus('error');
+            store.setIsPlaying(false);
           },
         },
       });
@@ -219,6 +226,7 @@ export function playYouTubePreview(item: {
   };
 
   store.setCurrentTrack(previewTrack);
+  store.setPlaybackStatus('loading');
 
   // 3. Kích hoạt phát ngay trên IFrame đã khởi tạo sẵn (Pre-warmed)
   initYouTubePreviewBridge();
@@ -241,6 +249,7 @@ export function playYouTubePreview(item: {
 export function pauseYouTubePreview() {
   clearProgressTimer();
   const store = usePlayerStore.getState();
+  if (store.currentTrack?.isPreview && store.playbackStatus !== 'error') store.setPlaybackStatus('paused');
   if (store.currentTrack?.isPreview && store.isPlaying) {
     store.setIsPlaying(false);
   }
@@ -253,6 +262,10 @@ export function pauseYouTubePreview() {
 
 export function resumeYouTubePreview() {
   const store = usePlayerStore.getState();
+  if (store.currentTrack?.isPreview && store.playbackStatus === 'error') {
+    try { ytPlayer?.loadVideoById(store.currentTrack.videoId); } catch {}
+  }
+  if (store.currentTrack?.isPreview) store.setPlaybackStatus('loading');
   if (store.currentTrack?.isPreview && !store.isPlaying) {
     store.setIsPlaying(true);
   }

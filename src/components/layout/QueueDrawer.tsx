@@ -90,13 +90,18 @@ export function QueueDrawer({ isOpen, onClose }: QueueDrawerProps) {
                         {Math.floor(safeDuration / 60)}:
                         {String(Math.floor(safeDuration % 60)).padStart(2, "0")}
                       </span>
+                      {!isPlaying && (
+                        <button onClick={(e) => { e.stopPropagation(); usePlayerStore.getState().playNextInQueue(track); }}
+                          aria-label={`Phát tiếp theo: ${track.title}`}
+                          className="rounded p-2 text-xs text-zinc-300 hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-amber-400">Phát tiếp</button>
+                      )}
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
                           removeTrackFromQueue(track.id);
                         }}
-                        className="rounded-md p-1 text-zinc-500 opacity-0 transition hover:bg-rose-500/20 hover:text-rose-400 group-hover:opacity-100 cursor-pointer"
-                        title="Xóa khỏi hàng đợi"
+                        className="rounded-md p-1 text-zinc-500 opacity-100 transition hover:bg-rose-500/20 hover:text-rose-400 group-hover:opacity-100 cursor-pointer"
+                        aria-label={`Xóa khỏi hàng đợi: ${track.title}`}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
