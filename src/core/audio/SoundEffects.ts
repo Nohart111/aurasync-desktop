@@ -16,7 +16,7 @@ let sfxAudioContext: AudioContext | null = null;
 function getSfxContext(): AudioContext | null {
   if (typeof window === 'undefined') return null;
   if (!sfxAudioContext) {
-    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
     if (AudioCtx) {
       sfxAudioContext = new AudioCtx();
     }

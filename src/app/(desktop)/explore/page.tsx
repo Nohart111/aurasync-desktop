@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Compass,
   CloudDownload,
@@ -65,7 +65,29 @@ export function ExploreTrendingSection() {
     });
   }, []);
 
-  const loadCategory = useCallback(async (cat: TrendingCategory['id']) => {
+  // Latest category the user asked for; responses for older ones are ignored.
+  const requestedCategoryRef = useRef<TrendingCategory['id']>('trending');
+
+  const fetchCategory = useCallback(async (cat: TrendingCategory['id']) => {
+    let list: YouTubeResult[] = [];
+    try {
+      const res = await fetch(`/api/tracks/trending?category=${cat}`);
+      const data = await res.json();
+      list = Array.isArray(data?.results) ? data.results : [];
+      if (list.length > 0) {
+        clientTrendingCache.set(cat, list);
+      }
+    } catch {
+      list = [];
+    }
+    if (requestedCategoryRef.current !== cat) return;
+    setItems(list);
+    setLoading(false);
+  }, []);
+
+  const selectCategory = (cat: TrendingCategory['id']) => {
+    requestedCategoryRef.current = cat;
+    setActiveCategory(cat);
     setVisibleCount(16);
     const cached = clientTrendingCache.get(cat);
     if (cached && cached.length > 0) {
@@ -73,26 +95,14 @@ export function ExploreTrendingSection() {
       setLoading(false);
       return;
     }
-
     setLoading(true);
-    try {
-      const res = await fetch(`/api/tracks/trending?category=${cat}`);
-      const data = await res.json();
-      const list: YouTubeResult[] = Array.isArray(data?.results) ? data.results : [];
-      if (list.length > 0) {
-        clientTrendingCache.set(cat, list);
-      }
-      setItems(list);
-    } catch {
-      setItems([]);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+    void fetchCategory(cat);
+  };
 
+  // Initial load for the default category when nothing is cached yet.
   useEffect(() => {
-    void loadCategory(activeCategory);
-  }, [activeCategory, loadCategory]);
+    if (!clientTrendingCache.has('trending')) void fetchCategory('trending');
+  }, [fetchCategory]);
 
   const queueSnapshot = getIngestControllerSnapshot();
   const activeQueueTasks = queueSnapshot.tasks;
@@ -124,7 +134,7 @@ export function ExploreTrendingSection() {
                 key={cat.id}
                 onClick={() => {
                   playMechanicalSound('switch');
-                  setActiveCategory(cat.id);
+                  selectCategory(cat.id);
                 }}
                 className={`rounded-full px-4 py-1.5 text-xs font-semibold transition-all cursor-pointer shrink-0 active:scale-95 ${
                   isActive
@@ -189,7 +199,7 @@ export function ExploreTrendingSection() {
               const isPending = queuedTask?.status === 'pending';
 
               const personalPlays = streamCounts?.[key] || 0;
-              const baseStreamLabel = (item as any).viewCountText || '350K+ streams';
+              const baseStreamLabel = item.viewCountText || '350K+ streams';
 
               return (
                 <div

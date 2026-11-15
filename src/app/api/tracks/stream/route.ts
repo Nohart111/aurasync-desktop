@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { isNextControlError, type GitHubReleaseAsset } from '@/lib/api-types';
 
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
 const GITHUB_OWNER = process.env.GITHUB_OWNER || 'Nohart111';
@@ -125,7 +126,7 @@ export async function GET(req: NextRequest) {
           const relData = await relRes.json();
           const clean = decodeURIComponent(inferredFile).toLowerCase();
           const prefix = clean.replace(/-\d+\.[a-z0-9]+$/, '');
-          const assets: any[] = Array.isArray(relData.assets) ? [...relData.assets] : [];
+          const assets: GitHubReleaseAsset[] = Array.isArray(relData.assets) ? [...relData.assets] : [];
 
           assets.sort((a, b) => {
             const aMp3 = String(a?.name || '').toLowerCase().endsWith('.mp3') ? 1 : 0;
@@ -137,13 +138,13 @@ export async function GET(req: NextRequest) {
           });
 
           const matchedAsset =
-            assets.find((a: any) => a?.name && a.name.toLowerCase() === clean) ||
+            assets.find((a) => a?.name && a.name.toLowerCase() === clean) ||
             assets.find(
-              (a: any) =>
+              (a) =>
                 a?.name && prefix.length > 3 && a.name.toLowerCase().startsWith(prefix + '-')
             ) ||
             assets.find(
-              (a: any) =>
+              (a) =>
                 a?.name && prefix.length > 3 && a.name.toLowerCase().startsWith(prefix)
             );
 
@@ -218,8 +219,8 @@ export async function GET(req: NextRequest) {
       status: upstream.status,
       headers: responseHeaders,
     });
-  } catch (err: any) {
-    if (err?.digest) throw err;
+  } catch (err) {
+    if (isNextControlError(err)) throw err;
     console.error('Lỗi Stream API:', err);
     if (targetUrl && targetUrl.startsWith('https://')) {
       const redir = NextResponse.redirect(targetUrl, 307);

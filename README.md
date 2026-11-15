@@ -1,36 +1,53 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# AuraSound
 
-## Getting Started
+A hi-fi music workspace built with Next.js. Search YouTube and SoundCloud, stream or ingest tracks into a personal library, and play them through a custom audio engine with a 10-band EQ, peak limiter, spatial widener, DJ-style crossfades, synced lyrics and a queue.
 
-First, run the development server:
+## Getting started
+
+Requires Node.js 20.9 or newer.
 
 ```bash
+npm install
+cp .env.example .env.local   # then fill in the values you need
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open <http://localhost:3000>.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Scripts
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Command             | What it does                                   |
+| ------------------- | ---------------------------------------------- |
+| `npm run dev`       | Start the dev server (Turbopack)               |
+| `npm run build`     | Production build                               |
+| `npm run start`     | Serve the production build                     |
+| `npm run lint`      | ESLint                                         |
+| `npm run typecheck` | TypeScript type check, no output               |
+| `npm test`          | Player/queue regression tests (`node --test`)  |
 
-## Learn More
+## Configuration
 
-To learn more about Next.js, take a look at the following resources:
+All variables are optional for local browsing; features that need them fail gracefully. See [`.env.example`](.env.example).
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+| Variable | Used for |
+| --- | --- |
+| `GITHUB_TOKEN`, `GITHUB_OWNER`, `GITHUB_REPO`, `GITHUB_RELEASE_TAG` | Track storage in a GitHub repo's release assets, and triggering the cloud ingest workflow |
+| `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME`, `NEXT_PUBLIC_R2_PUBLIC_URL` | Optional Cloudflare R2 storage |
+| `SOUNDCLOUD_CLIENT_ID`, `SOUNDCLOUD_FALLBACK_CLIENT_ID` | SoundCloud search and streaming |
+| `NEXT_PUBLIC_SOCKET_URL` | Listening-room sync server (defaults to `http://localhost:4000`) |
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Project layout
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```
+src/
+  app/(desktop)/       Library and Explore pages
+  app/api/             Search, stream, ingest, lyrics and storage routes
+  components/          Layout, player and modal UI
+  core/audio/          AudioEngine (Web Audio graph) and sound effects
+  core/algorithms/     DoublyLinkedQueue and PlaylistSearchEngine
+  store/               Zustand player store
+  hooks/               Audio player, search and room-sync hooks
+.github/workflows/     Cloud ingest workflow (yt-dlp → release assets)
+data/catalog.json      Local track catalog
+tests/                 Regression tests
+```

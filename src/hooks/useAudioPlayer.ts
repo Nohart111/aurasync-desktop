@@ -148,36 +148,37 @@ export function useAudioPlayer() {
     return () => window.removeEventListener('aurasound:track-added', onTrackAdded);
   }, []);
 
-  const syncFrame = useCallback(() => {
-    if (typeof document !== 'undefined' && document.hidden) {
-      rafIdRef.current = null;
-      return;
-    }
-
-    const storeState = usePlayerStore.getState();
-    const isPreviewMode = Boolean(storeState.currentTrack?.isPreview);
-
-    const current = isPreviewMode
-      ? storeState.progress || 0
-      : audioEngine.getCurrentTime();
-    const total = isPreviewMode
-      ? storeState.duration || storeState.currentTrack?.duration || 0
-      : audioEngine.getDuration() ||
-        storeState.duration ||
-        storeState.currentTrack?.duration ||
-        0;
-
-    if (isPreviewMode) {
-      checkAndRecord30sStream(current);
-    }
-
-    currentTimeMV.set(current);
-    progressMV.set(total > 0 ? Math.min(1, Math.max(0, current / total)) : 0);
-
-    rafIdRef.current = requestAnimationFrame(syncFrame);
-  }, [currentTimeMV, progressMV]);
-
   useEffect(() => {
+    // Pushes playback position into motion values once per frame while playing.
+    const syncFrame = () => {
+      if (typeof document !== 'undefined' && document.hidden) {
+        rafIdRef.current = null;
+        return;
+      }
+
+      const storeState = usePlayerStore.getState();
+      const isPreviewMode = Boolean(storeState.currentTrack?.isPreview);
+
+      const current = isPreviewMode
+        ? storeState.progress || 0
+        : audioEngine.getCurrentTime();
+      const total = isPreviewMode
+        ? storeState.duration || storeState.currentTrack?.duration || 0
+        : audioEngine.getDuration() ||
+          storeState.duration ||
+          storeState.currentTrack?.duration ||
+          0;
+
+      if (isPreviewMode) {
+        checkAndRecord30sStream(current);
+      }
+
+      currentTimeMV.set(current);
+      progressMV.set(total > 0 ? Math.min(1, Math.max(0, current / total)) : 0);
+
+      rafIdRef.current = requestAnimationFrame(syncFrame);
+    };
+
     const startOrStopRaf = () => {
       const isHidden = typeof document !== 'undefined' && document.hidden;
       if (isPlaying && !isHidden) {
@@ -200,7 +201,7 @@ export function useAudioPlayer() {
         rafIdRef.current = null;
       }
     };
-  }, [isPlaying, syncFrame]);
+  }, [isPlaying, currentTimeMV, progressMV]);
 
   useEffect(() => {
     const total = duration || currentTrack?.duration || 0;
@@ -482,12 +483,12 @@ export function useAudioPlayer() {
     setYouTubePreviewVolume(volume);
   }, [volume]);
 
-  const togglePlay = useCallback((..._args: any[]) => {
+  const togglePlay = useCallback(() => {
     usePlayerStore.getState().togglePlay();
   }, []);
 
   const seek = useCallback(
-    (seconds?: any, ..._args: any[]) => {
+    (seconds: number) => {
       const targetSec = typeof seconds === 'number' && !isNaN(seconds) ? seconds : 0;
       const state = usePlayerStore.getState();
       if (state.currentTrack?.isPreview) {

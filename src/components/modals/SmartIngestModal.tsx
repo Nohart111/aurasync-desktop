@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useEffectEvent } from 'react';
 import { createPortal } from 'react-dom';
 import {
   X,
@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { usePlayerStore } from '@/store/usePlayerStore';
 import type { Track } from '@/store/usePlayerStore';
+import { useIsClient } from '@/hooks/useIsClient';
 
 export interface YouTubeResult {
   id: string;
@@ -31,6 +32,7 @@ export interface YouTubeResult {
   thumbnail: string;
   duration: number;
   durationFormatted?: string;
+  viewCountText?: string;
 }
 
 export type IngestTaskStatus =
@@ -441,13 +443,13 @@ async function runSequentialQueueWorker() {
 
         controllerState.tasks = controllerState.tasks.filter((t) => t.key !== nextTask.key);
         notifySubscribers();
-      } catch (err: any) {
+      } catch (err: unknown) {
         if (
           nextTask.status !== ('cancelled' as IngestTaskStatus) &&
           controllerState.tasks.some((t) => t.key === nextTask.key)
         ) {
           controllerState.lastError =
-            err?.message || `Lỗi khi tải bài "${nextTask.item.title}".`;
+            (err instanceof Error && err.message) || `Lỗi khi tải bài "${nextTask.item.title}".`;
           controllerState.tasks = controllerState.tasks.filter((t) => t.key !== nextTask.key);
           notifySubscribers();
         }
@@ -466,13 +468,12 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
   const [localError, setLocalError] = useState('');
   const [isMinimized, setIsMinimized] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [mounted, setMounted] = useState(false);
+  const mounted = useIsClient();
   const [, setTick] = useState(0);
 
   const effectiveOpen = isOpen || mobileOpen;
 
   useEffect(() => {
-    setMounted(true);
     const onUpdate = () => setTick((n) => n + 1);
     subscribers.add(onUpdate);
 
@@ -488,11 +489,11 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
     };
   }, []);
 
-  useEffect(() => {
-    if (isOpen) {
-      setIsMinimized(false);
-    }
-  }, [isOpen]);
+  const [prevIsOpen, setPrevIsOpen] = useState(isOpen);
+  if (isOpen !== prevIsOpen) {
+    setPrevIsOpen(isOpen);
+    if (isOpen) setIsMinimized(false);
+  }
 
   const tasks = controllerState.tasks;
   const activeTask =
@@ -508,12 +509,14 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
     onClose();
   };
 
+  const autoCloseAfterTasks = useEffectEvent(() => {
+    setIsMinimized(false);
+    closeAll();
+  });
+
   useEffect(() => {
     if (isMinimized && !hasRunningTasks && effectiveOpen) {
-      const timer = setTimeout(() => {
-        setIsMinimized(false);
-        closeAll();
-      }, 600);
+      const timer = setTimeout(autoCloseAfterTasks, 600);
       return () => clearTimeout(timer);
     }
   }, [isMinimized, hasRunningTasks, effectiveOpen]);
@@ -625,8 +628,8 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
             'Không tìm thấy kết quả phù hợp. Hãy thử từ khóa khác hoặc dán link YouTube trực tiếp.'
           );
         }
-      } catch (err: any) {
-        setLocalError(err.message || 'Không thể kết nối máy chủ tìm kiếm.');
+      } catch (err: unknown) {
+        setLocalError((err instanceof Error && err.message) || 'Không thể kết nối máy chủ tìm kiếm.');
       } finally {
         setSearching(false);
       }

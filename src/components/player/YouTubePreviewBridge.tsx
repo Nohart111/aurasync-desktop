@@ -1,7 +1,6 @@
 'use client';
 
-import React, { useEffect } from 'react';
-import { createPortal } from 'react-dom';
+import { useEffect } from 'react';
 import { usePlayerStore } from '@/store/usePlayerStore';
 import type { Track } from '@/store/usePlayerStore';
 import { AudioEngine } from '@/core/audio/AudioEngine';
@@ -13,7 +12,7 @@ import { AudioEngine } from '@/core/audio/AudioEngine';
 // - Đồng bộ thanh tiến trình, Play/Pause, Seek và Volume trực tiếp lên FloatingPlayerBar
 // ============================================================================
 
-let ytPlayer: any = null;
+let ytPlayer: YTPlayer | null = null;
 let isYtApiReady = false;
 let isInitializing = false;
 let pendingVideoId: string | null = null;
@@ -74,14 +73,14 @@ function ensureYouTubeContainer(): HTMLElement | null {
 export function initYouTubePreviewBridge() {
   if (typeof window === 'undefined') return;
 
-  (window as any).__AURASOUND_STOP_YT_PREVIEW__ = stopYouTubePreview;
+  window.__AURASOUND_STOP_YT_PREVIEW__ = stopYouTubePreview;
 
   ensureYouTubeContainer();
 
   if (ytPlayer || isInitializing) return;
 
   const createPlayerInstance = () => {
-    const YT = (window as any).YT;
+    const YT = window.YT;
     if (!YT || !YT.Player || ytPlayer) return;
     ensureYouTubeContainer();
     isInitializing = true;
@@ -101,7 +100,7 @@ export function initYouTubePreviewBridge() {
           origin: window.location.origin,
         },
         events: {
-          onReady: (event: any) => {
+          onReady: (event) => {
             isYtApiReady = true;
             isInitializing = false;
             const vol = usePlayerStore.getState().volume ?? 0.8;
@@ -119,8 +118,8 @@ export function initYouTubePreviewBridge() {
               } catch {}
             }
           },
-          onStateChange: (event: any) => {
-            const YTState = (window as any).YT?.PlayerState;
+          onStateChange: (event) => {
+            const YTState = window.YT?.PlayerState;
             if (!YTState) return;
             const store = usePlayerStore.getState();
             if (!store.currentTrack?.isPreview) return;
@@ -156,13 +155,13 @@ export function initYouTubePreviewBridge() {
     }
   };
 
-  if ((window as any).YT && (window as any).YT.Player) {
+  if (window.YT && window.YT.Player) {
     createPlayerInstance();
     return;
   }
 
-  const prevCallback = (window as any).onYouTubeIframeAPIReady;
-  (window as any).onYouTubeIframeAPIReady = () => {
+  const prevCallback = window.onYouTubeIframeAPIReady;
+  window.onYouTubeIframeAPIReady = () => {
     if (typeof prevCallback === 'function') prevCallback();
     createPlayerInstance();
   };
@@ -263,7 +262,8 @@ export function pauseYouTubePreview() {
 export function resumeYouTubePreview() {
   const store = usePlayerStore.getState();
   if (store.currentTrack?.isPreview && store.playbackStatus === 'error') {
-    try { ytPlayer?.loadVideoById(store.currentTrack.videoId); } catch {}
+    const vid = store.currentTrack.videoId;
+    try { if (vid) ytPlayer?.loadVideoById({ videoId: vid, suggestedQuality: 'small' }); } catch {}
   }
   if (store.currentTrack?.isPreview) store.setPlaybackStatus('loading');
   if (store.currentTrack?.isPreview && !store.isPlaying) {

@@ -7,22 +7,14 @@ import {
   X,
   Volume2,
   VolumeX,
-  Play,
-  Pause,
-  SkipForward,
-  SkipBack,
-  Heart,
-  Maximize2,
-  Sliders,
-  Sparkles,
-  Command,
 } from 'lucide-react';
 import { usePlayerStore } from '@/store/usePlayerStore';
+import { useIsClient } from '@/hooks/useIsClient';
 import { useAudioPlayer } from '@/hooks/useAudioPlayer';
 import { playMechanicalSound } from '@/core/audio/SoundEffects';
 
 export function KeyboardShortcutsHUD() {
-  const [mounted, setMounted] = useState(false);
+  const mounted = useIsClient();
   const [volumeNotice, setVolumeNotice] = useState<{ volume: number } | null>(null);
   const volumeTimerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -30,7 +22,6 @@ export function KeyboardShortcutsHUD() {
     currentTrack,
     isPlaying,
     volume,
-    likedTrackIds,
     isShortcutsOpen,
     isFocusMode,
     isSfxEnabled,
@@ -47,10 +38,6 @@ export function KeyboardShortcutsHUD() {
 
   const { seekTo, currentTime, actualDuration } = useAudioPlayer();
   const prevVolumeRef = useRef<number>(0.8);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   // Global Keyboard listener
   useEffect(() => {
@@ -245,6 +232,7 @@ export function KeyboardShortcutsHUD() {
     toggleLikeTrack,
     toggleFocusMode,
     toggleShortcuts,
+    toggleEq,
   ]);
 
   if (!mounted) return null;

@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { ListMusic, Trash2, X, GripVertical } from "lucide-react";
+import { ListMusic, Trash2, X } from "lucide-react";
 import { usePlayerStore } from "@/store/usePlayerStore";
 import { Track } from "@/core/algorithms/DoublyLinkedQueue";
 

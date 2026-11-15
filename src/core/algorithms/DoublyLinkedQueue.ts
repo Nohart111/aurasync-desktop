@@ -1,6 +1,6 @@
 ﻿export interface Track {
   videoId?: string;
-  [key: string]: any;
+  [key: string]: unknown;
   id: string;
   title: string;
   artist?: string;

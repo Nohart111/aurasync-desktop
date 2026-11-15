@@ -1,5 +1,6 @@
 ﻿import { NextResponse } from 'next/server';
 import fs from 'node:fs/promises';
+import { errorMessage, type CatalogTrack } from '@/lib/api-types';
 import path from 'node:path';
 
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
@@ -139,7 +140,7 @@ export async function POST(req: Request) {
 
     const upData = await upRes.json();
 
-    let catalog: any[] = [];
+    let catalog: CatalogTrack[] = [];
     try {
       const raw = await fs.readFile(CATALOG_PATH, 'utf-8');
       catalog = JSON.parse(raw);
@@ -162,15 +163,15 @@ export async function POST(req: Request) {
       dateAdded: new Date().toISOString(),
     };
 
-    const updatedCatalog = [newTrack, ...catalog.filter((t: any) => t.id !== newTrack.id)];
+    const updatedCatalog = [newTrack, ...catalog.filter((t) => t.id !== newTrack.id)];
     await fs.writeFile(CATALOG_PATH, JSON.stringify(updatedCatalog, null, 2), 'utf-8');
 
     return NextResponse.json({
       success: true,
       track: newTrack,
     });
-  } catch (err: any) {
+  } catch (err) {
     console.error('Lỗi upload file:', err);
-    return NextResponse.json({ error: err.message || 'Lỗi xử lý file.' }, { status: 500 });
+    return NextResponse.json({ error: errorMessage(err, 'Lỗi xử lý file.') }, { status: 500 });
   }
 }

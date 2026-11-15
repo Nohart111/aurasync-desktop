@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse, connection } from 'next/server';
+import { isNextControlError, type CatalogTrack } from '@/lib/api-types';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
@@ -20,7 +21,7 @@ function slugifyTitle(text: string): string {
     .slice(0, 50);
 }
 
-function normalizeTrack(t: any) {
+function normalizeTrack(t: CatalogTrack): CatalogTrack {
   const rawUrl = t.streamUrl || t.cdnUrl || '';
   let streamUrl = rawUrl;
   if (rawUrl.startsWith('http://') || rawUrl.startsWith('https://')) {
@@ -43,9 +44,9 @@ function normalizeTrack(t: any) {
   };
 }
 
-function deduplicateCatalogTracks(tracks: any[]): any[] {
+function deduplicateCatalogTracks(tracks: CatalogTrack[]): CatalogTrack[] {
   const seenKeys = new Set<string>();
-  const result: any[] = [];
+  const result: CatalogTrack[] = [];
 
   for (const raw of tracks) {
     if (!raw || !(raw.streamUrl || raw.cdnUrl)) continue;
@@ -63,11 +64,12 @@ function deduplicateCatalogTracks(tracks: any[]): any[] {
   return result;
 }
 
-export async function GET(req: NextRequest) {
-  const _t = req.nextUrl.searchParams.get('t');
+export async function GET() {
+  // Always read the live catalog; never prerender this handler at build time.
+  await connection();
 
   try {
-    let localTracks: any[] = [];
+    let localTracks: CatalogTrack[] = [];
     try {
       const raw = await fs.readFile(CATALOG_PATH, 'utf-8');
       const parsed = JSON.parse(raw);
@@ -133,8 +135,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(normalizedLocal, {
       headers: { 'Cache-Control': 'no-store, max-age=0' },
     });
-  } catch (err: any) {
-    if (err?.digest) throw err;
+  } catch (err) {
+    if (isNextControlError(err)) throw err;
     return NextResponse.json([], { status: 200 });
   }
 }

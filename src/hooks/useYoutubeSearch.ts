@@ -7,6 +7,8 @@ import {
 } from "@/core/services/youtubeMusic";
 
 interface SearchState {
+  /** query + retry nonce this state belongs to */
+  key: string;
   query: string;
   results: YoutubeMusicResult[];
   isLoading: boolean;
@@ -20,11 +22,16 @@ interface UseYoutubeSearchOptions {
   debounceMs?: number;
 }
 
+function searchKey(query: string, retryNonce: number): string {
+  return `${retryNonce}:${query}`;
+}
+
 export function useYoutubeSearch(
   query: string,
   { enabled = true, debounceMs = 350 }: UseYoutubeSearchOptions = {}
 ) {
   const [state, setState] = useState<SearchState>({
+    key: "",
     query: "",
     results: [],
     isLoading: false,
@@ -39,24 +46,23 @@ export function useYoutubeSearch(
     if (!enabled || !normalizedQuery) return;
 
     const controller = new AbortController();
-    const requestKey = normalizedQuery;
+    const requestKey = searchKey(normalizedQuery, retryNonce);
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
-
-    setState({
-      query: requestKey,
-      results: [],
-      isLoading: true,
-      isRetrying: false,
-      error: null,
-      attempts: 0,
-    });
 
     const debounceTimer = setTimeout(() => {
       retryTimer = setTimeout(() => {
         setState((current) =>
-          current.query === requestKey && current.isLoading
-            ? { ...current, isRetrying: true }
-            : current
+          current.key === requestKey && !current.isLoading
+            ? current
+            : {
+                key: requestKey,
+                query: normalizedQuery,
+                results: [],
+                isLoading: true,
+                isRetrying: true,
+                error: null,
+                attempts: 0,
+              }
         );
       }, 700);
 
@@ -65,7 +71,8 @@ export function useYoutubeSearch(
         .then((results) => {
           if (controller.signal.aborted) return;
           setState({
-            query: requestKey,
+            key: requestKey,
+            query: normalizedQuery,
             results,
             isLoading: false,
             isRetrying: false,
@@ -76,7 +83,8 @@ export function useYoutubeSearch(
         .catch((error: unknown) => {
           if (controller.signal.aborted) return;
           setState({
-            query: requestKey,
+            key: requestKey,
+            query: normalizedQuery,
             results: [],
             isLoading: false,
             isRetrying: false,
@@ -100,7 +108,7 @@ export function useYoutubeSearch(
   }, [debounceMs, enabled, query, retryNonce]);
 
   const currentQuery = query.trim();
-  const isCurrentResult = state.query === currentQuery;
+  const isCurrentResult = state.key === searchKey(currentQuery, retryNonce);
   const retry = useCallback(() => setRetryNonce((nonce) => nonce + 1), []);
 
   return {

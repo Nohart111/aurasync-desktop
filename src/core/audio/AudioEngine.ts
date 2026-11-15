@@ -64,7 +64,7 @@ export class AudioEngine {
   private hasTriggeredCrossfade: boolean = false;
   private crossfadeCallback: (() => void) | null = null;
 
-  private frequencyData: Uint8Array = new Uint8Array(64);
+  private frequencyData: Uint8Array<ArrayBuffer> = new Uint8Array(64);
 
   private currentUrl: string = '';
   private currentNonce: number = -1;
@@ -89,7 +89,7 @@ export class AudioEngine {
         this.primaryAudio.crossOrigin = 'anonymous';
       }
       this.primaryAudio.preload = 'auto';
-      (this.primaryAudio as any).playsInline = true;
+      this.primaryAudio.setAttribute('playsinline', '');
       this.primaryAudio.setAttribute('playsinline', '');
       this.primaryAudio.setAttribute('webkit-playsinline', '');
 
@@ -117,7 +117,7 @@ export class AudioEngine {
         this.preloadAudio.crossOrigin = 'anonymous';
       }
       this.preloadAudio.preload = 'auto';
-      (this.preloadAudio as any).playsInline = true;
+      this.preloadAudio.setAttribute('playsinline', '');
       this.preloadAudio.setAttribute('playsinline', '');
       this.preloadAudio.setAttribute('webkit-playsinline', '');
 
@@ -151,9 +151,9 @@ export class AudioEngine {
   }
 
   private stopPreviewBridgeIfActive(): void {
-    if (typeof window !== 'undefined' && typeof (window as any).__AURASOUND_STOP_YT_PREVIEW__ === 'function') {
+    if (typeof window !== 'undefined' && typeof window.__AURASOUND_STOP_YT_PREVIEW__ === 'function') {
       try {
-        (window as any).__AURASOUND_STOP_YT_PREVIEW__();
+        window.__AURASOUND_STOP_YT_PREVIEW__();
       } catch {}
     }
   }
@@ -362,7 +362,7 @@ export class AudioEngine {
         // để dàn đèn VU Meter và Spectrum phản ánh chuẩn xác chất âm sau khi qua EQ
         this.compressorNode.connect(this.analyser);
 
-        (window as any).__AURASOUND_ANALYSER__ = this.analyser;
+        window.__AURASOUND_ANALYSER__ = this.analyser;
       }
 
       this.resumeContext();
@@ -461,8 +461,8 @@ export class AudioEngine {
       this.resumeContext();
       try {
         await this.primaryAudio.play();
-      } catch (err: any) {
-        if (err?.name !== 'AbortError') {
+      } catch (err) {
+        if ((err as Error | undefined)?.name !== 'AbortError') {
           this.statusCallback?.('error');
           this.errorCallback?.('Audio playback error');
         }
@@ -521,15 +521,15 @@ export class AudioEngine {
       }
 
       await this.primaryAudio.play();
-    } catch (err: any) {
+    } catch (err) {
       if (loadId !== this.activeLoadId) return;
-      if (err?.name === 'AbortError') {
+      if ((err as Error | undefined)?.name === 'AbortError') {
         return;
       }
       this.statusCallback?.('error');
-      console.warn('AudioEngine loadAndPlay error:', err?.message || err);
+      console.warn('AudioEngine loadAndPlay error:', (err as Error | undefined)?.message || err);
       if (this.errorCallback) {
-        this.errorCallback(err?.message || 'Audio playback error');
+        this.errorCallback((err as Error | undefined)?.message || 'Audio playback error');
       }
     } finally {
       if (loadId === this.activeLoadId) {
@@ -587,9 +587,9 @@ export class AudioEngine {
         } catch {}
       }
       await this.primaryAudio.play();
-    } catch (err: any) {
-      if (err?.name !== 'AbortError' && err?.name !== 'NotAllowedError') {
-        console.warn('Play interrupted:', err?.message || err);
+    } catch (err) {
+      if ((err as Error | undefined)?.name !== 'AbortError' && (err as Error | undefined)?.name !== 'NotAllowedError') {
+        console.warn('Play interrupted:', (err as Error | undefined)?.message || err);
       }
     }
   }
@@ -656,7 +656,7 @@ export class AudioEngine {
       this.audioCtx.resume().catch(() => {});
     }
     if (this.analyser) {
-      this.analyser.getByteFrequencyData(this.frequencyData as any);
+      this.analyser.getByteFrequencyData(this.frequencyData);
     } else if (this.primaryAudio && !this.primaryAudio.paused) {
       // Mô phỏng phổ tần số mượt mà cho mobile khi mở màn hình
       const t = this.primaryAudio.currentTime || 0;

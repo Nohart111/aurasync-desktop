@@ -6,13 +6,10 @@ import {
   X,
   SlidersHorizontal,
   RotateCcw,
-  Sparkles,
   ShieldCheck,
   Power,
   Activity,
   Compass,
-  Radio,
-  Clock,
   Disc,
 } from 'lucide-react';
 import { usePlayerStore } from '@/store/usePlayerStore';

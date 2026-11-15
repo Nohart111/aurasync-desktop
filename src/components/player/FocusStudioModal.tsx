@@ -1,9 +1,8 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  X,
   Play,
   Pause,
   SkipBack,
@@ -14,16 +13,16 @@ import {
   Minimize2,
   Volume2,
   VolumeX,
-  Sparkles,
   Heart,
 } from 'lucide-react';
 import { usePlayerStore } from '@/store/usePlayerStore';
+import { useIsClient } from '@/hooks/useIsClient';
 import { useAudioPlayer } from '@/hooks/useAudioPlayer';
 import { AudioEngine } from '@/core/audio/AudioEngine';
 import { playMechanicalSound } from '@/core/audio/SoundEffects';
 
 export function FocusStudioModal() {
-  const [mounted, setMounted] = useState(false);
+  const mounted = useIsClient();
   const {
     currentTrack,
     isPlaying,
@@ -47,11 +46,7 @@ export function FocusStudioModal() {
   const avgBassRef = useRef<number>(30);
   const avgMelodyRef = useRef<number>(35);
   const peakEnergyRef = useRef<number>(125);
-  const freqDataRef = useRef<Uint8Array>(new Uint8Array(64));
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  const freqDataRef = useRef<Uint8Array<ArrayBuffer>>(new Uint8Array(64));
 
   // Studio VU meter loop for Focus Mode
   useEffect(() => {
@@ -69,10 +64,8 @@ export function FocusStudioModal() {
       let instantEnergy = 0;
 
       if (isPlaying) {
-        let analyserNode: any = null;
-        if (typeof window !== 'undefined') {
-          analyserNode = (window as any).__AURASOUND_ANALYSER__;
-        }
+        const analyserNode =
+          typeof window !== 'undefined' ? window.__AURASOUND_ANALYSER__ : undefined;
 
         if (analyserNode) {
           try {

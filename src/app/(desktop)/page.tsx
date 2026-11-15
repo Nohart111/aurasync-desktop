@@ -15,7 +15,6 @@ import {
   Disc,
   Disc3,
   Radio,
-  Terminal,
   Cpu,
   Clock,
   CheckCircle2,
@@ -34,7 +33,6 @@ import {
   Maximize2,
   HelpCircle,
   SlidersHorizontal,
-  AlignLeft,
   Trash2,
 } from "lucide-react";
 import type { Track } from "@/store/usePlayerStore";
@@ -44,16 +42,16 @@ import { playMechanicalSound } from "@/core/audio/SoundEffects";
  * Tạo số lượt stream gốc ổn định cho bài hát trong kho kết hợp với số lượt nghe thực tế của người dùng
  */
 function formatVaultStreamCount(track: Track, userPlays: number): string {
-  if ((track as any).viewCountText) {
-    const clean = String((track as any).viewCountText).replace(/\s*streams$/i, "");
+  if (track.viewCountText) {
+    const clean = String(track.viewCountText).replace(/\s*streams$/i, "");
     return userPlays > 0 ? `${clean} (+${userPlays})` : `${clean} streams`;
   }
-  if (typeof (track as any).streamCount === "number" && (track as any).streamCount > 0) {
-    const total = (track as any).streamCount + userPlays;
+  if (typeof track.streamCount === "number" && track.streamCount > 0) {
+    const total = track.streamCount + userPlays;
     return `${total.toLocaleString("en-US")} streams`;
   }
   // Tính mốc base ổn định từ ID/Title của bài hát để hiển thị đồng nhất
-  const trackVid = (track as any)?.videoId;
+  const trackVid = track.videoId;
   const seedStr = String(trackVid || track.title || track.id || "aurasound");
   let hash = 0;
   for (let i = 0; i < seedStr.length; i++) {
@@ -95,7 +93,7 @@ function StudioDynamicVuMeter({ isPlaying }: { isPlaying: boolean }) {
   const avgMelodyRef = useRef<number>(35);
   // Headroom trần tối thiểu 125..160: Đảm bảo nhạc bình thường không bị đội tràn vào vùng Đỏ
   const peakEnergyRef = useRef<number>(125);
-  const freqDataRef = useRef<Uint8Array>(new Uint8Array(64));
+  const freqDataRef = useRef<Uint8Array<ArrayBuffer>>(new Uint8Array(64));
   const lastActiveCountRef = useRef<number>(-1);
   const lastDbTextRef = useRef<string>("");
 
@@ -113,10 +111,8 @@ function StudioDynamicVuMeter({ isPlaying }: { isPlaying: boolean }) {
       let instantEnergy = 0;
 
       if (isPlaying) {
-        let analyserNode: any = null;
-        if (typeof window !== "undefined") {
-          analyserNode = (window as any).__AURASOUND_ANALYSER__;
-        }
+        const analyserNode =
+          typeof window !== "undefined" ? window.__AURASOUND_ANALYSER__ : undefined;
 
         if (analyserNode) {
           try {
@@ -435,7 +431,6 @@ export default function RetroCyberDeckPage() {
     deletePlaylist,
     addTrackToPlaylist,
     removeTrackFromPlaylist,
-    playPlaylist,
     toggleLikeTrack,
   } = usePlayerStore();
 
@@ -771,7 +766,7 @@ export default function RetroCyberDeckPage() {
             <div className="flex w-full items-center justify-between gap-2 rounded-lg bg-zinc-900/80 border border-white/[0.06] px-2.5 sm:px-3 py-2 text-xs">
               <div className="truncate pr-1 min-w-0">
                 <span className="text-[9px] sm:text-[10px] font-mono text-zinc-400 block uppercase font-medium">
-                  {(currentTrack as any)?.isPreview ? "PREVIEW" : "MASTER TAPE"}
+                  {currentTrack?.isPreview ? "PREVIEW" : "MASTER TAPE"}
                 </span>
                 <span className="font-display font-semibold text-white truncate block">
                   {currentTrack ? currentTrack.title : "Ready to Play"}
@@ -859,12 +854,12 @@ export default function RetroCyberDeckPage() {
                 disabled={tracks.length === 0}
                 className="group flex items-center gap-2 rounded-xl bg-white px-5 sm:px-6 py-3 sm:py-3.5 text-xs font-mono font-bold tracking-wider text-black shadow-lg shadow-white/10 transition-all duration-150 hover:bg-zinc-200 active:scale-95 disabled:opacity-40 cursor-pointer border border-white/40 shrink-0"
               >
-                {isPlaying && !(currentTrack as any)?.isPreview ? (
+                {isPlaying && !currentTrack?.isPreview ? (
                   <Pause className="h-4 w-4 fill-black text-black" />
                 ) : (
                   <Play className="h-4 w-4 fill-black text-black" />
                 )}
-                <span>{isPlaying && !(currentTrack as any)?.isPreview ? "Pause" : "Play All"}</span>
+                <span>{isPlaying && !currentTrack?.isPreview ? "Pause" : "Play All"}</span>
               </button>
 
               <button
@@ -1166,7 +1161,7 @@ export default function RetroCyberDeckPage() {
               const isThisPlaying = currentTrack?.id === track.id && isPlaying;
               const isThisActive = currentTrack?.id === track.id;
               const isLiked = (likedTrackIds || []).includes(track.id);
-              const trackVid = (track as any)?.videoId;
+              const trackVid = track.videoId;
               const userPlays =
                 (streamCounts?.[track.id] || 0) +
                 (trackVid && trackVid !== track.id

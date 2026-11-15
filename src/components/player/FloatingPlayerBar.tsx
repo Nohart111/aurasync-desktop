@@ -25,11 +25,7 @@ import { usePlayerStore } from '@/store/usePlayerStore';
 import { useAudioPlayer } from '@/hooks/useAudioPlayer';
 import { playMechanicalSound } from '@/core/audio/SoundEffects';
 
-import * as MagneticSeekbarModule from '@/components/player/MagneticSeekbar';
-const MagneticSeekbar =
-  (MagneticSeekbarModule as any).MagneticSeekbar ||
-  (MagneticSeekbarModule as any).default ||
-  MagneticSeekbarModule;
+import { MagneticSeekbar } from '@/components/player/MagneticSeekbar';
 
 // ========================================================
 // 🌊 BIỂU ĐỒ SÓNG NHẠC 60FPS REAL-TIME CANVAS (TÍM -> CYAN)
@@ -38,7 +34,7 @@ const MagneticSeekbar =
 function DynamicSpectrumCanvas({ isPlaying }: { isPlaying: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef<number | null>(null);
-  const dataArrayRef = useRef<Uint8Array>(new Uint8Array(64));
+  const dataArrayRef = useRef<Uint8Array<ArrayBuffer>>(new Uint8Array(64));
   const smoothedHeights = useRef<number[]>(new Array(16).fill(2));
 
   useEffect(() => {
@@ -58,9 +54,10 @@ function DynamicSpectrumCanvas({ isPlaying }: { isPlaying: boolean }) {
       phase += 0.08;
       let hasData = false;
 
-      if (typeof window !== 'undefined' && (window as any).__AURASOUND_ANALYSER__) {
+      const analyser = typeof window !== 'undefined' ? window.__AURASOUND_ANALYSER__ : undefined;
+      if (analyser) {
         try {
-          (window as any).__AURASOUND_ANALYSER__.getByteFrequencyData(dataArrayRef.current);
+          analyser.getByteFrequencyData(dataArrayRef.current);
           const data = dataArrayRef.current;
           let sum = 0;
           for (let i = 0; i < 32; i++) sum += data[i] || 0;
@@ -174,14 +171,7 @@ export function FloatingPlayerBar() {
 
   const handleTogglePlay = () => {
     playMechanicalSound('switch');
-    const store = usePlayerStore.getState() as any;
-    if (typeof store.togglePlay === 'function') {
-      store.togglePlay();
-    } else if (typeof store.setPlaying === 'function') {
-      store.setPlaying(!isPlaying);
-    } else if (typeof store.setIsPlaying === 'function') {
-      store.setIsPlaying(!isPlaying);
-    }
+    usePlayerStore.getState().togglePlay();
   };
 
   const handleNext = () => {
