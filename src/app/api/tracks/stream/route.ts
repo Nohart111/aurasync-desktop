@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { isNextControlError, type GitHubReleaseAsset } from '@/lib/api-types';
 
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
 const GITHUB_OWNER = process.env.GITHUB_OWNER || 'Nohart111';
@@ -12,6 +13,32 @@ const CORS_HEADERS: Record<string, string> = {
   'Access-Control-Expose-Headers': 'Content-Range, Content-Length, Accept-Ranges',
   'Access-Control-Max-Age': '86400',
 };
+
+// GitHub hands out signed storage URLs that stay valid for about 5 minutes.
+// Reusing them lets range requests, seeks and the preloaded next track skip
+// the github.com redirect lookups (each one adds hundreds of ms).
+const RESOLVED_TTL_MS = 4 * 60 * 1000;
+const MAX_RESOLVED = 200;
+const resolvedUrls = new Map<string, { url: string; name: string; expiresAt: number }>();
+
+function getResolved(key: string) {
+  const entry = resolvedUrls.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    resolvedUrls.delete(key);
+    return null;
+  }
+  return entry;
+}
+
+function rememberResolved(key: string, url: string, name: string) {
+  if (!key || !url) return;
+  if (resolvedUrls.size >= MAX_RESOLVED) {
+    const oldest = resolvedUrls.keys().next().value;
+    if (oldest !== undefined) resolvedUrls.delete(oldest);
+  }
+  resolvedUrls.set(key, { url, name, expiresAt: Date.now() + RESOLVED_TTL_MS });
+}
 
 function getMimeType(filename: string): string {
   const clean = filename.split('?')[0].toLowerCase();
@@ -68,8 +95,22 @@ export async function GET(req: NextRequest) {
     // giúp Web Audio API AnalyserNode (VU Meter & Spectrum) đọc được dữ liệu tần số 100% không bị lỗi CORS Taint.
     let upstream: Response | null = null;
     let currentFetchUrl = targetUrl;
+    const cacheKey = targetUrl || inferredFile;
 
-    for (let redirectCount = 0; redirectCount < 6; redirectCount++) {
+    const known = cacheKey ? getResolved(cacheKey) : null;
+    if (known) {
+      const knownHeaders: Record<string, string> = { 'User-Agent': 'Mozilla/5.0' };
+      if (rangeHeader) knownHeaders['Range'] = rangeHeader;
+      const resp = await fetch(known.url, { headers: knownHeaders, cache: 'no-store' });
+      if (resp.ok || resp.status === 206) {
+        upstream = resp;
+        resolvedAssetName = known.name;
+      } else {
+        resolvedUrls.delete(cacheKey);
+      }
+    }
+
+    for (let redirectCount = 0; !upstream && redirectCount < 6; redirectCount++) {
       const isStorageEndpoint =
         currentFetchUrl.includes('githubusercontent.com') ||
         currentFetchUrl.includes('amazonaws.com') ||
@@ -103,6 +144,9 @@ export async function GET(req: NextRequest) {
       }
 
       upstream = resp;
+      if ((resp.ok || resp.status === 206) && currentFetchUrl !== targetUrl) {
+        rememberResolved(cacheKey, currentFetchUrl, resolvedAssetName);
+      }
       break;
     }
 
@@ -125,7 +169,7 @@ export async function GET(req: NextRequest) {
           const relData = await relRes.json();
           const clean = decodeURIComponent(inferredFile).toLowerCase();
           const prefix = clean.replace(/-\d+\.[a-z0-9]+$/, '');
-          const assets: any[] = Array.isArray(relData.assets) ? [...relData.assets] : [];
+          const assets: GitHubReleaseAsset[] = Array.isArray(relData.assets) ? [...relData.assets] : [];
 
           assets.sort((a, b) => {
             const aMp3 = String(a?.name || '').toLowerCase().endsWith('.mp3') ? 1 : 0;
@@ -137,13 +181,13 @@ export async function GET(req: NextRequest) {
           });
 
           const matchedAsset =
-            assets.find((a: any) => a?.name && a.name.toLowerCase() === clean) ||
+            assets.find((a) => a?.name && a.name.toLowerCase() === clean) ||
             assets.find(
-              (a: any) =>
+              (a) =>
                 a?.name && prefix.length > 3 && a.name.toLowerCase().startsWith(prefix + '-')
             ) ||
             assets.find(
-              (a: any) =>
+              (a) =>
                 a?.name && prefix.length > 3 && a.name.toLowerCase().startsWith(prefix)
             );
 
@@ -177,6 +221,9 @@ export async function GET(req: NextRequest) {
                   redirect: 'follow',
                   cache: 'no-store',
                 });
+                if (upstream.ok || upstream.status === 206) {
+                  rememberResolved(cacheKey, signedS3Url, resolvedAssetName);
+                }
               }
             } else if (assetResp.ok || assetResp.status === 206) {
               upstream = assetResp;
@@ -218,8 +265,8 @@ export async function GET(req: NextRequest) {
       status: upstream.status,
       headers: responseHeaders,
     });
-  } catch (err: any) {
-    if (err?.digest) throw err;
+  } catch (err) {
+    if (isNextControlError(err)) throw err;
     console.error('Lỗi Stream API:', err);
     if (targetUrl && targetUrl.startsWith('https://')) {
       const redir = NextResponse.redirect(targetUrl, 307);

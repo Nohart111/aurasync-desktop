@@ -1,6 +1,9 @@
 ﻿import { NextResponse } from 'next/server';
 import fs from 'node:fs/promises';
+import { errorMessage, type CatalogTrack } from '@/lib/api-types';
 import path from 'node:path';
+import { invalidateCatalogCache } from '@/lib/catalog-cache';
+import { adminRequiredResponse, isAdminRequest } from '@/lib/admin-auth';
 
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
 const GITHUB_OWNER = process.env.GITHUB_OWNER || 'Nohart111';
@@ -82,6 +85,7 @@ function getExt(filename: string): string {
 }
 
 export async function POST(req: Request) {
+  if (!isAdminRequest(req)) return adminRequiredResponse();
   try {
     const formData = await req.formData();
     const file = formData.get('file') as File | null;
@@ -139,7 +143,7 @@ export async function POST(req: Request) {
 
     const upData = await upRes.json();
 
-    let catalog: any[] = [];
+    let catalog: CatalogTrack[] = [];
     try {
       const raw = await fs.readFile(CATALOG_PATH, 'utf-8');
       catalog = JSON.parse(raw);
@@ -162,15 +166,16 @@ export async function POST(req: Request) {
       dateAdded: new Date().toISOString(),
     };
 
-    const updatedCatalog = [newTrack, ...catalog.filter((t: any) => t.id !== newTrack.id)];
+    const updatedCatalog = [newTrack, ...catalog.filter((t) => t.id !== newTrack.id)];
     await fs.writeFile(CATALOG_PATH, JSON.stringify(updatedCatalog, null, 2), 'utf-8');
 
+    invalidateCatalogCache();
     return NextResponse.json({
       success: true,
       track: newTrack,
     });
-  } catch (err: any) {
+  } catch (err) {
     console.error('Lỗi upload file:', err);
-    return NextResponse.json({ error: err.message || 'Lỗi xử lý file.' }, { status: 500 });
+    return NextResponse.json({ error: errorMessage(err, 'Lỗi xử lý file.') }, { status: 500 });
   }
 }

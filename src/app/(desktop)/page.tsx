@@ -2,7 +2,11 @@
 
 import React, { useEffect, useState, useMemo, useRef } from "react";
 import { usePlayerStore } from "@/store/usePlayerStore";
+import { useShallow } from "zustand/react/shallow";
 import { useAudioPlayer } from "@/hooks/useAudioPlayer";
+import { PlaybackTime } from "@/components/player/PlaybackTime";
+import { fetchCatalog } from "@/lib/catalog-client";
+import { adminFetch } from "@/lib/admin-client";
 import { AudioEngine } from "@/core/audio/AudioEngine";
 import { ExploreTrendingSection } from "@/app/(desktop)/explore/page";
 import {
@@ -15,7 +19,6 @@ import {
   Disc,
   Disc3,
   Radio,
-  Terminal,
   Cpu,
   Clock,
   CheckCircle2,
@@ -34,7 +37,6 @@ import {
   Maximize2,
   HelpCircle,
   SlidersHorizontal,
-  AlignLeft,
   Trash2,
 } from "lucide-react";
 import type { Track } from "@/store/usePlayerStore";
@@ -44,16 +46,16 @@ import { playMechanicalSound } from "@/core/audio/SoundEffects";
  * Tạo số lượt stream gốc ổn định cho bài hát trong kho kết hợp với số lượt nghe thực tế của người dùng
  */
 function formatVaultStreamCount(track: Track, userPlays: number): string {
-  if ((track as any).viewCountText) {
-    const clean = String((track as any).viewCountText).replace(/\s*streams$/i, "");
+  if (track.viewCountText) {
+    const clean = String(track.viewCountText).replace(/\s*streams$/i, "");
     return userPlays > 0 ? `${clean} (+${userPlays})` : `${clean} streams`;
   }
-  if (typeof (track as any).streamCount === "number" && (track as any).streamCount > 0) {
-    const total = (track as any).streamCount + userPlays;
+  if (typeof track.streamCount === "number" && track.streamCount > 0) {
+    const total = track.streamCount + userPlays;
     return `${total.toLocaleString("en-US")} streams`;
   }
   // Tính mốc base ổn định từ ID/Title của bài hát để hiển thị đồng nhất
-  const trackVid = (track as any)?.videoId;
+  const trackVid = track.videoId;
   const seedStr = String(trackVid || track.title || track.id || "aurasound");
   let hash = 0;
   for (let i = 0; i < seedStr.length; i++) {
@@ -95,7 +97,7 @@ function StudioDynamicVuMeter({ isPlaying }: { isPlaying: boolean }) {
   const avgMelodyRef = useRef<number>(35);
   // Headroom trần tối thiểu 125..160: Đảm bảo nhạc bình thường không bị đội tràn vào vùng Đỏ
   const peakEnergyRef = useRef<number>(125);
-  const freqDataRef = useRef<Uint8Array>(new Uint8Array(64));
+  const freqDataRef = useRef<Uint8Array<ArrayBuffer>>(new Uint8Array(64));
   const lastActiveCountRef = useRef<number>(-1);
   const lastDbTextRef = useRef<string>("");
 
@@ -113,10 +115,8 @@ function StudioDynamicVuMeter({ isPlaying }: { isPlaying: boolean }) {
       let instantEnergy = 0;
 
       if (isPlaying) {
-        let analyserNode: any = null;
-        if (typeof window !== "undefined") {
-          analyserNode = (window as any).__AURASOUND_ANALYSER__;
-        }
+        const analyserNode =
+          typeof window !== "undefined" ? window.__AURASOUND_ANALYSER__ : undefined;
 
         if (analyserNode) {
           try {
@@ -378,16 +378,14 @@ function formatDuration(seconds?: number): string {
  * Đồng hồ Cyberdeck độc lập: Cô lập re-render thời gian nghe khỏi toàn bộ trang catalog
  */
 function CyberdeckClock() {
-  const { currentTime, actualDuration } = useAudioPlayer();
+  const { actualDuration } = useAudioPlayer();
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const currentTrack = usePlayerStore((s) => s.currentTrack);
 
   return (
     <div className="flex items-center gap-1.5 shrink-0 font-mono text-[10px] sm:text-[11px] text-zinc-300 bg-white/[0.06] px-2 sm:px-2.5 py-1 rounded border border-white/10 shadow-inner">
       <Clock className={`w-3 h-3 text-amber-400 ${isPlaying ? "animate-pulse" : ""}`} />
-      <span className="text-white font-bold tabular-nums">
-        {isPlaying && currentTrack ? formatDuration(currentTime) : "00:00"}
-      </span>
+      <PlaybackTime active={isPlaying && Boolean(currentTrack)} className="text-white font-bold tabular-nums" />
       <span className="text-zinc-600">/</span>
       <span className="text-zinc-400 tabular-nums">
         {currentTrack ? formatDuration(actualDuration || currentTrack.duration) : "00:00"}
@@ -435,23 +433,18 @@ export default function RetroCyberDeckPage() {
     deletePlaylist,
     addTrackToPlaylist,
     removeTrackFromPlaylist,
-    playPlaylist,
     toggleLikeTrack,
-  } = usePlayerStore();
+  } = usePlayerStore(
+    useShallow((s) => ({ currentTrack: s.currentTrack, isPlaying: s.isPlaying, setPlaying: s.setPlaying, enqueueTrack: s.enqueueTrack, jumpToTrack: s.jumpToTrack, setLibrary: s.setLibrary, customPlaylists: s.customPlaylists, likedTrackIds: s.likedTrackIds, streamCounts: s.streamCounts, isSfxEnabled: s.isSfxEnabled, toggleSfx: s.toggleSfx, toggleFocusMode: s.toggleFocusMode, toggleShortcuts: s.toggleShortcuts, isEqOpen: s.isEqOpen, toggleEq: s.toggleEq, createPlaylist: s.createPlaylist, deletePlaylist: s.deletePlaylist, addTrackToPlaylist: s.addTrackToPlaylist, removeTrackFromPlaylist: s.removeTrackFromPlaylist, toggleLikeTrack: s.toggleLikeTrack }))
+  );
 
   useEffect(() => {
-    async function loadTracks() {
+    async function loadTracks(fresh = false) {
       try {
-        const res = await fetch("/api/tracks/search?t=" + Date.now(), {
-          cache: "no-store",
-        });
-        if (res.ok) {
-          const data = await res.json();
-          const list = Array.isArray(data) ? data : data.tracks || [];
-          setTracks(list);
-          if (list.length > 0) {
-            setLibrary(list);
-          }
+        const list = await fetchCatalog({ fresh });
+        setTracks(list);
+        if (list.length > 0) {
+          setLibrary(list);
         }
       } catch (err) {
         console.error("Lỗi nạp bài hát:", err);
@@ -469,7 +462,7 @@ export default function RetroCyberDeckPage() {
         setNewlyAddedTrack(added);
         setTimeout(() => setNewlyAddedTrack(null), 6500);
       } else {
-        loadTracks();
+        void loadTracks(true);
       }
     };
 
@@ -628,7 +621,7 @@ export default function RetroCyberDeckPage() {
     if (!window.confirm(`Xác nhận xóa bài hát "${track.title}" khỏi kho nhạc?`)) return;
     playMechanicalSound('toggle');
     try {
-      const res = await fetch('/api/tracks/delete', {
+      const res = await adminFetch('/api/tracks/delete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: track.id, title: track.title }),
@@ -710,7 +703,7 @@ export default function RetroCyberDeckPage() {
       )}
 
       {/* KHUNG TAPE DECK TRÊN CÙNG */}
-      <section className="relative overflow-hidden rounded-3xl border border-white/[0.08] bg-gradient-to-b from-[#121222]/80 via-[#090912]/90 to-[#050508] p-3.5 sm:p-6 shadow-2xl backdrop-blur-2xl">
+      <section className="relative overflow-hidden rounded-3xl border border-white/[0.08] bg-gradient-to-b from-[#121222]/80 via-[#090912]/90 to-[#050508] p-3.5 sm:p-6 shadow-2xl backdrop-blur-xl">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(245,158,11,0.05),transparent_60%)]" />
 
         <div className="relative z-10 flex flex-col lg:flex-row items-center justify-between gap-5 sm:gap-8">
@@ -771,7 +764,7 @@ export default function RetroCyberDeckPage() {
             <div className="flex w-full items-center justify-between gap-2 rounded-lg bg-zinc-900/80 border border-white/[0.06] px-2.5 sm:px-3 py-2 text-xs">
               <div className="truncate pr-1 min-w-0">
                 <span className="text-[9px] sm:text-[10px] font-mono text-zinc-400 block uppercase font-medium">
-                  {(currentTrack as any)?.isPreview ? "PREVIEW" : "MASTER TAPE"}
+                  {currentTrack?.isPreview ? "PREVIEW" : "MASTER TAPE"}
                 </span>
                 <span className="font-display font-semibold text-white truncate block">
                   {currentTrack ? currentTrack.title : "Ready to Play"}
@@ -859,12 +852,12 @@ export default function RetroCyberDeckPage() {
                 disabled={tracks.length === 0}
                 className="group flex items-center gap-2 rounded-xl bg-white px-5 sm:px-6 py-3 sm:py-3.5 text-xs font-mono font-bold tracking-wider text-black shadow-lg shadow-white/10 transition-all duration-150 hover:bg-zinc-200 active:scale-95 disabled:opacity-40 cursor-pointer border border-white/40 shrink-0"
               >
-                {isPlaying && !(currentTrack as any)?.isPreview ? (
+                {isPlaying && !currentTrack?.isPreview ? (
                   <Pause className="h-4 w-4 fill-black text-black" />
                 ) : (
                   <Play className="h-4 w-4 fill-black text-black" />
                 )}
-                <span>{isPlaying && !(currentTrack as any)?.isPreview ? "Pause" : "Play All"}</span>
+                <span>{isPlaying && !currentTrack?.isPreview ? "Pause" : "Play All"}</span>
               </button>
 
               <button
@@ -1166,7 +1159,7 @@ export default function RetroCyberDeckPage() {
               const isThisPlaying = currentTrack?.id === track.id && isPlaying;
               const isThisActive = currentTrack?.id === track.id;
               const isLiked = (likedTrackIds || []).includes(track.id);
-              const trackVid = (track as any)?.videoId;
+              const trackVid = track.videoId;
               const userPlays =
                 (streamCounts?.[track.id] || 0) +
                 (trackVid && trackVid !== track.id
@@ -1179,7 +1172,10 @@ export default function RetroCyberDeckPage() {
                 <div
                   key={track.id || idx}
                   onClick={() => handlePlayTrack(track)}
+                  // Rows off screen skip layout and paint; not while the playlist menu (which overflows) is open.
                   className={`group relative flex items-center justify-between rounded-2xl p-3 sm:p-3.5 transition-all duration-300 cursor-pointer border ${
+                    isMenuOpen ? "" : "[content-visibility:auto] [contain-intrinsic-size:auto_76px]"
+                  } ${
                     isThisActive
                       ? "border-white/25 bg-white/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.6)]"
                       : "border-white/[0.06] bg-[#0c0c16]/70 hover:border-white/15 hover:bg-white/[0.04]"

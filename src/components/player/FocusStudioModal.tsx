@@ -1,9 +1,8 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  X,
   Play,
   Pause,
   SkipBack,
@@ -14,16 +13,19 @@ import {
   Minimize2,
   Volume2,
   VolumeX,
-  Sparkles,
   Heart,
 } from 'lucide-react';
 import { usePlayerStore } from '@/store/usePlayerStore';
+import { useShallow } from 'zustand/react/shallow';
+import { useIsClient } from '@/hooks/useIsClient';
 import { useAudioPlayer } from '@/hooks/useAudioPlayer';
+import { PlaybackTime } from '@/components/player/PlaybackTime';
+import { coverThumb } from '@/lib/thumbnails';
 import { AudioEngine } from '@/core/audio/AudioEngine';
 import { playMechanicalSound } from '@/core/audio/SoundEffects';
 
 export function FocusStudioModal() {
-  const [mounted, setMounted] = useState(false);
+  const mounted = useIsClient();
   const {
     currentTrack,
     isPlaying,
@@ -36,9 +38,11 @@ export function FocusStudioModal() {
     advancePrev,
     toggleLikeTrack,
     toggleFocusMode,
-  } = usePlayerStore();
+  } = usePlayerStore(
+    useShallow((s) => ({ currentTrack: s.currentTrack, isPlaying: s.isPlaying, volume: s.volume, likedTrackIds: s.likedTrackIds, isFocusMode: s.isFocusMode, setPlaying: s.setPlaying, setVolume: s.setVolume, advanceNext: s.advanceNext, advancePrev: s.advancePrev, toggleLikeTrack: s.toggleLikeTrack, toggleFocusMode: s.toggleFocusMode }))
+  );
 
-  const { currentTime, actualDuration } = useAudioPlayer();
+  const { actualDuration } = useAudioPlayer();
 
   const containerRef = useRef<HTMLDivElement>(null);
   const dbTextRef = useRef<HTMLSpanElement>(null);
@@ -47,11 +51,7 @@ export function FocusStudioModal() {
   const avgBassRef = useRef<number>(30);
   const avgMelodyRef = useRef<number>(35);
   const peakEnergyRef = useRef<number>(125);
-  const freqDataRef = useRef<Uint8Array>(new Uint8Array(64));
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  const freqDataRef = useRef<Uint8Array<ArrayBuffer>>(new Uint8Array(64));
 
   // Studio VU meter loop for Focus Mode
   useEffect(() => {
@@ -69,10 +69,8 @@ export function FocusStudioModal() {
       let instantEnergy = 0;
 
       if (isPlaying) {
-        let analyserNode: any = null;
-        if (typeof window !== 'undefined') {
-          analyserNode = (window as any).__AURASOUND_ANALYSER__;
-        }
+        const analyserNode =
+          typeof window !== 'undefined' ? window.__AURASOUND_ANALYSER__ : undefined;
 
         if (analyserNode) {
           try {
@@ -347,7 +345,8 @@ export function FocusStudioModal() {
             <div className="absolute inset-0 m-auto flex h-24 w-24 sm:h-32 sm:w-32 items-center justify-center rounded-full overflow-hidden border-4 border-zinc-700 shadow-2xl bg-zinc-900">
               {currentTrack?.coverUrl || currentTrack?.thumbnail ? (
                 <img
-                  src={currentTrack.coverUrl || currentTrack.thumbnail}
+                  src={coverThumb(currentTrack.coverUrl || currentTrack.thumbnail)}
+                  decoding="async"
                   alt={currentTrack.title}
                   className={`h-full w-full object-cover transition-all duration-700 ${
                     isPlaying ? 'scale-105' : 'grayscale-[30%]'
@@ -383,9 +382,7 @@ export function FocusStudioModal() {
           {/* VFD Digital Clock */}
           <div className="mt-3 inline-flex items-center gap-2 rounded-xl bg-black/60 border border-white/10 px-3.5 py-1.5 font-mono text-xs sm:text-sm text-white shadow-inner">
             <Clock className={`w-3.5 h-3.5 text-amber-400 ${isPlaying ? 'animate-pulse' : ''}`} />
-            <span className="font-bold tabular-nums">
-              {isPlaying && currentTrack ? formatDuration(currentTime) : '00:00'}
-            </span>
+            <PlaybackTime active={isPlaying && Boolean(currentTrack)} className="font-bold tabular-nums" />
             <span className="text-zinc-600">/</span>
             <span className="text-zinc-400 tabular-nums">
               {currentTrack ? formatDuration(actualDuration || currentTrack.duration) : '00:00'}

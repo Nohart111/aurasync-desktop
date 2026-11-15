@@ -23,7 +23,7 @@ const robotoMono = Roboto_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "AuraSound â€” Hi-Fi Lossless Social Audio Workspace",
+  title: "AuraSound — Hi-Fi Lossless Social Audio Workspace",
   description: "A Hi-Fi lossless social audio workspace for music listeners.",
   icons: {
     icon: "/favicon.ico",

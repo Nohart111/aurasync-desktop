@@ -20,6 +20,8 @@ import {
 } from 'lucide-react';
 import { SmartIngestModal } from '@/components/modals/SmartIngestModal';
 import { usePlayerStore } from '@/store/usePlayerStore';
+import { adminFetch } from '@/lib/admin-client';
+import { useShallow } from 'zustand/react/shallow';
 import { playMechanicalSound } from '@/core/audio/SoundEffects';
 
 interface SidebarNavProps {
@@ -43,7 +45,9 @@ export function SidebarNav({ onViewChange, onFileUpload }: SidebarNavProps) {
     customPlaylists,
     likedTrackIds,
     createPlaylist,
-  } = usePlayerStore();
+  } = usePlayerStore(
+    useShallow((s) => ({ isSidebarCollapsed: s.isSidebarCollapsed, toggleSidebar: s.toggleSidebar, customPlaylists: s.customPlaylists, likedTrackIds: s.likedTrackIds, createPlaylist: s.createPlaylist }))
+  );
 
   const playlists = customPlaylists || [];
 
@@ -154,7 +158,7 @@ export function SidebarNav({ onViewChange, onFileUpload }: SidebarNavProps) {
     try {
       const formData = new FormData();
       formData.append('file', file);
-      const res = await fetch('/api/tracks/upload', {
+      const res = await adminFetch('/api/tracks/upload', {
         method: 'POST',
         body: formData,
       });

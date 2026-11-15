@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { errorMessage } from '@/lib/api-types';
 import { fetchTranscript, listLanguages } from 'youtube-transcript-plus';
 import ytSearch from 'yt-search';
 
@@ -298,9 +299,9 @@ export async function GET(request: NextRequest) {
       cached: false,
       lyrics: resultPayload,
     });
-  } catch (error: any) {
+  } catch (error) {
     return NextResponse.json(
-      { error: error?.message || 'Internal Server Error' },
+      { error: errorMessage(error, 'Internal Server Error') },
       { status: 500 }
     );
   }

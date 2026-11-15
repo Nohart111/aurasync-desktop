@@ -1,7 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { collectVideoRenderers, isNextControlError, type YouTubeVideoRenderer } from '@/lib/api-types';
 
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 giờ
-const trendingMemoryCache = new Map<string, { updatedAt: number; results: any[] }>();
+interface TrendingResult {
+  id: string;
+  videoId: string;
+  title: string;
+  artist: string;
+  duration: number;
+  durationFormatted: string;
+  viewCountText: string;
+  thumbnail: string;
+  url: string;
+  category: string;
+  source: 'youtube';
+}
+
+const trendingMemoryCache = new Map<string, { updatedAt: number; results: TrendingResult[] }>();
 
 const CATEGORY_QUERIES: Record<string, string[]> = {
   trending: [
@@ -137,7 +152,7 @@ function cleanTrackMetadata(rawTitle: string, rawArtist?: string): { title: stri
   const channelSlug = slugifyTitle(cleanChannel);
   const distributor = isDistributor(rawArtist || '');
 
-  let defaultArtist = distributor ? 'Nghệ sĩ chưa rõ' : cleanChannel || rawArtist || 'Nghệ sĩ chưa rõ';
+  const defaultArtist = distributor ? 'Nghệ sĩ chưa rõ' : cleanChannel || rawArtist || 'Nghệ sĩ chưa rõ';
   let candidateTitle = text;
   let candidateArtist = defaultArtist;
 
@@ -222,7 +237,7 @@ function formatSeconds(sec: number): string {
   return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 }
 
-function parseViewCountText(v: any): string {
+function parseViewCountText(v: YouTubeVideoRenderer): string {
   const raw =
     v?.shortViewCountText?.simpleText ||
     v?.shortViewCountText?.runs?.[0]?.text ||
@@ -237,22 +252,6 @@ function parseViewCountText(v: any): string {
     .replace(/,/g, '.')
     .trim();
   return cleaned ? `${cleaned} streams` : '250K+ streams';
-}
-
-function collectVideoRenderers(node: any, out: any[] = []) {
-  if (!node || typeof node !== 'object') return out;
-  if (node.videoRenderer && node.videoRenderer.videoId) {
-    out.push(node.videoRenderer);
-    return out;
-  }
-  if (Array.isArray(node)) {
-    for (const item of node) collectVideoRenderers(item, out);
-  } else {
-    for (const key of Object.keys(node)) {
-      collectVideoRenderers(node[key], out);
-    }
-  }
-  return out;
 }
 
 function isCompilationOrNoiseTitle(rawTitle: string): boolean {
@@ -282,7 +281,7 @@ function isCompilationOrNoiseTitle(rawTitle: string): boolean {
   return banned.some((kw) => lower.includes(kw));
 }
 
-async function fetchYouTubeQueryResults(query: string): Promise<any[]> {
+async function fetchYouTubeQueryResults(query: string): Promise<YouTubeVideoRenderer[]> {
   try {
     const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
     const res = await fetch(searchUrl, {
@@ -344,7 +343,7 @@ export async function GET(req: NextRequest) {
     const renderersArrays = await Promise.all(queries.map((q) => fetchYouTubeQueryResults(q)));
     const allRenderers = renderersArrays.flat();
 
-    const results: any[] = [];
+    const results: TrendingResult[] = [];
     const seenVideoIds = new Set<string>();
     const seenTitleSlugs = new Set<string>();
 
@@ -357,7 +356,7 @@ export async function GET(req: NextRequest) {
       if (durationSec < 90 || durationSec > 480) continue;
 
       const rawTitle =
-        v.title?.runs?.map((r: any) => r.text).join('') ||
+        v.title?.runs?.map((r) => r.text).join('') ||
         v.title?.simpleText ||
         '';
       if (!rawTitle || isCompilationOrNoiseTitle(rawTitle)) continue;
@@ -407,8 +406,8 @@ export async function GET(req: NextRequest) {
         },
       }
     );
-  } catch (err: any) {
-    if (err?.digest) throw err;
+  } catch (err) {
+    if (isNextControlError(err)) throw err;
     return NextResponse.json({ category, results: [] }, { status: 200 });
   }
 }

@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { isNextControlError, errorMessage, type CatalogTrack, type GitHubRelease } from '@/lib/api-types';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { invalidateCatalogCache } from '@/lib/catalog-cache';
+import { adminRequiredResponse, isAdminRequest } from '@/lib/admin-auth';
 
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
 const GITHUB_OWNER = process.env.GITHUB_OWNER || 'Nohart111';
@@ -17,7 +20,7 @@ function extractFilename(urlOrPath?: string): string {
   return decodeURIComponent(parts[parts.length - 1] || '').trim();
 }
 
-function isSameTrack(t: any, targetId?: string, targetTitle?: string, targetFile?: string): boolean {
+function isSameTrack(t: CatalogTrack | null | undefined, targetId?: string, targetTitle?: string, targetFile?: string): boolean {
   if (!t) return false;
   if (targetId && t.id === targetId) return true;
   if (targetTitle && t.title && t.title.trim().toLowerCase() === targetTitle.trim().toLowerCase()) {
@@ -44,8 +47,8 @@ async function deleteReleaseAsset(filename: string): Promise<void> {
       }
     );
     if (!relRes.ok) return;
-    const relData = await relRes.json();
-    const assets: any[] = relData.assets || [];
+    const relData: GitHubRelease = await relRes.json();
+    const assets = relData.assets || [];
 
     const clean = filename.toLowerCase();
     const targetAsset = assets.find(
@@ -68,6 +71,7 @@ async function deleteReleaseAsset(filename: string): Promise<void> {
 }
 
 export async function POST(req: NextRequest) {
+  if (!isAdminRequest(req)) return adminRequiredResponse();
   try {
     const body = await req.json();
     const { id, title, streamUrl } = body;
@@ -79,12 +83,12 @@ export async function POST(req: NextRequest) {
     const targetFile = extractFilename(streamUrl);
 
     // 1. Xóa khỏi file local data/catalog.json (nếu đang ở localhost)
-    let localRemaining: any[] | null = null;
+    let localRemaining: CatalogTrack[] | null = null;
     try {
       const raw = await fs.readFile(CATALOG_PATH, 'utf-8');
       const catalog = JSON.parse(raw);
       if (Array.isArray(catalog)) {
-        localRemaining = catalog.filter((t: any) => !isSameTrack(t, id, title, targetFile));
+        localRemaining = catalog.filter((t: CatalogTrack) => !isSameTrack(t, id, title, targetFile));
         await fs.writeFile(CATALOG_PATH, JSON.stringify(localRemaining, null, 2), 'utf-8');
       }
     } catch {}
@@ -105,10 +109,10 @@ export async function POST(req: NextRequest) {
           const data = await getRes.json();
           const sha = data.sha;
           const rawJson = Buffer.from(data.content, 'base64').toString('utf-8');
-          const ghCatalog: any[] = JSON.parse(rawJson);
+          const ghCatalog: unknown = JSON.parse(rawJson);
 
           const ghRemaining = Array.isArray(ghCatalog)
-            ? ghCatalog.filter((t: any) => !isSameTrack(t, id, title, targetFile))
+            ? ghCatalog.filter((t: CatalogTrack) => !isSameTrack(t, id, title, targetFile))
             : [];
 
           const finalToSave = localRemaining !== null && ghRemaining.length === 0 && localRemaining.length > 0
@@ -158,13 +162,14 @@ export async function POST(req: NextRequest) {
       await deleteReleaseAsset(targetFile);
     }
 
+    invalidateCatalogCache();
     return NextResponse.json({
       success: true,
       message: 'Đã xóa bài hát thành công.',
     });
-  } catch (err: any) {
-    if (err?.digest) throw err;
+  } catch (err) {
+    if (isNextControlError(err)) throw err;
     console.error('Lỗi Delete API:', err);
-    return NextResponse.json({ error: err.message || 'Lỗi xử lý xóa bài hát.' }, { status: 500 });
+    return NextResponse.json({ error: errorMessage(err, 'Lỗi xử lý xóa bài hát.') }, { status: 500 });
   }
 }

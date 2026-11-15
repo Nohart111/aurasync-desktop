@@ -14,7 +14,7 @@ export interface Track {
   isPreview?: boolean;
   streamCount?: number;
   viewCountText?: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export default Track;

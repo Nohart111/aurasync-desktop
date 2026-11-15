@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useRef, useCallback } from 'react';
-import { useMotionValue } from 'framer-motion';
+import { motionValue } from 'framer-motion';
 import { usePlayerStore } from '@/store/usePlayerStore';
 import { AudioEngine, audioEngine } from '@/core/audio/AudioEngine';
+import { fetchCatalog } from '@/lib/catalog-client';
 import {
   initYouTubePreviewBridge,
   pauseYouTubePreview,
@@ -100,38 +101,42 @@ function triggerImmediateSyncPlaybackFromStore() {
   }
 }
 
-export function useAudioPlayer() {
-  const {
-    currentTrack,
-    nextTrackPreview,
-    isPlaying,
-    volume,
-    progress,
-    duration,
-    playNonce,
-    setVolume,
-    setProgress,
-    setDuration,
-    playNext,
-    playPrevious,
-  } = usePlayerStore();
+/**
+ * Playback position shared by every component. Written only by the single
+ * PlaybackController (once per frame while playing), read through motion
+ * values so the UI updates without React re-renders.
+ */
+const currentTimeMV = motionValue(0);
+const progressMV = motionValue(0);
 
-  const progressMV = useMotionValue(0);
-  const currentTimeMV = useMotionValue(0);
+function setPosition(current: number, total: number) {
+  currentTimeMV.set(current);
+  progressMV.set(total > 0 ? Math.min(1, Math.max(0, current / total)) : 0);
+}
+
+/**
+ * Owns all playback side effects: catalog sync, the audio engine wiring, track
+ * loading, Media Session and the position loop. Mount exactly once (see
+ * PlaybackController); components use the lightweight useAudioPlayer instead.
+ */
+export function usePlaybackController() {
+  const currentTrack = usePlayerStore((s) => s.currentTrack);
+  const nextTrackPreview = usePlayerStore((s) => s.nextTrackPreview);
+  const isPlaying = usePlayerStore((s) => s.isPlaying);
+  const volume = usePlayerStore((s) => s.volume);
+  const playNonce = usePlayerStore((s) => s.playNonce);
+  const setDuration = usePlayerStore((s) => s.setDuration);
+
   const rafIdRef = useRef<number | null>(null);
 
   useEffect(() => {
     initYouTubePreviewBridge();
 
-    const syncCatalogToStore = async () => {
+    const syncCatalogToStore = async (fresh = false) => {
       try {
-        const res = await fetch('/api/tracks/search?t=' + Date.now(), { cache: 'no-store' });
-        if (res.ok) {
-          const data = await res.json();
-          const list = Array.isArray(data) ? data : data.tracks || [];
-          if (list.length > 0) {
-            usePlayerStore.getState().setLibrary(list);
-          }
+        const list = await fetchCatalog({ fresh });
+        if (list.length > 0) {
+          usePlayerStore.getState().setLibrary(list);
         }
       } catch {}
     };
@@ -142,42 +147,42 @@ export function useAudioPlayer() {
     }
 
     const onTrackAdded = () => {
-      syncCatalogToStore();
+      void syncCatalogToStore(true);
     };
     window.addEventListener('aurasound:track-added', onTrackAdded);
     return () => window.removeEventListener('aurasound:track-added', onTrackAdded);
   }, []);
 
-  const syncFrame = useCallback(() => {
-    if (typeof document !== 'undefined' && document.hidden) {
-      rafIdRef.current = null;
-      return;
-    }
-
-    const storeState = usePlayerStore.getState();
-    const isPreviewMode = Boolean(storeState.currentTrack?.isPreview);
-
-    const current = isPreviewMode
-      ? storeState.progress || 0
-      : audioEngine.getCurrentTime();
-    const total = isPreviewMode
-      ? storeState.duration || storeState.currentTrack?.duration || 0
-      : audioEngine.getDuration() ||
-        storeState.duration ||
-        storeState.currentTrack?.duration ||
-        0;
-
-    if (isPreviewMode) {
-      checkAndRecord30sStream(current);
-    }
-
-    currentTimeMV.set(current);
-    progressMV.set(total > 0 ? Math.min(1, Math.max(0, current / total)) : 0);
-
-    rafIdRef.current = requestAnimationFrame(syncFrame);
-  }, [currentTimeMV, progressMV]);
-
   useEffect(() => {
+    // Pushes playback position into motion values once per frame while playing.
+    const syncFrame = () => {
+      if (typeof document !== 'undefined' && document.hidden) {
+        rafIdRef.current = null;
+        return;
+      }
+
+      const storeState = usePlayerStore.getState();
+      const isPreviewMode = Boolean(storeState.currentTrack?.isPreview);
+
+      const current = isPreviewMode
+        ? storeState.progress || 0
+        : audioEngine.getCurrentTime();
+      const total = isPreviewMode
+        ? storeState.duration || storeState.currentTrack?.duration || 0
+        : audioEngine.getDuration() ||
+          storeState.duration ||
+          storeState.currentTrack?.duration ||
+          0;
+
+      if (isPreviewMode) {
+        checkAndRecord30sStream(current);
+      }
+
+      setPosition(current, total);
+
+      rafIdRef.current = requestAnimationFrame(syncFrame);
+    };
+
     const startOrStopRaf = () => {
       const isHidden = typeof document !== 'undefined' && document.hidden;
       if (isPlaying && !isHidden) {
@@ -200,13 +205,17 @@ export function useAudioPlayer() {
         rafIdRef.current = null;
       }
     };
-  }, [isPlaying, syncFrame]);
+  }, [isPlaying]);
 
+  // Keep the shared position in sync with store changes (seek, track change, pause).
   useEffect(() => {
-    const total = duration || currentTrack?.duration || 0;
-    currentTimeMV.set(progress);
-    progressMV.set(total > 0 ? Math.min(1, Math.max(0, progress / total)) : 0);
-  }, [progress, duration, currentTrack, currentTimeMV, progressMV]);
+    const initial = usePlayerStore.getState();
+    setPosition(initial.progress, initial.duration || initial.currentTrack?.duration || 0);
+    return usePlayerStore.subscribe((s, prev) => {
+      if (s.progress === prev.progress && s.duration === prev.duration && s.currentTrack === prev.currentTrack) return;
+      setPosition(s.progress, s.duration || s.currentTrack?.duration || 0);
+    });
+  }, []);
 
   useEffect(() => {
     audioEngine.onTimeUpdate((time) => {
@@ -467,6 +476,13 @@ export function useAudioPlayer() {
   const crossfadeDuration = usePlayerStore((s) => s.crossfadeDuration);
   const stereoWidth = usePlayerStore((s) => s.stereoWidth);
   const isSpatialAudioEnabled = usePlayerStore((s) => s.isSpatialAudioEnabled);
+  const eqGains = usePlayerStore((s) => s.eqGains);
+  const isEqBypassed = usePlayerStore((s) => s.isEqBypassed);
+
+  useEffect(() => {
+    audioEngine.setAllEqGains(eqGains);
+    audioEngine.setEqBypassed(isEqBypassed);
+  }, [eqGains, isEqBypassed]);
 
   useEffect(() => {
     audioEngine.setCrossfadeSec(crossfadeDuration);
@@ -482,50 +498,52 @@ export function useAudioPlayer() {
     setYouTubePreviewVolume(volume);
   }, [volume]);
 
-  const togglePlay = useCallback((..._args: any[]) => {
-    usePlayerStore.getState().togglePlay();
-  }, []);
+}
 
-  const seek = useCallback(
-    (seconds?: any, ..._args: any[]) => {
-      const targetSec = typeof seconds === 'number' && !isNaN(seconds) ? seconds : 0;
-      const state = usePlayerStore.getState();
-      if (state.currentTrack?.isPreview) {
-        seekYouTubePreview(targetSec);
-      } else {
-        audioEngine.seek(targetSec);
-      }
-      setProgress(targetSec);
-      const total =
-        audioEngine.getDuration() ||
-        state.duration ||
-        state.currentTrack?.duration ||
-        0;
-      currentTimeMV.set(targetSec);
-      progressMV.set(total > 0 ? Math.min(1, Math.max(0, targetSec / total)) : 0);
-      updateMediaSessionPosition(targetSec, total);
-    },
-    [setProgress, currentTimeMV, progressMV]
-  );
+/** Renders nothing; mounts the playback controller once for the whole app. */
+export function PlaybackController() {
+  usePlaybackController();
+  return null;
+}
 
-  const finalDuration = duration || currentTrack?.duration || 0;
+function seekTo(seconds: number) {
+  const targetSec = typeof seconds === 'number' && !isNaN(seconds) ? seconds : 0;
+  const state = usePlayerStore.getState();
+  if (state.currentTrack?.isPreview) {
+    seekYouTubePreview(targetSec);
+  } else {
+    audioEngine.seek(targetSec);
+  }
+  state.setProgress(targetSec);
+  const total = audioEngine.getDuration() || state.duration || state.currentTrack?.duration || 0;
+  setPosition(targetSec, total);
+  updateMediaSessionPosition(targetSec, total);
+}
+
+/** Current playback position in seconds, read on demand (no subscription). */
+export function getPlaybackTime(): number {
+  return currentTimeMV.get();
+}
+
+/**
+ * Lightweight playback API for components. Re-renders only when the track
+ * duration changes; position is exposed as motion values.
+ */
+export function useAudioPlayer() {
+  const duration = usePlayerStore((s) => s.duration);
+  const trackDuration = usePlayerStore((s) => s.currentTrack?.duration);
+  const togglePlay = useCallback(() => usePlayerStore.getState().togglePlay(), []);
+  const finalDuration = duration || trackDuration || 0;
 
   return {
-    currentTrack,
-    isPlaying,
-    volume,
-    progress,
-    currentTime: progress,
     currentTimeMV,
     progressMV,
     duration: finalDuration,
     actualDuration: finalDuration,
     togglePlay,
-    seek,
-    seekTo: seek,
-    setVolume,
-    playNext,
-    playPrevious,
+    seek: seekTo,
+    seekTo,
+    getCurrentTime: getPlaybackTime,
     getFrequencyData: () => AudioEngine.getInstance().getFrequencySnapshot(),
   };
 }

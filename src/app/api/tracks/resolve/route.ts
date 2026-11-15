@@ -6,7 +6,7 @@ export interface ResolveRequest {
   r2Key?: string;
   fileKey?: string;
   url?: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export async function POST(req: NextRequest) {

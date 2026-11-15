@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { collectVideoRenderers, isNextControlError, errorMessage, type CatalogTrack, type GitHubWorkflow, type GitHubWorkflowRun } from '@/lib/api-types';
+import { adminRequiredResponse, isAdminRequest } from '@/lib/admin-auth';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
@@ -117,7 +119,7 @@ function cleanTrackMetadata(rawTitle: string, rawArtist?: string): { title: stri
   const channelSlug = slugifyTitle(cleanChannel);
   const distributor = isDistributor(rawArtist || '');
 
-  let defaultArtist = distributor ? 'Nghệ sĩ chưa rõ' : cleanChannel || rawArtist || 'Nghệ sĩ chưa rõ';
+  const defaultArtist = distributor ? 'Nghệ sĩ chưa rõ' : cleanChannel || rawArtist || 'Nghệ sĩ chưa rõ';
   let candidateTitle = text;
   let candidateArtist = defaultArtist;
 
@@ -217,23 +219,7 @@ function extractYouTubeVideoId(input: string): string | null {
   return null;
 }
 
-function collectVideoRenderers(node: any, out: any[] = []) {
-  if (!node || typeof node !== 'object') return out;
-  if (node.videoRenderer && node.videoRenderer.videoId) {
-    out.push(node.videoRenderer);
-    return out;
-  }
-  if (Array.isArray(node)) {
-    for (const item of node) collectVideoRenderers(item, out);
-  } else {
-    for (const key of Object.keys(node)) {
-      collectVideoRenderers(node[key], out);
-    }
-  }
-  return out;
-}
-
-function normalizeTrackStreamUrl(t: any) {
+function normalizeTrackStreamUrl(t: CatalogTrack) {
   if (!t) return t;
   const rawUrl = t.streamUrl || t.cdnUrl || '';
   let streamUrl = rawUrl;
@@ -253,7 +239,7 @@ function normalizeTrackStreamUrl(t: any) {
   return { ...t, streamUrl };
 }
 
-async function fetchGitHubCatalog(): Promise<any[]> {
+async function fetchGitHubCatalog(): Promise<CatalogTrack[]> {
   const apiUrl = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/data/catalog.json`;
   const headers: Record<string, string> = {
     Accept: 'application/vnd.github+json',
@@ -385,7 +371,7 @@ async function searchYouTube(query: string) {
       if (jsonStr) {
         const data = JSON.parse(jsonStr);
         const renderers = collectVideoRenderers(data);
-        const results: any[] = [];
+        const results: Record<string, unknown>[] = [];
         const seen = new Set<string>();
 
         for (const v of renderers) {
@@ -398,7 +384,7 @@ async function searchYouTube(query: string) {
 
           seen.add(v.videoId);
           const rawTitle =
-            v.title?.runs?.map((r: any) => r.text).join('') ||
+            v.title?.runs?.map((r) => r.text).join('') ||
             v.title?.simpleText ||
             'Không có tiêu đề';
           const rawArtist =
@@ -472,7 +458,7 @@ async function dispatchGitHubWorkflow(inputs: {
       );
       if (wfRes.ok) {
         const wfData = await wfRes.json();
-        const workflows: any[] = wfData?.workflows || [];
+        const workflows: GitHubWorkflow[] = wfData?.workflows || [];
         const found = workflows.find(
           (w) =>
             w.state === 'active' &&
@@ -552,18 +538,18 @@ async function dispatchGitHubWorkflow(inputs: {
 
     const errText = await res.text();
     return { ok: false, error: `Lỗi kích hoạt GitHub Actions (${res.status}): ${errText}` };
-  } catch (err: any) {
-    return { ok: false, error: err?.message || 'Lỗi kết nối tới GitHub API.' };
+  } catch (err) {
+    return { ok: false, error: errorMessage(err, 'Lỗi kết nối tới GitHub API.') };
   }
 }
 
 function findMatchingTrackInCatalog(
-  catalog: any[],
+  catalog: CatalogTrack[],
   requestId?: string,
   videoId?: string,
   title?: string,
   minTimestampMs?: number
-): any | null {
+): CatalogTrack | null {
   if (!Array.isArray(catalog) || catalog.length === 0) return null;
 
   if (requestId) {
@@ -571,7 +557,7 @@ function findMatchingTrackInCatalog(
     if (exactById) return exactById;
   }
 
-  const isRecentEnough = (t: any): boolean => {
+  const isRecentEnough = (t: CatalogTrack): boolean => {
     if (!minTimestampMs) return true;
     if (t.dateAdded) {
       const addedMs = new Date(t.dateAdded).getTime();
@@ -619,6 +605,11 @@ export async function POST(req: NextRequest) {
       force,
     } = body;
 
+    // Starting or cancelling a download runs GitHub Actions with the server token.
+    if ((action === 'ingest' || action === 'cancel') && !isAdminRequest(req)) {
+      return adminRequiredResponse();
+    }
+
     // 1. TÌM KIẾM VIDEO YOUTUBE
     if (action === 'search') {
       if (!query || typeof query !== 'string' || !query.trim()) {
@@ -654,7 +645,7 @@ export async function POST(req: NextRequest) {
             );
             if (runsRes.ok) {
               const runsData = await runsRes.json();
-              const runs: any[] = runsData.workflow_runs || [];
+              const runs: GitHubWorkflowRun[] = runsData.workflow_runs || [];
               const parsedStart =
                 typeof startedAt === 'number'
                   ? startedAt
@@ -855,7 +846,7 @@ export async function POST(req: NextRequest) {
 
         if (runsRes.ok) {
           const runsData = await runsRes.json();
-          const runs: any[] = runsData.workflow_runs || [];
+          const runs: GitHubWorkflowRun[] = runsData.workflow_runs || [];
           const threshold = safeStartMs - 45000;
 
           const relevantRun = runs.find((r) => {
@@ -953,9 +944,9 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({ error: 'Hành động không hợp lệ.' }, { status: 400 });
-  } catch (error: any) {
-    if (error?.digest) throw error;
+  } catch (error) {
+    if (isNextControlError(error)) throw error;
     console.error('Lỗi Ingest API:', error);
-    return NextResponse.json({ error: error.message || 'Lỗi máy chủ.' }, { status: 500 });
+    return NextResponse.json({ error: errorMessage(error, 'Lỗi máy chủ.') }, { status: 500 });
   }
 }

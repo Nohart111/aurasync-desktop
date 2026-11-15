@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useEffectEvent } from 'react';
 import { createPortal } from 'react-dom';
 import {
   X,
@@ -21,6 +21,10 @@ import {
 } from 'lucide-react';
 import { usePlayerStore } from '@/store/usePlayerStore';
 import type { Track } from '@/store/usePlayerStore';
+import { fetchCatalog } from '@/lib/catalog-client';
+import { adminFetch } from '@/lib/admin-client';
+import { coverThumb } from '@/lib/thumbnails';
+import { useIsClient } from '@/hooks/useIsClient';
 
 export interface YouTubeResult {
   id: string;
@@ -31,6 +35,7 @@ export interface YouTubeResult {
   thumbnail: string;
   duration: number;
   durationFormatted?: string;
+  viewCountText?: string;
 }
 
 export type IngestTaskStatus =
@@ -103,13 +108,7 @@ async function syncConfirmedTrackToStore(confirmedTrack?: Track) {
   }
 
   try {
-    const syncRes = await fetch(`/api/tracks/search?t=${Date.now()}`, { cache: 'no-store' });
-    const syncData = await syncRes.json();
-    const tracksList: Track[] = Array.isArray(syncData)
-      ? syncData
-      : Array.isArray(syncData?.tracks)
-      ? syncData.tracks
-      : [];
+    const tracksList: Track[] = await fetchCatalog({ fresh: true });
 
     if (tracksList.length > 0) {
       const mergedLib = [
@@ -224,7 +223,7 @@ export function cancelIngestTask(key: string) {
     if (cancelCurrentSleep) {
       cancelCurrentSleep();
     }
-    void fetch('/api/tracks/ingest', {
+    void adminFetch('/api/tracks/ingest', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -270,7 +269,7 @@ async function runSequentialQueueWorker() {
       notifySubscribers();
 
       try {
-        const res = await fetch('/api/tracks/ingest', {
+        const res = await adminFetch('/api/tracks/ingest', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -302,7 +301,7 @@ async function runSequentialQueueWorker() {
           !controllerState.tasks.some((t) => t.key === nextTask.key)
         ) {
           if (data?.requestId || nextTask.startedAt) {
-            void fetch('/api/tracks/ingest', {
+            void adminFetch('/api/tracks/ingest', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -441,13 +440,13 @@ async function runSequentialQueueWorker() {
 
         controllerState.tasks = controllerState.tasks.filter((t) => t.key !== nextTask.key);
         notifySubscribers();
-      } catch (err: any) {
+      } catch (err: unknown) {
         if (
           nextTask.status !== ('cancelled' as IngestTaskStatus) &&
           controllerState.tasks.some((t) => t.key === nextTask.key)
         ) {
           controllerState.lastError =
-            err?.message || `Lỗi khi tải bài "${nextTask.item.title}".`;
+            (err instanceof Error && err.message) || `Lỗi khi tải bài "${nextTask.item.title}".`;
           controllerState.tasks = controllerState.tasks.filter((t) => t.key !== nextTask.key);
           notifySubscribers();
         }
@@ -466,13 +465,12 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
   const [localError, setLocalError] = useState('');
   const [isMinimized, setIsMinimized] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [mounted, setMounted] = useState(false);
+  const mounted = useIsClient();
   const [, setTick] = useState(0);
 
   const effectiveOpen = isOpen || mobileOpen;
 
   useEffect(() => {
-    setMounted(true);
     const onUpdate = () => setTick((n) => n + 1);
     subscribers.add(onUpdate);
 
@@ -488,11 +486,11 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
     };
   }, []);
 
-  useEffect(() => {
-    if (isOpen) {
-      setIsMinimized(false);
-    }
-  }, [isOpen]);
+  const [prevIsOpen, setPrevIsOpen] = useState(isOpen);
+  if (isOpen !== prevIsOpen) {
+    setPrevIsOpen(isOpen);
+    if (isOpen) setIsMinimized(false);
+  }
 
   const tasks = controllerState.tasks;
   const activeTask =
@@ -508,12 +506,14 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
     onClose();
   };
 
+  const autoCloseAfterTasks = useEffectEvent(() => {
+    setIsMinimized(false);
+    closeAll();
+  });
+
   useEffect(() => {
     if (isMinimized && !hasRunningTasks && effectiveOpen) {
-      const timer = setTimeout(() => {
-        setIsMinimized(false);
-        closeAll();
-      }, 600);
+      const timer = setTimeout(autoCloseAfterTasks, 600);
       return () => clearTimeout(timer);
     }
   }, [isMinimized, hasRunningTasks, effectiveOpen]);
@@ -625,8 +625,8 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
             'Không tìm thấy kết quả phù hợp. Hãy thử từ khóa khác hoặc dán link YouTube trực tiếp.'
           );
         }
-      } catch (err: any) {
-        setLocalError(err.message || 'Không thể kết nối máy chủ tìm kiếm.');
+      } catch (err: unknown) {
+        setLocalError((err instanceof Error && err.message) || 'Không thể kết nối máy chủ tìm kiếm.');
       } finally {
         setSearching(false);
       }
@@ -865,8 +865,10 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
                   <div className="flex items-center gap-2.5 sm:gap-3.5 min-w-0">
                     <div className="relative h-12 w-20 sm:h-14 sm:w-24 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-zinc-900">
                       <img
-                        src={item.thumbnail}
+                        src={coverThumb(item.thumbnail)}
                         alt={item.title}
+                        loading="lazy"
+                        decoding="async"
                         className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
                       />
                       <span className="absolute bottom-1 right-1 flex items-center gap-1 rounded bg-black/80 px-1.5 py-0.5 font-mono text-[9px] sm:text-[10px] font-medium text-zinc-200 backdrop-blur-sm">

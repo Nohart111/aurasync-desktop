@@ -9,13 +9,16 @@ import {
 } from "@/core/sync/ClockSyncEngine";
 import { AudioEngine } from "@/core/audio/AudioEngine";
 import { usePlayerStore } from "@/store/usePlayerStore";
+import { useShallow } from "zustand/react/shallow";
 
 const DRIFT_TOLERANCE_SEC = 0.04; // Ngưỡng 40ms: nhỏ hơn ngưỡng này tai người không phân biệt được
 
 export function useRoomSync(roomId: string) {
   const socketRef = useRef<Socket | null>(null);
   const clockSyncRef = useRef(new ClockSyncEngine());
-  const { jumpToTrack, setPlaying } = usePlayerStore();
+  const { jumpToTrack, setPlaying } = usePlayerStore(
+    useShallow((s) => ({ jumpToTrack: s.jumpToTrack, setPlaying: s.setPlaying }))
+  );
 
   useEffect(() => {
     const socket = io(
