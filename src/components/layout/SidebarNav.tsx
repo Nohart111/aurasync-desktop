@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { SmartIngestModal } from '@/components/modals/SmartIngestModal';
 import { usePlayerStore } from '@/store/usePlayerStore';
+import { useShallow } from 'zustand/react/shallow';
 import { playMechanicalSound } from '@/core/audio/SoundEffects';
 
 interface SidebarNavProps {
@@ -43,7 +44,9 @@ export function SidebarNav({ onViewChange, onFileUpload }: SidebarNavProps) {
     customPlaylists,
     likedTrackIds,
     createPlaylist,
-  } = usePlayerStore();
+  } = usePlayerStore(
+    useShallow((s) => ({ isSidebarCollapsed: s.isSidebarCollapsed, toggleSidebar: s.toggleSidebar, customPlaylists: s.customPlaylists, likedTrackIds: s.likedTrackIds, createPlaylist: s.createPlaylist }))
+  );
 
   const playlists = customPlaylists || [];
 

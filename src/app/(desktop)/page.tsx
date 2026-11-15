@@ -2,7 +2,10 @@
 
 import React, { useEffect, useState, useMemo, useRef } from "react";
 import { usePlayerStore } from "@/store/usePlayerStore";
+import { useShallow } from "zustand/react/shallow";
 import { useAudioPlayer } from "@/hooks/useAudioPlayer";
+import { PlaybackTime } from "@/components/player/PlaybackTime";
+import { fetchCatalog } from "@/lib/catalog-client";
 import { AudioEngine } from "@/core/audio/AudioEngine";
 import { ExploreTrendingSection } from "@/app/(desktop)/explore/page";
 import {
@@ -374,16 +377,14 @@ function formatDuration(seconds?: number): string {
  * Đồng hồ Cyberdeck độc lập: Cô lập re-render thời gian nghe khỏi toàn bộ trang catalog
  */
 function CyberdeckClock() {
-  const { currentTime, actualDuration } = useAudioPlayer();
+  const { actualDuration } = useAudioPlayer();
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const currentTrack = usePlayerStore((s) => s.currentTrack);
 
   return (
     <div className="flex items-center gap-1.5 shrink-0 font-mono text-[10px] sm:text-[11px] text-zinc-300 bg-white/[0.06] px-2 sm:px-2.5 py-1 rounded border border-white/10 shadow-inner">
       <Clock className={`w-3 h-3 text-amber-400 ${isPlaying ? "animate-pulse" : ""}`} />
-      <span className="text-white font-bold tabular-nums">
-        {isPlaying && currentTrack ? formatDuration(currentTime) : "00:00"}
-      </span>
+      <PlaybackTime active={isPlaying && Boolean(currentTrack)} className="text-white font-bold tabular-nums" />
       <span className="text-zinc-600">/</span>
       <span className="text-zinc-400 tabular-nums">
         {currentTrack ? formatDuration(actualDuration || currentTrack.duration) : "00:00"}
@@ -432,21 +433,17 @@ export default function RetroCyberDeckPage() {
     addTrackToPlaylist,
     removeTrackFromPlaylist,
     toggleLikeTrack,
-  } = usePlayerStore();
+  } = usePlayerStore(
+    useShallow((s) => ({ currentTrack: s.currentTrack, isPlaying: s.isPlaying, setPlaying: s.setPlaying, enqueueTrack: s.enqueueTrack, jumpToTrack: s.jumpToTrack, setLibrary: s.setLibrary, customPlaylists: s.customPlaylists, likedTrackIds: s.likedTrackIds, streamCounts: s.streamCounts, isSfxEnabled: s.isSfxEnabled, toggleSfx: s.toggleSfx, toggleFocusMode: s.toggleFocusMode, toggleShortcuts: s.toggleShortcuts, isEqOpen: s.isEqOpen, toggleEq: s.toggleEq, createPlaylist: s.createPlaylist, deletePlaylist: s.deletePlaylist, addTrackToPlaylist: s.addTrackToPlaylist, removeTrackFromPlaylist: s.removeTrackFromPlaylist, toggleLikeTrack: s.toggleLikeTrack }))
+  );
 
   useEffect(() => {
-    async function loadTracks() {
+    async function loadTracks(fresh = false) {
       try {
-        const res = await fetch("/api/tracks/search?t=" + Date.now(), {
-          cache: "no-store",
-        });
-        if (res.ok) {
-          const data = await res.json();
-          const list = Array.isArray(data) ? data : data.tracks || [];
-          setTracks(list);
-          if (list.length > 0) {
-            setLibrary(list);
-          }
+        const list = await fetchCatalog({ fresh });
+        setTracks(list);
+        if (list.length > 0) {
+          setLibrary(list);
         }
       } catch (err) {
         console.error("Lỗi nạp bài hát:", err);
@@ -464,7 +461,7 @@ export default function RetroCyberDeckPage() {
         setNewlyAddedTrack(added);
         setTimeout(() => setNewlyAddedTrack(null), 6500);
       } else {
-        loadTracks();
+        void loadTracks(true);
       }
     };
 
@@ -705,7 +702,7 @@ export default function RetroCyberDeckPage() {
       )}
 
       {/* KHUNG TAPE DECK TRÊN CÙNG */}
-      <section className="relative overflow-hidden rounded-3xl border border-white/[0.08] bg-gradient-to-b from-[#121222]/80 via-[#090912]/90 to-[#050508] p-3.5 sm:p-6 shadow-2xl backdrop-blur-2xl">
+      <section className="relative overflow-hidden rounded-3xl border border-white/[0.08] bg-gradient-to-b from-[#121222]/80 via-[#090912]/90 to-[#050508] p-3.5 sm:p-6 shadow-2xl backdrop-blur-xl">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(245,158,11,0.05),transparent_60%)]" />
 
         <div className="relative z-10 flex flex-col lg:flex-row items-center justify-between gap-5 sm:gap-8">

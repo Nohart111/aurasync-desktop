@@ -22,6 +22,7 @@ import {
   HelpCircle,
 } from 'lucide-react';
 import { usePlayerStore } from '@/store/usePlayerStore';
+import { useShallow } from 'zustand/react/shallow';
 import { useAudioPlayer } from '@/hooks/useAudioPlayer';
 import { playMechanicalSound } from '@/core/audio/SoundEffects';
 
@@ -114,7 +115,8 @@ function DynamicSpectrumCanvas({ isPlaying }: { isPlaying: boolean }) {
         ctx.fill();
       }
 
-      rafRef.current = requestAnimationFrame(render);
+      const settled = !isPlaying && smoothedHeights.current.every((h) => h <= 2);
+      rafRef.current = settled ? null : requestAnimationFrame(render);
     };
 
     const handleVisibility = () => {
@@ -165,7 +167,9 @@ export function FloatingPlayerBar() {
     toggleFocusMode,
     toggleShortcuts,
     setVolume,
-  } = usePlayerStore();
+  } = usePlayerStore(
+    useShallow((s) => ({ currentTrack: s.currentTrack, isPlaying: s.isPlaying, volume: s.volume, queue: s.queue, queueItems: s.queueItems, isSidebarCollapsed: s.isSidebarCollapsed, isEqOpen: s.isEqOpen, toggleEq: s.toggleEq, toggleFocusMode: s.toggleFocusMode, toggleShortcuts: s.toggleShortcuts, setVolume: s.setVolume }))
+  );
 
   const { progressMV, currentTimeMV, actualDuration, seekTo } = useAudioPlayer();
 
@@ -193,7 +197,7 @@ export function FloatingPlayerBar() {
   return (
     <>
       {/* 1. THANH ĐIỀU HƯỚNG ĐÁY DÀNH RIÊNG CHO MOBILE (< 768px) */}
-      <nav className="fixed bottom-0 left-0 right-0 z-40 flex md:hidden h-16 items-center justify-around border-t border-white/[0.08] bg-[#080811]/95 px-3 backdrop-blur-2xl select-none font-sans thumb-zone-safe">
+      <nav className="fixed bottom-0 left-0 right-0 z-40 flex md:hidden h-16 items-center justify-around border-t border-white/[0.08] bg-[#080811]/95 px-3 backdrop-blur-xl select-none font-sans thumb-zone-safe">
         <button
           onClick={() => {
             window.dispatchEvent(new CustomEvent('aurasound:switch-view', { detail: 'vault' }));
@@ -252,7 +256,7 @@ export function FloatingPlayerBar() {
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: '100%', opacity: 0 }}
             transition={{ type: 'spring', stiffness: 340, damping: 30, mass: 0.8 }}
-            className="fixed left-3 right-3 sm:left-auto sm:right-4 top-4 bottom-[8.5rem] md:bottom-28 z-50 flex w-auto sm:w-96 flex-col rounded-2xl border border-white/10 bg-[#0c0c16]/95 p-4 sm:p-5 shadow-[0_24px_64px_rgba(0,0,0,0.8)] backdrop-blur-2xl"
+            className="fixed left-3 right-3 sm:left-auto sm:right-4 top-4 bottom-[8.5rem] md:bottom-28 z-50 flex w-auto sm:w-96 flex-col rounded-2xl border border-white/10 bg-[#0c0c16]/95 p-4 sm:p-5 shadow-[0_24px_64px_rgba(0,0,0,0.8)] backdrop-blur-xl"
           >
             <div className="flex items-center justify-between border-b border-white/10 pb-3">
               <div className="flex items-center gap-2.5">

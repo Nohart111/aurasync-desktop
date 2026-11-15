@@ -2,6 +2,7 @@
 import fs from 'node:fs/promises';
 import { errorMessage, type CatalogTrack } from '@/lib/api-types';
 import path from 'node:path';
+import { invalidateCatalogCache } from '@/lib/catalog-cache';
 
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
 const GITHUB_OWNER = process.env.GITHUB_OWNER || 'Nohart111';
@@ -166,6 +167,7 @@ export async function POST(req: Request) {
     const updatedCatalog = [newTrack, ...catalog.filter((t) => t.id !== newTrack.id)];
     await fs.writeFile(CATALOG_PATH, JSON.stringify(updatedCatalog, null, 2), 'utf-8');
 
+    invalidateCatalogCache();
     return NextResponse.json({
       success: true,
       track: newTrack,

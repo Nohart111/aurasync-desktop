@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { usePlayerStore } from '@/store/usePlayerStore';
 import type { Track } from '@/store/usePlayerStore';
+import { fetchCatalog } from '@/lib/catalog-client';
 import { useIsClient } from '@/hooks/useIsClient';
 
 export interface YouTubeResult {
@@ -105,13 +106,7 @@ async function syncConfirmedTrackToStore(confirmedTrack?: Track) {
   }
 
   try {
-    const syncRes = await fetch(`/api/tracks/search?t=${Date.now()}`, { cache: 'no-store' });
-    const syncData = await syncRes.json();
-    const tracksList: Track[] = Array.isArray(syncData)
-      ? syncData
-      : Array.isArray(syncData?.tracks)
-      ? syncData.tracks
-      : [];
+    const tracksList: Track[] = await fetchCatalog({ fresh: true });
 
     if (tracksList.length > 0) {
       const mergedLib = [

@@ -13,6 +13,7 @@ import {
   Disc,
 } from 'lucide-react';
 import { usePlayerStore } from '@/store/usePlayerStore';
+import { useShallow } from 'zustand/react/shallow';
 import { AudioEngine, EQ_BANDS, EQ_PRESETS } from '@/core/audio/AudioEngine';
 import { playMechanicalSound } from '@/core/audio/SoundEffects';
 
@@ -33,7 +34,9 @@ export function StudioEqualizerModal() {
     setCrossfadeDuration,
     setStereoWidth,
     toggleSpatialAudio,
-  } = usePlayerStore();
+  } = usePlayerStore(
+    useShallow((s) => ({ isEqOpen: s.isEqOpen, toggleEq: s.toggleEq, eqGains: s.eqGains, eqPreset: s.eqPreset, isEqBypassed: s.isEqBypassed, crossfadeDuration: s.crossfadeDuration, stereoWidth: s.stereoWidth, isSpatialAudioEnabled: s.isSpatialAudioEnabled, setEqGain: s.setEqGain, setEqPreset: s.setEqPreset, toggleEqBypass: s.toggleEqBypass, resetEq: s.resetEq, setCrossfadeDuration: s.setCrossfadeDuration, setStereoWidth: s.setStereoWidth, toggleSpatialAudio: s.toggleSpatialAudio }))
+  );
 
   const audioEngine = AudioEngine.getInstance();
 
@@ -113,7 +116,7 @@ export function StudioEqualizerModal() {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 15 }}
             transition={{ type: 'spring', stiffness: 350, damping: 28 }}
-            className="relative flex w-full max-w-4xl max-h-[92vh] overflow-y-auto no-scrollbar flex-col rounded-3xl border border-white/15 bg-[#090914]/98 p-5 sm:p-7 shadow-[0_24px_80px_rgba(0,0,0,0.9)] backdrop-blur-2xl select-none"
+            className="relative flex w-full max-w-4xl max-h-[92vh] overflow-y-auto no-scrollbar flex-col rounded-3xl border border-white/15 bg-[#090914]/98 p-5 sm:p-7 shadow-[0_24px_80px_rgba(0,0,0,0.9)] backdrop-blur-xl select-none"
           >
             {/* Header */}
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-4">

@@ -9,6 +9,7 @@ import {
   VolumeX,
 } from 'lucide-react';
 import { usePlayerStore } from '@/store/usePlayerStore';
+import { useShallow } from 'zustand/react/shallow';
 import { useIsClient } from '@/hooks/useIsClient';
 import { useAudioPlayer } from '@/hooks/useAudioPlayer';
 import { playMechanicalSound } from '@/core/audio/SoundEffects';
@@ -34,9 +35,11 @@ export function KeyboardShortcutsHUD() {
     toggleShortcuts,
     toggleEq,
     toggleSfx,
-  } = usePlayerStore();
+  } = usePlayerStore(
+    useShallow((s) => ({ currentTrack: s.currentTrack, isPlaying: s.isPlaying, volume: s.volume, isShortcutsOpen: s.isShortcutsOpen, isFocusMode: s.isFocusMode, isSfxEnabled: s.isSfxEnabled, setPlaying: s.setPlaying, setVolume: s.setVolume, advanceNext: s.advanceNext, advancePrev: s.advancePrev, toggleLikeTrack: s.toggleLikeTrack, toggleFocusMode: s.toggleFocusMode, toggleShortcuts: s.toggleShortcuts, toggleEq: s.toggleEq, toggleSfx: s.toggleSfx }))
+  );
 
-  const { seekTo, currentTime, actualDuration } = useAudioPlayer();
+  const { seekTo, actualDuration, getCurrentTime } = useAudioPlayer();
   const prevVolumeRef = useRef<number>(0.8);
 
   // Global Keyboard listener
@@ -116,7 +119,7 @@ export function KeyboardShortcutsHUD() {
         } else {
           e.preventDefault();
           playMechanicalSound('switch');
-          const targetSec = Math.max(0, currentTime - 5);
+          const targetSec = Math.max(0, getCurrentTime() - 5);
           seekTo(targetSec);
         }
         return;
@@ -132,7 +135,7 @@ export function KeyboardShortcutsHUD() {
           e.preventDefault();
           playMechanicalSound('switch');
           const maxDur = actualDuration || currentTrack?.duration || 180;
-          const targetSec = Math.min(maxDur, currentTime + 5);
+          const targetSec = Math.min(maxDur, getCurrentTime() + 5);
           seekTo(targetSec);
         }
         return;
@@ -219,8 +222,8 @@ export function KeyboardShortcutsHUD() {
   }, [
     isPlaying,
     volume,
-    currentTime,
     actualDuration,
+    getCurrentTime,
     currentTrack,
     isShortcutsOpen,
     isFocusMode,

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { isNextControlError, errorMessage, type CatalogTrack, type GitHubRelease } from '@/lib/api-types';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { invalidateCatalogCache } from '@/lib/catalog-cache';
 
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
 const GITHUB_OWNER = process.env.GITHUB_OWNER || 'Nohart111';
@@ -159,6 +160,7 @@ export async function POST(req: NextRequest) {
       await deleteReleaseAsset(targetFile);
     }
 
+    invalidateCatalogCache();
     return NextResponse.json({
       success: true,
       message: 'Đã xóa bài hát thành công.',

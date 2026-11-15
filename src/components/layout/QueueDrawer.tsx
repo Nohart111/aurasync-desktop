@@ -3,6 +3,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { ListMusic, Trash2, X } from "lucide-react";
 import { usePlayerStore } from "@/store/usePlayerStore";
+import { useShallow } from "zustand/react/shallow";
 import { Track } from "@/core/algorithms/DoublyLinkedQueue";
 
 interface QueueDrawerProps {
@@ -11,8 +12,9 @@ interface QueueDrawerProps {
 }
 
 export function QueueDrawer({ isOpen, onClose }: QueueDrawerProps) {
-  const { queueItems, queue, currentTrack, jumpToTrack, removeTrackFromQueue } =
-    usePlayerStore();
+  const { queueItems, queue, currentTrack, jumpToTrack, removeTrackFromQueue } = usePlayerStore(
+    useShallow((s) => ({ queueItems: s.queueItems, queue: s.queue, currentTrack: s.currentTrack, jumpToTrack: s.jumpToTrack, removeTrackFromQueue: s.removeTrackFromQueue }))
+  );
 
   const list: Track[] = (queue && queue.length > 0 ? queue : queueItems) || [];
 
@@ -29,7 +31,7 @@ export function QueueDrawer({ isOpen, onClose }: QueueDrawerProps) {
             damping: 34,
             mass: 0.8,
           }}
-          className="fixed right-4 top-4 bottom-28 z-50 flex w-80 sm:w-96 flex-col rounded-2xl border border-white/10 bg-[#0c0c16]/95 p-5 shadow-2xl backdrop-blur-2xl"
+          className="fixed right-4 top-4 bottom-28 z-50 flex w-80 sm:w-96 flex-col rounded-2xl border border-white/10 bg-[#0c0c16]/95 p-5 shadow-2xl backdrop-blur-xl"
         >
           <div className="flex items-center justify-between border-b border-white/10 pb-4">
             <div className="flex items-center gap-2.5">

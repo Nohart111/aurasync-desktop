@@ -12,6 +12,7 @@ import {
   ChevronDown,
 } from 'lucide-react';
 import { usePlayerStore } from '@/store/usePlayerStore';
+import { useShallow } from 'zustand/react/shallow';
 import { playYouTubePreview } from '@/components/player/YouTubePreviewBridge';
 import {
   enqueueIngestTask,
@@ -57,7 +58,9 @@ export function ExploreTrendingSection() {
   const [loading, setLoading] = useState<boolean>(!clientTrendingCache.has('trending'));
   const [, setQueueTick] = useState(0);
 
-  const { currentTrack, isPlaying, library, streamCounts } = usePlayerStore();
+  const { currentTrack, isPlaying, library, streamCounts } = usePlayerStore(
+    useShallow((s) => ({ currentTrack: s.currentTrack, isPlaying: s.isPlaying, library: s.library, streamCounts: s.streamCounts }))
+  );
 
   useEffect(() => {
     return subscribeIngestController(() => {
@@ -337,7 +340,7 @@ export function ExploreTrendingSection() {
 export default function ExplorePage() {
   return (
     <div className="space-y-6 sm:space-y-8 pb-40 md:pb-24 select-none font-sans relative overflow-x-hidden">
-      <section className="relative overflow-hidden rounded-3xl border border-white/[0.08] bg-gradient-to-b from-[#121222]/85 via-[#090912]/90 to-[#050508] p-4 sm:p-6 shadow-2xl backdrop-blur-2xl">
+      <section className="relative overflow-hidden rounded-3xl border border-white/[0.08] bg-gradient-to-b from-[#121222]/85 via-[#090912]/90 to-[#050508] p-4 sm:p-6 shadow-2xl backdrop-blur-xl">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(0,240,255,0.07),transparent_60%)]" />
         <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>

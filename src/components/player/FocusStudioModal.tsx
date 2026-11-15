@@ -16,8 +16,10 @@ import {
   Heart,
 } from 'lucide-react';
 import { usePlayerStore } from '@/store/usePlayerStore';
+import { useShallow } from 'zustand/react/shallow';
 import { useIsClient } from '@/hooks/useIsClient';
 import { useAudioPlayer } from '@/hooks/useAudioPlayer';
+import { PlaybackTime } from '@/components/player/PlaybackTime';
 import { AudioEngine } from '@/core/audio/AudioEngine';
 import { playMechanicalSound } from '@/core/audio/SoundEffects';
 
@@ -35,9 +37,11 @@ export function FocusStudioModal() {
     advancePrev,
     toggleLikeTrack,
     toggleFocusMode,
-  } = usePlayerStore();
+  } = usePlayerStore(
+    useShallow((s) => ({ currentTrack: s.currentTrack, isPlaying: s.isPlaying, volume: s.volume, likedTrackIds: s.likedTrackIds, isFocusMode: s.isFocusMode, setPlaying: s.setPlaying, setVolume: s.setVolume, advanceNext: s.advanceNext, advancePrev: s.advancePrev, toggleLikeTrack: s.toggleLikeTrack, toggleFocusMode: s.toggleFocusMode }))
+  );
 
-  const { currentTime, actualDuration } = useAudioPlayer();
+  const { actualDuration } = useAudioPlayer();
 
   const containerRef = useRef<HTMLDivElement>(null);
   const dbTextRef = useRef<HTMLSpanElement>(null);
@@ -376,9 +380,7 @@ export function FocusStudioModal() {
           {/* VFD Digital Clock */}
           <div className="mt-3 inline-flex items-center gap-2 rounded-xl bg-black/60 border border-white/10 px-3.5 py-1.5 font-mono text-xs sm:text-sm text-white shadow-inner">
             <Clock className={`w-3.5 h-3.5 text-amber-400 ${isPlaying ? 'animate-pulse' : ''}`} />
-            <span className="font-bold tabular-nums">
-              {isPlaying && currentTrack ? formatDuration(currentTime) : '00:00'}
-            </span>
+            <PlaybackTime active={isPlaying && Boolean(currentTrack)} className="font-bold tabular-nums" />
             <span className="text-zinc-600">/</span>
             <span className="text-zinc-400 tabular-nums">
               {currentTrack ? formatDuration(actualDuration || currentTrack.duration) : '00:00'}

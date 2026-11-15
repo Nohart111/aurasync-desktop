@@ -1,4 +1,5 @@
-import { NextResponse, connection } from 'next/server';
+import { NextResponse, connection, after, type NextRequest } from 'next/server';
+import { getCachedCatalog, setCachedCatalog } from '@/lib/catalog-cache';
 import { isNextControlError, type CatalogTrack } from '@/lib/api-types';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -64,10 +65,8 @@ function deduplicateCatalogTracks(tracks: CatalogTrack[]): CatalogTrack[] {
   return result;
 }
 
-export async function GET() {
-  // Always read the live catalog; never prerender this handler at build time.
-  await connection();
-
+/** Reads the catalog: GitHub Contents API, then raw.githubusercontent.com, then the local file. */
+async function loadCatalog(): Promise<CatalogTrack[]> {
   try {
     let localTracks: CatalogTrack[] = [];
     try {
@@ -103,9 +102,7 @@ export async function GET() {
           const ghTracks = JSON.parse(decoded);
           if (Array.isArray(ghTracks)) {
             const validGhTracks = deduplicateCatalogTracks(ghTracks);
-            return NextResponse.json(validGhTracks, {
-              headers: { 'Cache-Control': 'no-store, max-age=0' },
-            });
+            return validGhTracks;
           }
         }
       }
@@ -123,20 +120,46 @@ export async function GET() {
         const rawTracks = await rawRes.json();
         if (Array.isArray(rawTracks)) {
           const validRaw = deduplicateCatalogTracks(rawTracks);
-          return NextResponse.json(validRaw, {
-            headers: { 'Cache-Control': 'no-store, max-age=0' },
-          });
+          return validRaw;
         }
       }
     } catch {}
 
     // 3. Fallback về file local
     const normalizedLocal = deduplicateCatalogTracks(localTracks);
-    return NextResponse.json(normalizedLocal, {
-      headers: { 'Cache-Control': 'no-store, max-age=0' },
-    });
+    return normalizedLocal;
   } catch (err) {
     if (isNextControlError(err)) throw err;
-    return NextResponse.json([], { status: 200 });
+    return [];
   }
+}
+
+let refreshing = false;
+const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' };
+
+export async function GET(req: NextRequest) {
+  // Always read the live catalog; never prerender this handler at build time.
+  await connection();
+  const fresh = req.nextUrl.searchParams.get('fresh') === '1';
+
+  const cached = fresh ? null : getCachedCatalog();
+  if (cached) {
+    // Serve instantly; refresh in the background once it is stale.
+    if (cached.isStale && !refreshing) {
+      refreshing = true;
+      after(async () => {
+        try {
+          const tracks = await loadCatalog();
+          if (tracks.length > 0) setCachedCatalog(tracks);
+        } finally {
+          refreshing = false;
+        }
+      });
+    }
+    return NextResponse.json(cached.tracks, { headers: NO_STORE });
+  }
+
+  const tracks = await loadCatalog();
+  if (tracks.length > 0) setCachedCatalog(tracks);
+  return NextResponse.json(tracks, { headers: NO_STORE });
 }
