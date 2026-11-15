@@ -476,6 +476,13 @@ export function usePlaybackController() {
   const crossfadeDuration = usePlayerStore((s) => s.crossfadeDuration);
   const stereoWidth = usePlayerStore((s) => s.stereoWidth);
   const isSpatialAudioEnabled = usePlayerStore((s) => s.isSpatialAudioEnabled);
+  const eqGains = usePlayerStore((s) => s.eqGains);
+  const isEqBypassed = usePlayerStore((s) => s.isEqBypassed);
+
+  useEffect(() => {
+    audioEngine.setAllEqGains(eqGains);
+    audioEngine.setEqBypassed(isEqBypassed);
+  }, [eqGains, isEqBypassed]);
 
   useEffect(() => {
     audioEngine.setCrossfadeSec(crossfadeDuration);

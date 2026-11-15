@@ -31,6 +31,7 @@ All variables are optional for local browsing; features that need them fail grac
 
 | Variable | Used for |
 | --- | --- |
+| `ADMIN_API_KEY` | **Required in production** to upload, import or delete tracks. The app asks for it once per browser and remembers it for 30 days. Without it those actions are refused in production (open in local dev). |
 | `GITHUB_TOKEN`, `GITHUB_OWNER`, `GITHUB_REPO`, `GITHUB_RELEASE_TAG` | Track storage in a GitHub repo's release assets, and triggering the cloud ingest workflow |
 | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME`, `NEXT_PUBLIC_R2_PUBLIC_URL` | Optional Cloudflare R2 storage |
 | `SOUNDCLOUD_CLIENT_ID`, `SOUNDCLOUD_FALLBACK_CLIENT_ID` | SoundCloud search and streaming |

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { collectVideoRenderers, isNextControlError, errorMessage, type CatalogTrack, type GitHubWorkflow, type GitHubWorkflowRun } from '@/lib/api-types';
+import { adminRequiredResponse, isAdminRequest } from '@/lib/admin-auth';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
@@ -603,6 +604,11 @@ export async function POST(req: NextRequest) {
       startedAt,
       force,
     } = body;
+
+    // Starting or cancelling a download runs GitHub Actions with the server token.
+    if ((action === 'ingest' || action === 'cancel') && !isAdminRequest(req)) {
+      return adminRequiredResponse();
+    }
 
     // 1. TÌM KIẾM VIDEO YOUTUBE
     if (action === 'search') {

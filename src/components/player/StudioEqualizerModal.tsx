@@ -40,14 +40,8 @@ export function StudioEqualizerModal() {
 
   const audioEngine = AudioEngine.getInstance();
 
-  // Đồng bộ thiết lập EQ từ Zustand sang AudioEngine
-  useEffect(() => {
-    audioEngine.setAllEqGains(eqGains);
-    audioEngine.setEqBypassed(isEqBypassed);
-    audioEngine.setStereoWidth(stereoWidth);
-    audioEngine.setSpatialAudioEnabled(isSpatialAudioEnabled);
-    audioEngine.setCrossfadeSec(crossfadeDuration);
-  }, [eqGains, isEqBypassed, stereoWidth, isSpatialAudioEnabled, crossfadeDuration, audioEngine]);
+  // Saved EQ / width / crossfade are applied to the engine by PlaybackController,
+  // so they take effect even before this modal is first opened (it loads lazily).
 
   // Phím tắt ESC để đóng modal
   useEffect(() => {

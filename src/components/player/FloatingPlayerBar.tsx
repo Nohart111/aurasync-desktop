@@ -25,6 +25,7 @@ import { usePlayerStore } from '@/store/usePlayerStore';
 import { useShallow } from 'zustand/react/shallow';
 import { useAudioPlayer } from '@/hooks/useAudioPlayer';
 import { playMechanicalSound } from '@/core/audio/SoundEffects';
+import { coverThumb } from '@/lib/thumbnails';
 
 import { MagneticSeekbar } from '@/components/player/MagneticSeekbar';
 
@@ -369,7 +370,8 @@ export function FloatingPlayerBar() {
                 <div className="w-10 h-10 md:w-12 md:h-12 rounded-xl border border-white/10 bg-[#0d0d17] flex items-center justify-center shrink-0 shadow-md overflow-hidden">
                   {currentTrack.coverUrl || currentTrack.thumbnail ? (
                     <img
-                      src={currentTrack.coverUrl || currentTrack.thumbnail}
+                      src={coverThumb(currentTrack.coverUrl || currentTrack.thumbnail)}
+                      decoding="async"
                       alt={currentTrack.title}
                       className="h-full w-full object-cover"
                     />

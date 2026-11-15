@@ -6,6 +6,7 @@ import { useShallow } from "zustand/react/shallow";
 import { useAudioPlayer } from "@/hooks/useAudioPlayer";
 import { PlaybackTime } from "@/components/player/PlaybackTime";
 import { fetchCatalog } from "@/lib/catalog-client";
+import { adminFetch } from "@/lib/admin-client";
 import { AudioEngine } from "@/core/audio/AudioEngine";
 import { ExploreTrendingSection } from "@/app/(desktop)/explore/page";
 import {
@@ -620,7 +621,7 @@ export default function RetroCyberDeckPage() {
     if (!window.confirm(`Xác nhận xóa bài hát "${track.title}" khỏi kho nhạc?`)) return;
     playMechanicalSound('toggle');
     try {
-      const res = await fetch('/api/tracks/delete', {
+      const res = await adminFetch('/api/tracks/delete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: track.id, title: track.title }),
@@ -1171,7 +1172,10 @@ export default function RetroCyberDeckPage() {
                 <div
                   key={track.id || idx}
                   onClick={() => handlePlayTrack(track)}
+                  // Rows off screen skip layout and paint; not while the playlist menu (which overflows) is open.
                   className={`group relative flex items-center justify-between rounded-2xl p-3 sm:p-3.5 transition-all duration-300 cursor-pointer border ${
+                    isMenuOpen ? "" : "[content-visibility:auto] [contain-intrinsic-size:auto_76px]"
+                  } ${
                     isThisActive
                       ? "border-white/25 bg-white/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.6)]"
                       : "border-white/[0.06] bg-[#0c0c16]/70 hover:border-white/15 hover:bg-white/[0.04]"

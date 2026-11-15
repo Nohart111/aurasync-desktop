@@ -22,6 +22,7 @@ import {
   type YouTubeResult,
 } from '@/components/modals/SmartIngestModal';
 import { playMechanicalSound } from '@/core/audio/SoundEffects';
+import { coverThumb } from '@/lib/thumbnails';
 
 export interface TrendingCategory {
   id: 'trending' | 'vpop' | 'rap' | 'indie' | 'usuk';
@@ -229,9 +230,10 @@ export function ExploreTrendingSection() {
 
                     <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-zinc-900 shadow-md">
                       <img
-                        src={item.thumbnail}
+                        src={coverThumb(item.thumbnail)}
                         alt={item.title}
                         loading="lazy"
+                        decoding="async"
                         className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
                       />
                       {isPlayingThisPreview && (

@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { SmartIngestModal } from '@/components/modals/SmartIngestModal';
 import { usePlayerStore } from '@/store/usePlayerStore';
+import { adminFetch } from '@/lib/admin-client';
 import { useShallow } from 'zustand/react/shallow';
 import { playMechanicalSound } from '@/core/audio/SoundEffects';
 
@@ -157,7 +158,7 @@ export function SidebarNav({ onViewChange, onFileUpload }: SidebarNavProps) {
     try {
       const formData = new FormData();
       formData.append('file', file);
-      const res = await fetch('/api/tracks/upload', {
+      const res = await adminFetch('/api/tracks/upload', {
         method: 'POST',
         body: formData,
       });

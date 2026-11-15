@@ -22,6 +22,8 @@ import {
 import { usePlayerStore } from '@/store/usePlayerStore';
 import type { Track } from '@/store/usePlayerStore';
 import { fetchCatalog } from '@/lib/catalog-client';
+import { adminFetch } from '@/lib/admin-client';
+import { coverThumb } from '@/lib/thumbnails';
 import { useIsClient } from '@/hooks/useIsClient';
 
 export interface YouTubeResult {
@@ -221,7 +223,7 @@ export function cancelIngestTask(key: string) {
     if (cancelCurrentSleep) {
       cancelCurrentSleep();
     }
-    void fetch('/api/tracks/ingest', {
+    void adminFetch('/api/tracks/ingest', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -267,7 +269,7 @@ async function runSequentialQueueWorker() {
       notifySubscribers();
 
       try {
-        const res = await fetch('/api/tracks/ingest', {
+        const res = await adminFetch('/api/tracks/ingest', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -299,7 +301,7 @@ async function runSequentialQueueWorker() {
           !controllerState.tasks.some((t) => t.key === nextTask.key)
         ) {
           if (data?.requestId || nextTask.startedAt) {
-            void fetch('/api/tracks/ingest', {
+            void adminFetch('/api/tracks/ingest', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -863,8 +865,10 @@ export function SmartIngestModal({ isOpen, onClose }: SmartIngestModalProps) {
                   <div className="flex items-center gap-2.5 sm:gap-3.5 min-w-0">
                     <div className="relative h-12 w-20 sm:h-14 sm:w-24 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-zinc-900">
                       <img
-                        src={item.thumbnail}
+                        src={coverThumb(item.thumbnail)}
                         alt={item.title}
+                        loading="lazy"
+                        decoding="async"
                         className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
                       />
                       <span className="absolute bottom-1 right-1 flex items-center gap-1 rounded bg-black/80 px-1.5 py-0.5 font-mono text-[9px] sm:text-[10px] font-medium text-zinc-200 backdrop-blur-sm">

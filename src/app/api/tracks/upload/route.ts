@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import { errorMessage, type CatalogTrack } from '@/lib/api-types';
 import path from 'node:path';
 import { invalidateCatalogCache } from '@/lib/catalog-cache';
+import { adminRequiredResponse, isAdminRequest } from '@/lib/admin-auth';
 
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
 const GITHUB_OWNER = process.env.GITHUB_OWNER || 'Nohart111';
@@ -84,6 +85,7 @@ function getExt(filename: string): string {
 }
 
 export async function POST(req: Request) {
+  if (!isAdminRequest(req)) return adminRequiredResponse();
   try {
     const formData = await req.formData();
     const file = formData.get('file') as File | null;

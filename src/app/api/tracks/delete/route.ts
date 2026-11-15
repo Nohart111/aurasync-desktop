@@ -3,6 +3,7 @@ import { isNextControlError, errorMessage, type CatalogTrack, type GitHubRelease
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { invalidateCatalogCache } from '@/lib/catalog-cache';
+import { adminRequiredResponse, isAdminRequest } from '@/lib/admin-auth';
 
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
 const GITHUB_OWNER = process.env.GITHUB_OWNER || 'Nohart111';
@@ -70,6 +71,7 @@ async function deleteReleaseAsset(filename: string): Promise<void> {
 }
 
 export async function POST(req: NextRequest) {
+  if (!isAdminRequest(req)) return adminRequiredResponse();
   try {
     const body = await req.json();
     const { id, title, streamUrl } = body;

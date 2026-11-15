@@ -20,6 +20,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { useIsClient } from '@/hooks/useIsClient';
 import { useAudioPlayer } from '@/hooks/useAudioPlayer';
 import { PlaybackTime } from '@/components/player/PlaybackTime';
+import { coverThumb } from '@/lib/thumbnails';
 import { AudioEngine } from '@/core/audio/AudioEngine';
 import { playMechanicalSound } from '@/core/audio/SoundEffects';
 
@@ -344,7 +345,8 @@ export function FocusStudioModal() {
             <div className="absolute inset-0 m-auto flex h-24 w-24 sm:h-32 sm:w-32 items-center justify-center rounded-full overflow-hidden border-4 border-zinc-700 shadow-2xl bg-zinc-900">
               {currentTrack?.coverUrl || currentTrack?.thumbnail ? (
                 <img
-                  src={currentTrack.coverUrl || currentTrack.thumbnail}
+                  src={coverThumb(currentTrack.coverUrl || currentTrack.thumbnail)}
+                  decoding="async"
                   alt={currentTrack.title}
                   className={`h-full w-full object-cover transition-all duration-700 ${
                     isPlaying ? 'scale-105' : 'grayscale-[30%]'

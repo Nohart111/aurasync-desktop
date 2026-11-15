@@ -3,9 +3,9 @@ import SidebarNav from "@/components/layout/SidebarNav";
 import FloatingPlayerBar from "@/components/player/FloatingPlayerBar";
 import AmbientBackground from "@/components/layout/AmbientBackground";
 import { PlaybackController } from "@/hooks/useAudioPlayer";
+import { AdminUnlockDialog } from "@/components/modals/AdminUnlockDialog";
 import { KeyboardShortcutsHUD } from "@/components/player/KeyboardShortcutsHUD";
-import { FocusStudioModal } from "@/components/player/FocusStudioModal";
-import { StudioEqualizerModal } from "@/components/player/StudioEqualizerModal";
+import { LazyOverlays } from "@/components/layout/LazyOverlays";
 
 export default function DesktopLayout({
   children,
@@ -22,8 +22,8 @@ export default function DesktopLayout({
       </main>
       <FloatingPlayerBar />
       <KeyboardShortcutsHUD />
-      <FocusStudioModal />
-      <StudioEqualizerModal />
+      <LazyOverlays />
+      <AdminUnlockDialog />
     </div>
   );
 }
